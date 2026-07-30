@@ -1,0 +1,20 @@
+{
+  "name": "@ai-agent-platform/core",
+  "version": "1.0.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc -w"
+  },
+  "dependencies": {
+    "@ai-agent-platform/shared": "workspace:*",
+    "@ai-agent-platform/ai": "workspace:*",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "@ai-agent-platform/integrations",
+  "version": "1.0.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc -w"
+  },
+  "dependencies": {
+    "@ai-agent-platform/shared": "workspace:*",
+    "better-sqlite3": "^13.0.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "typescript": "^5.4.5"
+  }
+}
