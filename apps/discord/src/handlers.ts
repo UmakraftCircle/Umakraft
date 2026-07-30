@@ -187,12 +187,12 @@ export async function handleLinkAdd(interaction: ChatInputCommandInteraction) {
   const trainerInput = interaction.options.getString('trainer', true);
 
   // Parse "Name (trainer-XX)" format or "Name (viewer_id)" from autocomplete
-  const match = trainerInput.match(/^(.+?)\s*\((\d+)\)$/);
+  const match = trainerInput.match(/^(.+?)\s*\(([^)]+)\)$/);
   const trainerId = match ? match[2] : trainerInput;
   const trainerName = match ? match[1] : trainerInput;
 
-  // Validate: trainerId must be numeric
-  if (!/^\d+$/.test(trainerId)) {
+  // Validate: trainerId must be numeric OR match mock format "trainer-NN"
+  if (!/^\d+$/.test(trainerId) && !/^trainer-\d+$/.test(trainerId)) {
     await interaction.reply({ content: `⚠️ Invalid trainer. Use autocomplete to select a valid trainer. Got: \`${trainerInput}\``, ephemeral: true });
     return;
   }

@@ -62,9 +62,17 @@ export class TaskManager {
       // then we must have an unresolved dependency deadlock.
       if (executableTasks.length === 0 && activePromises.size === 0) {
         const pending = Array.from(plan.tasks.values())
-          .filter(t => t.status === 'pending')
-          .map(t => `${t.id}(deps:[${t.dependencies.filter(d => !completedTasks.has(d))}])`);
-        logger.error(`Deadlock detected! Unresolved tasks: ${pending.join(', ')}`);
+          .filter(t => t.status === 'pending');
+        logger.error(
+          `Deadlock detected! ${pending.length} stuck task(s): ` +
+          pending.map(t => `${t.id}(deps:[${t.dependencies.filter(d => !completedTasks.has(d))}])`).join(', ')
+        );
+
+        // Mark stuck tasks as failed so the API response reflects the failure
+        for (const task of pending) {
+          task.status = 'failed';
+          task.error = `Deadlock: unresolved dependencies [${task.dependencies.filter(d => !completedTasks.has(d)).join(', ')}]`;
+        }
         hasFailed = true;
         break;
       }

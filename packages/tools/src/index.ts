@@ -4,6 +4,34 @@ import * as path from 'path';
 
 const logger = createLogger('FilesystemTools');
 
+// ── Workspace sandbox ──
+
+/**
+ * Root directory that all filesystem tool paths must stay within.
+ * Default: current working directory. Override with WORKSPACE_ROOT env var.
+ */
+const WORKSPACE_ROOT = path.resolve(process.env['WORKSPACE_ROOT'] || process.cwd());
+
+function resolvePath(filePath: string): string {
+  const resolved = path.resolve(WORKSPACE_ROOT, filePath);
+
+  // Ensure the resolved path stays within WORKSPACE_ROOT
+  // Normalise both to handle trailing separators and symlinks
+  const normRoot = path.normalize(WORKSPACE_ROOT) + path.sep;
+  const normResolved = path.normalize(resolved) + path.sep;
+
+  if (!normResolved.startsWith(normRoot) && path.normalize(resolved) !== path.normalize(WORKSPACE_ROOT)) {
+    throw new Error(
+      `Path traversal blocked: "${filePath}" resolves outside workspace root. ` +
+      `Workspace root: ${WORKSPACE_ROOT}`
+    );
+  }
+
+  return resolved;
+}
+
+// ── Tools ──
+
 export const filesystemWriteFile: ToolDefinition = {
   slug: 'filesystem-write-file',
   name: 'Write File',
@@ -11,7 +39,7 @@ export const filesystemWriteFile: ToolDefinition = {
   parameters: {
     path: {
       type: 'string',
-      description: 'The absolute or relative path to the file to write',
+      description: 'Relative or absolute path within the workspace root',
       required: true
     },
     content: {
@@ -23,11 +51,11 @@ export const filesystemWriteFile: ToolDefinition = {
   handler: async (args) => {
     const filePath = args['path'];
     const content = args['content'];
-    
+
     logger.info(`Writing content to file: ${filePath}`);
-    
+
     try {
-      const fullPath = path.resolve(filePath);
+      const fullPath = resolvePath(filePath);
       await fs.mkdir(path.dirname(fullPath), { recursive: true });
       await fs.writeFile(fullPath, content, 'utf-8');
       return { success: true, path: fullPath, bytesWritten: Buffer.byteLength(content) };
@@ -44,7 +72,7 @@ export const filesystemReadFile: ToolDefinition = {
   parameters: {
     path: {
       type: 'string',
-      description: 'The path to the file to read',
+      description: 'Relative or absolute path within the workspace root',
       required: true
     }
   },
@@ -52,7 +80,7 @@ export const filesystemReadFile: ToolDefinition = {
     const filePath = args['path'];
     logger.info(`Reading content from file: ${filePath}`);
     try {
-      const fullPath = path.resolve(filePath);
+      const fullPath = resolvePath(filePath);
       const content = await fs.readFile(fullPath, 'utf-8');
       return { success: true, content };
     } catch (error: any) {
@@ -65,4 +93,11 @@ export const filesystemReadFile: ToolDefinition = {
 export { webFetch, webSearch, webTools } from './web.js';
 export { emailSend, slackSendMessage, notificationTools } from './notifications.js';
 
-export const allTools = [filesystemWriteFile, filesystemReadFile];
+export const allTools = [
+  filesystemWriteFile,
+  filesystemReadFile,
+  webFetch,
+  webSearch,
+  emailSend,
+  slackSendMessage,
+];

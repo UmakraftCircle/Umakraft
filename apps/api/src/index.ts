@@ -5,7 +5,7 @@ import { toolRegistry, Planner, TaskManager, MODELS } from '@ai-agent-platform/c
 import { AuthMiddleware } from './auth.js';
 
 // Register all platform tools
-import { allTools, webTools, notificationTools } from '@ai-agent-platform/tools';
+import { allTools } from '@ai-agent-platform/tools';
 import { allIntegrations } from '@ai-agent-platform/integrations';
 import { allDomainTools as fanTrackerTools } from '@ai-agent-platform/fan-tracker';
 import { allDomainTools as prMonitorTools } from '@ai-agent-platform/pr-monitor';
@@ -14,7 +14,7 @@ const logger = createLogger('API-Server');
 const PORT = parseInt(process.env['PORT'] || '3000', 10);
 
 // Bootstrap tool registry
-for (const tool of [...allTools, ...webTools, ...notificationTools]) {
+for (const tool of allTools) {
   toolRegistry.register(tool);
 }
 for (const integration of allIntegrations) {

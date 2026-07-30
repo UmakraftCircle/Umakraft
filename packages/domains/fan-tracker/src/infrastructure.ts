@@ -363,7 +363,12 @@ export class FanTrackerAPI {
     while (lastIdx >= 0 && dailyFans[lastIdx] === 0) lastIdx--;
 
     const isActive = lastIdx >= 0 && dailyFans[lastIdx] > 0;
-    const totalFans = isActive ? dailyFans[lastIdx] : (dailyFans.find((f: number) => f > 0) || 0);
+
+    // Use the most recent entry for totalFans — avoids stale values when
+    // trailing zeros exist (e.g., a trainer transferred out and now has 0 fans).
+    // Falls back to last non-zero only for inactive trainers with no data.
+    const rawLatest = dailyFans[dailyFans.length - 1] ?? 0;
+    const totalFans = rawLatest > 0 ? rawLatest : (dailyFans.find((f: number) => f > 0) || 0);
 
     // Find starting baseline: first positive value, or zero after negative transfers
     let startIdx = 0;
