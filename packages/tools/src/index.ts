@@ -1,5 +1,6 @@
 import { ToolDefinition, createLogger } from '@ai-agent-platform/shared';
 import * as fs from 'fs/promises';
+import { realpath } from 'fs/promises';
 import * as path from 'path';
 
 const logger = createLogger('FilesystemTools');
@@ -12,18 +13,53 @@ const logger = createLogger('FilesystemTools');
  */
 const WORKSPACE_ROOT = path.resolve(process.env['WORKSPACE_ROOT'] || process.cwd());
 
-function resolvePath(filePath: string): string {
-  const resolved = path.resolve(WORKSPACE_ROOT, filePath);
+async function resolvePath(filePath: string): Promise<string> {
+  // Resolve against workspace root first
+  const lexical = path.resolve(WORKSPACE_ROOT, filePath);
 
-  // Ensure the resolved path stays within WORKSPACE_ROOT
-  // Normalise both to handle trailing separators and symlinks
+  // Resolve symlinks to get the real path BEFORE containment check
+  // This prevents symlink escapes (e.g. a symlink inside WORKSPACE_ROOT → /etc)
+  let resolved: string;
+  try {
+    resolved = await realpath(lexical);
+  } catch {
+    // Path doesn't exist yet (e.g., writeFile creating a new file).
+    // Walk up to find the first existing ancestor, resolve that, then append the rest.
+    // This handles: mkdir -p of a new path that may have symlinks in its ancestry.
+    let ancestor = lexical;
+    const missing: string[] = [];
+    while (ancestor !== path.parse(ancestor).root) {
+      try {
+        const stats = await fs.stat(ancestor);
+        if (stats.isDirectory() || stats.isFile()) {
+          break;
+        }
+      } catch {
+        missing.unshift(path.basename(ancestor));
+        ancestor = path.dirname(ancestor);
+        continue;
+      }
+      missing.unshift(path.basename(ancestor));
+      ancestor = path.dirname(ancestor);
+    }
+
+    try {
+      resolved = path.join(await realpath(ancestor), ...missing);
+    } catch {
+      throw new Error(
+        `Cannot resolve path "${filePath}": no existing ancestor found for containment check`
+      );
+    }
+  }
+
+  // Ensure the real resolved path stays within WORKSPACE_ROOT
   const normRoot = path.normalize(WORKSPACE_ROOT) + path.sep;
   const normResolved = path.normalize(resolved) + path.sep;
 
   if (!normResolved.startsWith(normRoot) && path.normalize(resolved) !== path.normalize(WORKSPACE_ROOT)) {
     throw new Error(
-      `Path traversal blocked: "${filePath}" resolves outside workspace root. ` +
-      `Workspace root: ${WORKSPACE_ROOT}`
+      `Path traversal blocked: "${filePath}" resolves outside workspace root via symlink. ` +
+      `Resolved: ${resolved}, Workspace root: ${WORKSPACE_ROOT}`
     );
   }
 
@@ -55,7 +91,7 @@ export const filesystemWriteFile: ToolDefinition = {
     logger.info(`Writing content to file: ${filePath}`);
 
     try {
-      const fullPath = resolvePath(filePath);
+      const fullPath = await resolvePath(filePath);
       await fs.mkdir(path.dirname(fullPath), { recursive: true });
       await fs.writeFile(fullPath, content, 'utf-8');
       return { success: true, path: fullPath, bytesWritten: Buffer.byteLength(content) };
@@ -80,7 +116,7 @@ export const filesystemReadFile: ToolDefinition = {
     const filePath = args['path'];
     logger.info(`Reading content from file: ${filePath}`);
     try {
-      const fullPath = resolvePath(filePath);
+      const fullPath = await resolvePath(filePath);
       const content = await fs.readFile(fullPath, 'utf-8');
       return { success: true, content };
     } catch (error: any) {

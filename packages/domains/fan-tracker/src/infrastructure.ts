@@ -366,9 +366,16 @@ export class FanTrackerAPI {
 
     // Use the most recent entry for totalFans — avoids stale values when
     // trailing zeros exist (e.g., a trainer transferred out and now has 0 fans).
-    // Falls back to last non-zero only for inactive trainers with no data.
+    // Falls back to LAST non-zero only for inactive trainers with no data
+    // (reverse scan for the most recent positive, not the oldest).
     const rawLatest = dailyFans[dailyFans.length - 1] ?? 0;
-    const totalFans = rawLatest > 0 ? rawLatest : (dailyFans.find((f: number) => f > 0) || 0);
+    let totalFans = rawLatest;
+    if (totalFans === 0) {
+      // Reverse scan for last positive value (most recent non-zero)
+      for (let i = dailyFans.length - 2; i >= 0; i--) {
+        if (dailyFans[i] > 0) { totalFans = dailyFans[i]; break; }
+      }
+    }
 
     // Find starting baseline: first positive value, or zero after negative transfers
     let startIdx = 0;
@@ -388,7 +395,9 @@ export class FanTrackerAPI {
     const weeklyGain = lastIdx >= 7 && dailyFans[weeklyStartIdx] > 0
       ? dailyFans[lastIdx] - dailyFans[weeklyStartIdx] : monthlyFans;
 
-    const activeDays = lastIdx >= 0 ? lastIdx + 1 : 0;
+    // Active days: count only entries with actual fan data (non-zero),
+    // avoiding inflated counts from leading zeros or sparse data gaps.
+    const activeDays = dailyFans.filter((f: number) => f > 0).length;
 
     // Previous circle info (transfer detection)
     const previousCircleName = m.previous_circle_name || null;

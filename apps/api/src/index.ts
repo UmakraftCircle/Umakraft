@@ -218,11 +218,15 @@ const server = http.createServer(async (req, res) => {
 
       logger.info(`Executing plan: ${planId}`);
       const PLAN_EXECUTION_TIMEOUT = 60_000; // 60 seconds
+      const controller = new AbortController();
       let timer: ReturnType<typeof setTimeout> | undefined;
       const executedPlan = await Promise.race([
-        taskManager.executePlan(plan),
+        taskManager.executePlan(plan, { signal: controller.signal }),
         new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new Error('Plan execution timed out after 60 seconds')), PLAN_EXECUTION_TIMEOUT);
+          timer = setTimeout(() => {
+            controller.abort();  // cancel in-flight execution
+            reject(new Error('Plan execution timed out after 60 seconds'));
+          }, PLAN_EXECUTION_TIMEOUT);
         }),
       ]).finally(() => {
         if (timer) clearTimeout(timer);
