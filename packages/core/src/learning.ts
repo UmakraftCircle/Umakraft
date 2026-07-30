@@ -30,14 +30,59 @@ export interface AdaptationRule {
 export class LearningEngine {
   private observations: FailureObservation[] = [];
   private rules: Map<string, AdaptationRule> = new Map();
+  private memoryStore?: any; // MemoryStore | undefined (optional dependency)
+  private initialized = false;
+
+  /**
+   * @param memoryStore — optional persistent MemoryStore. When provided,
+   *   the Learning Engine survives restarts; when omitted, falls back to
+   *   in-memory-only mode (development / no-SQLite environments).
+   */
+  constructor(memoryStore?: any) {
+    this.memoryStore = memoryStore;
+  }
+
+  /**
+   * Initialize the engine by loading persisted observations and rules.
+   * Must be called once before use if a MemoryStore is configured.
+   */
+  public async init(): Promise<void> {
+    if (this.initialized) return;
+    if (!this.memoryStore) {
+      logger.info('No MemoryStore configured — learning is in-memory only (resets on restart).');
+      this.initialized = true;
+      return;
+    }
+
+    try {
+      const { observations, rules } = await this.memoryStore.loadAll();
+      this.observations = observations;
+      for (const rule of rules) {
+        this.rules.set(rule.id, rule);
+      }
+      logger.info(`Learning Engine initialized with ${observations.length} observations and ${rules.length} rules from persistent memory.`);
+    } catch (err: any) {
+      logger.error(`Failed to load from MemoryStore: ${err.message}. Starting fresh.`);
+    }
+    this.initialized = true;
+  }
 
   /**
    * Records a failure observation from the task execution pipeline.
    */
-  public recordFailure(observation: FailureObservation): void {
+  public async recordFailure(observation: FailureObservation): Promise<void> {
+    if (!this.initialized) await this.init();
+
     logger.info(`Recording failure observation for task [${observation.taskId}]: ${observation.errorMessage}`);
     this.observations.push(observation);
     this.deriveRule(observation);
+
+    // Persist to durable storage
+    if (this.memoryStore) {
+      this.memoryStore.saveObservation(observation).catch((err: any) =>
+        logger.error(`Async save observation failed: ${err.message}`)
+      );
+    }
   }
 
   /**
@@ -67,24 +112,19 @@ export class LearningEngine {
 
   /**
    * Attempts to auto-correct task arguments based on learned patterns.
+   * Applies all autoFix functions from matching adaptation rules.
+   * Each autoFix function is responsible for checking whether its fix is needed.
    */
   public applyFixes(toolSlug: string, args: Record<string, any>): Record<string, any> {
     let fixed = { ...args };
 
     for (const rule of this.rules.values()) {
-      if (rule.autoFix && rule.pattern) {
+      if (rule.autoFix) {
         try {
-          const regex = new RegExp(rule.pattern);
-          // If any argument value matches this failure pattern, apply the fix
-          for (const [key, value] of Object.entries(fixed)) {
-            if (typeof value === 'string' && regex.test(value)) {
-              fixed = rule.autoFix(fixed);
-              logger.info(`Applied auto-fix rule [${rule.id}] to argument "${key}"`);
-              break;
-            }
-          }
+          fixed = rule.autoFix(fixed);
+          logger.info(`Applied auto-fix rule [${rule.id}] to tool "${toolSlug}"`);
         } catch {
-          // skip invalid regex patterns
+          // skip broken autoFix functions
         }
       }
     }
@@ -142,18 +182,28 @@ export class LearningEngine {
       if (p.pattern.test(msg)) {
         const ruleId = `rule-${Buffer.from(p.suggestion).toString('base64').slice(0, 12)}`;
         const existing = this.rules.get(ruleId);
+        let rule: AdaptationRule;
         if (existing) {
           existing.occurrences++;
           existing.lastSeen = obs.timestamp;
+          rule = existing;
         } else {
-          this.rules.set(ruleId, {
+          rule = {
             id: ruleId,
             pattern: p.pattern.source,
             suggestion: p.suggestion,
             autoFix: p.autoFix,
             occurrences: 1,
             lastSeen: obs.timestamp
-          });
+          };
+          this.rules.set(ruleId, rule);
+        }
+
+        // Persist rule mutation
+        if (this.memoryStore) {
+          this.memoryStore.saveRule(rule).catch((err: any) =>
+            logger.error(`Async save rule failed: ${err.message}`)
+          );
         }
         break;
       }

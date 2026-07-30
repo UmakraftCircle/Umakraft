@@ -10,7 +10,8 @@
     "dev": "tsc -w"
   },
   "dependencies": {
-    "@ai-agent-platform/shared": "workspace:*"
+    "@ai-agent-platform/shared": "workspace:*",
+    "@ai-agent-platform/core": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.4.5"

@@ -2,11 +2,13 @@ import * as http from 'http';
 import { createLogger, PLATFORM_NAME, ExecutionPlan } from '@ai-agent-platform/shared';
 import { MockAIService } from '@ai-agent-platform/ai';
 import { toolRegistry, Planner, TaskManager } from '@ai-agent-platform/core';
+import { AuthMiddleware } from './auth.js';
 
 // Register all platform tools
 import { allTools, webTools, notificationTools } from '@ai-agent-platform/tools';
 import { allIntegrations } from '@ai-agent-platform/integrations';
-import { allDomainTools } from '@ai-agent-platform/fan-tracker';
+import { allDomainTools as fanTrackerTools } from '@ai-agent-platform/fan-tracker';
+import { allDomainTools as prMonitorTools } from '@ai-agent-platform/pr-monitor';
 
 const logger = createLogger('API-Server');
 const PORT = parseInt(process.env['PORT'] || '3000', 10);
@@ -18,7 +20,7 @@ for (const tool of [...allTools, ...webTools, ...notificationTools]) {
 for (const integration of allIntegrations) {
   toolRegistry.register(integration);
 }
-for (const domainTool of allDomainTools) {
+for (const domainTool of [...fanTrackerTools, ...prMonitorTools]) {
   toolRegistry.register(domainTool);
 }
 
@@ -70,6 +72,16 @@ function parseUrl(req: http.IncomingMessage): { path: string; params: Record<str
 
 // ── Router ──
 
+// ── Auth middleware ──
+const auth = new AuthMiddleware({
+  requireAuth: !!(process.env['API_KEY'] || process.env['API_KEYS']), // only require auth if keys are configured
+  publicPaths: ['/health'],
+});
+
+logger.info(`Auth: ${auth.getKeyCount()} API key(s) configured. Auth required: ${!!(process.env['API_KEY'] || process.env['API_KEYS'])}`);
+
+// ── Server ──
+
 const server = http.createServer(async (req, res) => {
   // CORS preflight
   if (req.method === 'OPTIONS') {
@@ -80,6 +92,10 @@ const server = http.createServer(async (req, res) => {
   const { path, params } = parseUrl(req);
 
   logger.info(`${req.method} ${path}`);
+
+  // ── Auth middleware ──
+  const authCtx = await auth.handle(req, res);
+  if (!authCtx) return; // response already sent by middleware
 
   try {
     // ── Health ──
@@ -216,8 +232,9 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   logger.info(`==================================================`);
   logger.info(`${PLATFORM_NAME} API Server listening on http://localhost:${PORT}`);
+  logger.info(`Auth:    ${auth.getKeyCount()} key(s) configured`);
   logger.info(`Endpoints:`);
-  logger.info(`  GET  /health             — Health check`);
+  logger.info(`  GET  /health             — Health check (public)`);
   logger.info(`  GET  /tools              — List registered tools`);
   logger.info(`  POST /plans              — Submit plan intent`);
   logger.info(`  GET  /plans              — List all plans`);

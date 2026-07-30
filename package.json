@@ -6,7 +6,9 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev --parallel",
-    "test": "turbo run test",
+    "test": "node --import tsx --test tests/**/*.test.ts",
+    "test:core": "node --import tsx --test tests/core/*.test.ts",
+    "test:watch": "node --import tsx --test --watch tests/**/*.test.ts",
     "lint": "turbo run lint"
   },
   "devDependencies": {

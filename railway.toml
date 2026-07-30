@@ -1,0 +1,27 @@
+# Railway deployment configuration
+# https://railway.app
+
+[build]
+  builder = "DOCKERFILE"
+  dockerfilePath = "Dockerfile"
+
+[deploy]
+  numReplicas = 1
+  restartPolicyType = "ON_FAILURE"
+  restartPolicyMaxRetries = 5
+
+[service]
+  port = 3000
+
+# Environment variables
+[variables]
+  NODE_ENV = "production"
+  PORT = "3000"
+
+# Optional: enable these when credentials are available
+# API_KEY = "sk-your-secret-key"
+# OPENAI_API_KEY = "sk-..."
+# ANTHROPIC_API_KEY = "sk-ant-..."
+# GITHUB_TOKEN = "ghp_..."
+# DISCORD_BOT_TOKEN = "..."
+# FAN_TRACKER_API_URL = "https://api.umakraft.dev/tracker"

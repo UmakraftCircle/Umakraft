@@ -67,10 +67,42 @@ export function getDatabase(): Promise<sqlite3.Database> {
             return reject(createTaskErr);
           }
 
-          logger.info(`SQLite Tables successfully verified.`);
-          dbInstance = db;
-          resolve(dbInstance);
-        });
+          // ── Memory / Learning Engine tables ──
+          db.run(`
+            CREATE TABLE IF NOT EXISTS learning_observations (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              task_id TEXT NOT NULL,
+              task_name TEXT NOT NULL,
+              tool_slug TEXT NOT NULL,
+              error_message TEXT NOT NULL,
+              timestamp TEXT NOT NULL,
+              context TEXT
+            );
+          `, (obsErr) => {
+            if (obsErr) {
+              logger.error(`Failed to create learning_observations table: ${obsErr.message}`);
+              return reject(obsErr);
+            }
+          });
+
+          db.run(`
+            CREATE TABLE IF NOT EXISTS adaptation_rules (
+              id TEXT PRIMARY KEY,
+              pattern TEXT NOT NULL,
+              suggestion TEXT NOT NULL,
+              occurrences INTEGER NOT NULL DEFAULT 1,
+              last_seen TEXT NOT NULL
+            );
+          `, (ruleErr) => {
+            if (ruleErr) {
+              logger.error(`Failed to create adaptation_rules table: ${ruleErr.message}`);
+              return reject(ruleErr);
+            }
+
+            logger.info(`SQLite Tables successfully verified (including memory).`);
+            dbInstance = db;
+            resolve(dbInstance);
+          });
       });
     });
   });

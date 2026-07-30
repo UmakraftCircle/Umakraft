@@ -1,5 +1,5 @@
 {
-  "name": "@ai-agent-platform/core",
+  "name": "@ai-agent-platform/pr-monitor",
   "version": "1.0.0",
   "private": true,
   "main": "./dist/index.js",
@@ -11,9 +11,7 @@
   },
   "dependencies": {
     "@ai-agent-platform/shared": "workspace:*",
-    "@ai-agent-platform/ai": "workspace:*",
-    "@ai-agent-platform/integrations": "workspace:*",
-    "zod": "^3.23.8"
+    "@ai-agent-platform/core": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.4.5"

@@ -4,3 +4,7 @@ export * from './task-manager.js';
 export * from './model-router.js';
 export * from './learning.js';
 export * from './validator.js';
+export * from './memory-store.js';
+export * from './repo-indexer.js';
+export * from './cache-store.js';
+export * from './knowledge-graph.js';

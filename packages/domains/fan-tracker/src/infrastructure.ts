@@ -1,6 +1,11 @@
 import { createLogger } from '@ai-agent-platform/shared';
+import { CacheStore } from '@ai-agent-platform/core';
 
 const logger = createLogger('FanTrackerInfra');
+
+// ── Shared cache (replaces local Map-based implementation) ──
+
+const cache = new CacheStore({ namespace: 'fan-tracker', defaultTTL: 5 * 60 * 1000 });
 
 // ── Domain types ──
 
@@ -30,31 +35,6 @@ export interface TrendAnalysis {
   historicalFans: Array<{ date: string; count: number }>;
 }
 
-// ── Caching layer ──
-
-interface CacheEntry {
-  data: any;
-  timestamp: number;
-  ttl: number;
-}
-
-const cache = new Map<string, CacheEntry>();
-const DEFAULT_TTL = 5 * 60 * 1000; // 5 minutes
-
-function getCached<T>(key: string): T | null {
-  const entry = cache.get(key);
-  if (entry && Date.now() - entry.timestamp < entry.ttl) {
-    logger.debug(`Cache hit for key: ${key}`);
-    return entry.data as T;
-  }
-  if (entry) cache.delete(key); // expired
-  return null;
-}
-
-function setCache<T>(key: string, data: T, ttl: number = DEFAULT_TTL): void {
-  cache.set(key, { data, timestamp: Date.now(), ttl });
-}
-
 // ── API Client ──
 
 export class FanTrackerAPI {
@@ -72,7 +52,7 @@ export class FanTrackerAPI {
    */
   public async fetchTrainerStats(trainerId: string): Promise<TrainerStats> {
     const cacheKey = `trainer-stats:${trainerId}`;
-    const cached = getCached<TrainerStats>(cacheKey);
+    const cached = cache.get<TrainerStats>(cacheKey);
     if (cached) return cached;
 
     logger.info(`Fetching trainer stats for ${trainerId} from API...`);
@@ -110,7 +90,7 @@ export class FanTrackerAPI {
         updatedAt: data.updated_at || new Date().toISOString()
       };
 
-      setCache(cacheKey, stats);
+      cache.set(cacheKey, stats);
       logger.info(`Successfully fetched stats for trainer ${trainerId}: ${stats.activeTier}, ${stats.activeFans} fans.`);
       return stats;
     } catch (error: any) {
@@ -133,7 +113,7 @@ export class FanTrackerAPI {
         updatedAt: new Date().toISOString()
       };
 
-      setCache(cacheKey, mockStats, 30000); // shorter TTL for mock data
+      cache.set(cacheKey, mockStats, 30000); // shorter TTL for mock data
       return mockStats;
     }
   }
@@ -143,7 +123,7 @@ export class FanTrackerAPI {
    */
   public async analyzeTrends(trainerId: string, period: string = 'weekly'): Promise<TrendAnalysis> {
     const cacheKey = `trend-analysis:${trainerId}:${period}`;
-    const cached = getCached<TrendAnalysis>(cacheKey);
+    const cached = cache.get<TrendAnalysis>(cacheKey);
     if (cached) return cached;
 
     logger.info(`Analyzing trends for trainer ${trainerId} over ${period} period...`);
@@ -174,7 +154,7 @@ export class FanTrackerAPI {
         }))
       };
 
-      setCache(cacheKey, analysis);
+      cache.set(cacheKey, analysis);
       return analysis;
     } catch (error: any) {
       logger.error(`Trend analysis failed for trainer ${trainerId}: ${error.message}`);
@@ -197,7 +177,7 @@ export class FanTrackerAPI {
         ]
       };
 
-      setCache(cacheKey, mockAnalysis, 30000);
+      cache.set(cacheKey, mockAnalysis, 30000);
       return mockAnalysis;
     }
   }
@@ -207,7 +187,13 @@ export class FanTrackerAPI {
    */
   public clearCache(): void {
     cache.clear();
-    logger.info('Fan tracker cache cleared.');
+  }
+
+  /**
+   * Returns cache statistics for monitoring.
+   */
+  public getCacheStats() {
+    return cache.getStats();
   }
 
   private normalizeTier(tier: string | undefined): TrainerStats['activeTier'] {

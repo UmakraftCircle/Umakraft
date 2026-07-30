@@ -31,6 +31,65 @@ export class MockAIService extends AIService {
   public override async generateStructuredOutput(options: GenerateOptions): Promise<any> {
     logger.info(`Mocking structured output generation for model: ${this.modelName}`);
     
+    if (options.prompt.toLowerCase().includes('pr') || options.prompt.toLowerCase().includes('pull request') || options.prompt.toLowerCase().includes('github')) {
+      return {
+        tasks: [
+          {
+            id: 'task-1',
+            name: 'Fetch Open Pull Requests',
+            toolSlug: 'pr-monitor-fetch-prs',
+            arguments: { repo: 'ai-agent-platform' },
+            dependencies: [],
+            maxRetries: 3
+          },
+          {
+            id: 'task-2',
+            name: 'Generate PR Summary',
+            toolSlug: 'pr-monitor-summary',
+            arguments: { repo: 'ai-agent-platform' },
+            dependencies: ['task-1'],
+            maxRetries: 3
+          },
+          {
+            id: 'task-3',
+            name: 'Check My Review Requests',
+            toolSlug: 'pr-monitor-review-requests',
+            arguments: {},
+            dependencies: [],
+            maxRetries: 3
+          },
+          {
+            id: 'task-4',
+            name: 'Send Discord Notification',
+            toolSlug: 'discord-send-message',
+            arguments: { message: 'PR monitor digest is ready! Check the summary.' },
+            dependencies: ['task-2', 'task-3'],
+            maxRetries: 3
+          },
+          {
+            id: 'task-5',
+            name: 'Persist Results',
+            toolSlug: 'database-store-result',
+            arguments: {
+              planId: 'plan-pr-monitor',
+              data: {
+                intent: options.prompt,
+                metadata: { modelUsed: 'claude-3-5-sonnet', createdAt: new Date().toISOString() },
+                tasks: [
+                  { id: 'task-1', status: 'completed', result: { count: 3 } },
+                  { id: 'task-2', status: 'completed', result: { totalOpen: 3 } },
+                  { id: 'task-3', status: 'completed', result: { count: 1 } },
+                  { id: 'task-4', status: 'completed', result: { success: true } }
+                ]
+              }
+            },
+            dependencies: ['task-4'],
+            maxRetries: 3
+          }
+        ]
+      };
+    }
+
     if (options.prompt.toLowerCase().includes('plan') || options.prompt.toLowerCase().includes('stats')) {
       return {
         tasks: [
