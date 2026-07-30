@@ -37,13 +37,9 @@ async function startGatewayBot() {
 
   const client = new Client({
     intents: [
-      GatewayIntentBits.Guilds,                // required
-      GatewayIntentBits.GuildMembers,          // user autocomplete, member lookup
-      GatewayIntentBits.GuildMessages,         // read/write messages in guild
-      GatewayIntentBits.MessageContent,        // read message content (privileged!)
-      GatewayIntentBits.GuildMessageReactions, // future: reaction-based navigation
-      GatewayIntentBits.GuildEmojisAndStickers,// custom emoji use in embeds
-      GatewayIntentBits.DirectMessages,        // future: DM-based stat queries
+      GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMembers,
+      GatewayIntentBits.GuildMessages,
     ],
   });
 

@@ -347,6 +347,14 @@ export class FanTrackerAPI {
   }
 
   private mapCircleMemberToStats(m: any, circle: any): TrainerStats {
+    // Helper: crude tier from total fan count (circles endpoint lacks club_rank_name)
+    const circleTierFromFans = (fans: number): string => {
+      if (fans >= 2_000_000) return 'S-Class';
+      if (fans >= 1_000_000) return 'A-Class';
+      if (fans >= 500_000) return 'B-Class';
+      return 'C-Class';
+    };
+
     const trainerId = String(m.viewer_id);
     const dailyFans: number[] = m.daily_fans || [];
 
@@ -398,7 +406,7 @@ export class FanTrackerAPI {
       avgDaily: activeDays > 0 ? Math.round(monthlyFans / activeDays) : null,
       avg3d: null,
       avg7d: null,
-      clubRankTier: '?', // filled in later if needed
+      clubRankTier: circleTierFromFans(totalFans),
       previousCircleName,
       updatedAt: m.last_updated || new Date().toISOString(),
       isActive,
@@ -412,7 +420,7 @@ export class FanTrackerAPI {
   private generateMockStats(trainerId: string): TrainerStats {
     const roster = this.getMockRoster();
     const entry = roster.find(t => t.trainerId === trainerId);
-    const name = entry?.trainerName || `Trainer #${trainerId}`;
+    const name = entry?.trainerName ? `[MOCK] ${entry.trainerName}` : `[MOCK] Trainer #${trainerId}`;
     const tier = entry?.tier || 'B-Class';
     const seed = trainerId.split('').reduce((s, c) => s + c.charCodeAt(0), 0);
     const baseFans = 500_000 + (seed % 1_500_000);

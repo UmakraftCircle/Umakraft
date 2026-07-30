@@ -4,6 +4,7 @@
 // ───────────────────────────────────────────────────────────
 const http = require('http');
 const { spawn } = require('child_process');
+const path = require('path');
 
 const PORT = process.env.PORT || 3000;
 
@@ -16,15 +17,19 @@ server.listen(PORT, () => {
   console.log(`[health] dummy HTTP server listening on :${PORT}`);
 });
 
-// Start the Discord bot as a child process
-const bot = spawn('npx', ['tsx', 'apps/discord/src/index.ts'], {
+// Start the Discord bot — use the installed tsx binary, not npx
+const tsxBin = path.join(__dirname, 'node_modules', '.bin', 'tsx');
+const bot = spawn(tsxBin, ['apps/discord/src/index.ts'], {
   stdio: 'inherit',
   cwd: __dirname,
   env: { ...process.env },
 });
 
-bot.on('exit', (code) => {
-  console.error(`[health] bot exited with code ${code}`);
+bot.on('exit', (code, signal) => {
+  const reason = signal ? `signal ${signal}` : `code ${code}`;
+  console.error(`[health] bot exited with ${reason}`);
   server.close();
-  process.exit(code || 0);
+  // null code (killed by signal) → exit 1 so Railway restarts
+  // non-zero code → pass through
+  process.exit(code ?? 1);
 });

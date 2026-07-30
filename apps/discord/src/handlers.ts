@@ -72,7 +72,7 @@ function rankEmoji(rank: number | null): string {
 
 export async function handleSync(interaction: ChatInputCommandInteraction) {
   if (!isAdmin(interaction)) {
-    await interaction.reply({ content: '�⛔ This command is admin-only.', ephemeral: true });
+    await interaction.reply({ content: '⛔ This command is admin-only.', ephemeral: true });
     return;
   }
 
@@ -114,7 +114,7 @@ export async function handleFansGain(interaction: ChatInputCommandInteraction) {
 
   // Pick gain based on period
   const gainMap: Record<string, { label: string; value: number; rank: number | null }> = {
-    daily: { label: 'Daily gain (3d avg ÷ 3)', value: stats.gain3d ? Math.round(stats.gain3d / 3) : stats.dailyGain, rank: stats.rank3d },
+    daily: { label: 'Daily gain (3d avg ÷ 3)', value: stats.gain3d != null ? Math.round(stats.gain3d / 3) : stats.dailyGain, rank: stats.rank3d },
     weekly: { label: 'Weekly gain (7d)', value: stats.gain7d ?? stats.weeklyGain, rank: stats.rank7d },
     monthly: { label: 'Monthly gain', value: stats.monthlyFans, rank: stats.monthlyRank },
   };
@@ -205,7 +205,7 @@ export async function handleFansLeaderboard(interaction: ChatInputCommandInterac
 
 export async function handleLinkAdd(interaction: ChatInputCommandInteraction) {
   if (!isAdmin(interaction)) {
-    await interaction.reply({ content: '�⛔ This command is admin-only.', ephemeral: true });
+    await interaction.reply({ content: '⛔ This command is admin-only.', ephemeral: true });
     return;
   }
 
@@ -216,6 +216,12 @@ export async function handleLinkAdd(interaction: ChatInputCommandInteraction) {
   const match = trainerInput.match(/^(.+?)\s*\((\d+)\)$/);
   const trainerId = match ? match[2] : trainerInput;
   const trainerName = match ? match[1] : trainerInput;
+
+  // Validate: trainerId must be numeric
+  if (!/^\d+$/.test(trainerId)) {
+    await interaction.reply({ content: `⚠️ Invalid trainer. Use autocomplete to select a valid trainer. Got: \`${trainerInput}\``, ephemeral: true });
+    return;
+  }
 
   const links = await loadLinks();
   const existingUser = links.find(l => l.discordUserId === user.id);
@@ -248,7 +254,7 @@ export async function handleLinkAdd(interaction: ChatInputCommandInteraction) {
 
 export async function handleLinkRemove(interaction: ChatInputCommandInteraction) {
   if (!isAdmin(interaction)) {
-    await interaction.reply({ content: '�⛔ This command is admin-only.', ephemeral: true });
+    await interaction.reply({ content: '⛔ This command is admin-only.', ephemeral: true });
     return;
   }
 
@@ -344,7 +350,7 @@ export async function routeCommand(interaction: ChatInputCommandInteraction) {
   } catch (error: any) {
     logger.error(`Handler error for /${commandName} ${subcommand || ''}: ${error.message}`);
     const fallback = { content: '❌ An error occurred while processing your command.', ephemeral: true };
-    if (interaction.deferred) {
+    if (interaction.deferred || interaction.replied) {
       await interaction.editReply('❌ An error occurred while processing your command.');
     } else {
       await interaction.reply(fallback);

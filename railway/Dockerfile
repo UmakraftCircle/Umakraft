@@ -25,7 +25,7 @@ COPY packages/domains/fan-tracker/package.json                      packages/dom
 COPY packages/domains/pr-monitor/package.json                       packages/domains/pr-monitor/
 COPY apps/discord/package.json apps/discord/tsconfig.json           apps/discord/
 
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --no-frozen-lockfile
 
 # ── Layer 2: source code (copy only directories with content) ─
 COPY packages/shared/src/         packages/shared/src/

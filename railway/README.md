@@ -13,10 +13,10 @@
 | Variable | Value |
 |---|---|
 | `DISCORD_BOT_TOKEN` | Your Discord bot token |
-| `DISCORD_CLIENT_ID` | `1532392668473196544` |
-| `DISCORD_GUILD_ID` | `1489093959044173935` |
+| `DISCORD_CLIENT_ID` | Your Discord application ID |
+| `DISCORD_GUILD_ID` | Your Discord server (guild) ID |
 | `UMAMOE_API_KEY` | Your uma.moe API key |
-| `UMAMOE_CIRCLE_ID` | `974470619` |
+| `UMAMOE_CIRCLE_ID` | Your uma.moe circle ID |
 | `PORT` | Leave empty (Railway sets this automatically) |
 
 ## How to Deploy
@@ -34,7 +34,7 @@ Railway probes $PORT (TCP)
     ↓
 health.js → dummy HTTP server (200 OK)
     ↓
-spawns → npx tsx apps/discord/src/index.ts
+spawns → node_modules/.bin/tsx apps/discord/src/index.ts
     ↓
 Discord Gateway (WebSocket)
 ```

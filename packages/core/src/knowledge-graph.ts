@@ -80,9 +80,10 @@ export class KnowledgeGraph {
         `, (err) => { if (err) return reject(err); });
         db.run(`
           CREATE INDEX IF NOT EXISTS idx_nodes_type ON knowledge_nodes(type);
-        `, (err) => { if (err) return reject(err); });
-
-        resolve();
+        `, (err) => {
+          if (err) return reject(err);
+          resolve();
+        });
       });
     });
 

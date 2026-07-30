@@ -5,8 +5,8 @@ import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
  * 
  * Command tree:
  *   /sync                              [ADMIN]  — refresh cached data
- *   /fans gain [period]                [ALL]    — fan count change (daily|weekly|monthly)
- *   /fans leaderboard [top] [period]   [ALL]    — ranked leaderboard
+ *   /fan gain [period]                 [ALL]    — fan count change (daily|weekly|monthly)
+ *   /fan leaderboard [top] [period]    [ALL]    — ranked leaderboard
  *   /link add [user] [trainer]         [ADMIN]  — link Discord user to trainer (autocomplete)
  *   /link remove [user]                [ADMIN]  — unlink Discord user
  *   /link list                         [ALL]    — show all linked pairs
@@ -18,9 +18,10 @@ export const syncCommand = new SlashCommandBuilder()
   .setName('sync')
   .setDescription('Fetch fresh data from the Umamusume API and clear the cache (admin only)')
   .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+  .setDMPermission(false)
   .toJSON();
 
-// ── /fans ─────────────────────────────────────────────────
+// ── /fan ──────────────────────────────────────────────────
 
 export const fanCommand = new SlashCommandBuilder()
   .setName('fan')
@@ -69,9 +70,8 @@ export const fanCommand = new SlashCommandBuilder()
           )
       )
   )
-  .toJSON();
-
-// ── /link ─────────────────────────────────────────────────
+  .setDMPermission(false)
+  .toJSON(); ─────────────────────────────────────────────────
 
 export const linkCommand = new SlashCommandBuilder()
   .setName('link')
@@ -110,6 +110,7 @@ export const linkCommand = new SlashCommandBuilder()
       .setName('list')
       .setDescription('Show all linked Discord ↔ trainer pairs')
   )
+  .setDMPermission(false)
   .toJSON();
 
 // ── Aggregate export ──
