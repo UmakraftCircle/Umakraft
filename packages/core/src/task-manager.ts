@@ -3,6 +3,26 @@ import { ToolRegistry } from './tool-registry.js';
 
 const logger = createLogger('TaskManager');
 
+// ── Error classification ──
+
+const RETRYABLE_ERROR_PATTERNS = [
+  /rate.?limit/i,
+  /timeout/i,
+  /too many requests/i,
+  /429/,
+  /503/,
+  /temporarily/i,
+  /ECONNRESET/i,
+  /ECONNREFUSED/i,
+  /ETIMEDOUT/i,
+  /ENOTFOUND/i,
+  /socket hang up/i,
+];
+
+function isRetryable(error: string): boolean {
+  return RETRYABLE_ERROR_PATTERNS.some(p => p.test(error));
+}
+
 export class TaskManager {
   constructor(private registry: ToolRegistry = ToolRegistry.getInstance()) {}
 
@@ -13,7 +33,15 @@ export class TaskManager {
   public async executePlan(plan: ExecutionPlan): Promise<ExecutionPlan> {
     logger.info(`Starting execution of plan: ${plan.id}`);
 
+    // Seed completedTasks from tasks already marked completed in the plan
     const completedTasks = new Set<string>();
+    for (const task of plan.tasks.values()) {
+      if (task.status === 'completed') {
+        completedTasks.add(task.id);
+        logger.info(`Pre-completed task: [${task.id}]`);
+      }
+    }
+
     const activePromises = new Map<string, Promise<void>>();
     let hasFailed = false;
 
@@ -33,7 +61,10 @@ export class TaskManager {
       // If no tasks are running and none are runnable, but we haven't completed all of them,
       // then we must have an unresolved dependency deadlock.
       if (executableTasks.length === 0 && activePromises.size === 0) {
-        logger.error(`Deadlock detected! Some task dependencies are unresolved.`);
+        const pending = Array.from(plan.tasks.values())
+          .filter(t => t.status === 'pending')
+          .map(t => `${t.id}(deps:[${t.dependencies.filter(d => !completedTasks.has(d))}])`);
+        logger.error(`Deadlock detected! Unresolved tasks: ${pending.join(', ')}`);
         hasFailed = true;
         break;
       }
@@ -41,14 +72,23 @@ export class TaskManager {
       // Start all executable tasks
       for (const task of executableTasks) {
         task.status = 'running';
-        const promise = this.runTaskWithRetry(task).then(() => {
-          if (task.status === 'completed') {
-            completedTasks.add(task.id);
-          } else if (task.status === 'failed') {
+        const promise = this.runTaskWithRetry(task)
+          .then(() => {
+            if (task.status === 'completed') {
+              completedTasks.add(task.id);
+            } else if (task.status === 'failed') {
+              hasFailed = true;
+            }
+            activePromises.delete(task.id);
+          })
+          .catch((err) => {
+            // Unexpected runtime error — treat as permanent failure
+            logger.error(`Unhandled error in task [${task.id}]: ${err.message}`);
+            task.status = 'failed';
+            task.error = `Unexpected runtime error: ${err.message}`;
             hasFailed = true;
-          }
-          activePromises.delete(task.id);
-        });
+            activePromises.delete(task.id);
+          });
         activePromises.set(task.id, promise);
       }
 
@@ -78,16 +118,25 @@ export class TaskManager {
         task.result = result.data;
         logger.info(`Task completed successfully: [${task.id}]`);
         return;
-      } else {
-        task.retryCount++;
-        task.error = result.error;
-        logger.warn(`Task failed: [${task.id}] (Attempt ${task.retryCount}/${task.maxRetries + 1}). Error: ${result.error}`);
+      }
 
-        if (task.retryCount <= task.maxRetries) {
-          // Linear/exponential backoff wait
-          const waitTime = task.retryCount * 200;
-          await new Promise(resolve => setTimeout(resolve, waitTime));
-        }
+      task.retryCount++;
+      task.error = result.error;
+
+      // Classify error — permanent errors should not be retried
+      if (!isRetryable(task.error || '')) {
+        logger.warn(`Task failed with permanent error: [${task.id}]. Not retrying. Error: ${task.error}`);
+        task.status = 'failed';
+        return;
+      }
+
+      logger.warn(`Task failed (retryable): [${task.id}] (Attempt ${task.retryCount}/${task.maxRetries + 1}). Error: ${task.error}`);
+
+      if (task.retryCount <= task.maxRetries) {
+        // Exponential backoff with jitter: 200ms, 400ms, 800ms, ...
+        const baseWait = Math.min(200 * Math.pow(2, task.retryCount - 1), 10_000);
+        const jitter = Math.random() * baseWait * 0.3;
+        await new Promise(resolve => setTimeout(resolve, baseWait + jitter));
       }
     }
 

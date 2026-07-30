@@ -27,17 +27,17 @@ export interface CacheStoreConfig {
 }
 
 /**
- * Generic TTL-based cache with LRU eviction.
- * 
- * Extracted from the fan-tracker domain as a shared platform service.
- * Supports namespaces for multi-tenant isolation and exposes stats for monitoring.
+ * Generic TTL-based cache with LRU eviction, in-flight request deduplication,
+ * and automatic expired-entry sweeping.
  */
 export class CacheStore<T = any> {
   private store: Map<string, CacheEntry<T>> = new Map();
+  private promises: Map<string, Promise<T>> = new Map(); // in-flight dedup
   private config: Required<CacheStoreConfig>;
   private hits = 0;
   private misses = 0;
   private evictions = 0;
+  private sweepTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(config: CacheStoreConfig = {}) {
     this.config = {
@@ -45,6 +45,18 @@ export class CacheStore<T = any> {
       maxSize: config.maxSize ?? 1000,
       namespace: config.namespace ?? 'default',
     };
+
+    // Sweep expired entries every 60 seconds
+    this.sweepTimer = setInterval(() => this.sweepExpired(), 60_000);
+    if (this.sweepTimer.unref) this.sweepTimer.unref();
+  }
+
+  /** Stop background sweep timer. */
+  public destroy(): void {
+    if (this.sweepTimer) {
+      clearInterval(this.sweepTimer);
+      this.sweepTimer = null;
+    }
   }
 
   /**
@@ -113,7 +125,9 @@ export class CacheStore<T = any> {
    * Delete a specific key.
    */
   public delete(key: string): boolean {
-    return this.store.delete(this.nsKey(key));
+    const fullKey = this.nsKey(key);
+    this.promises.delete(fullKey);
+    return this.store.delete(fullKey);
   }
 
   /**
@@ -122,20 +136,42 @@ export class CacheStore<T = any> {
   public clear(): void {
     const size = this.store.size;
     this.store.clear();
+    this.promises.clear();
     logger.info(`Cache cleared — removed ${size} entries from namespace "${this.config.namespace}"`);
   }
 
   /**
    * Get or compute: returns cached value or computes + caches + returns.
+   * Deduplicates in-flight requests — concurrent calls for the same missing
+   * key share a single compute() invocation.
    */
   public async getOrCompute(key: string, compute: () => Promise<T>, ttl?: number): Promise<T> {
+    // Fast path: already cached
     const cached = this.get(key);
     if (cached !== null) return cached;
 
-    logger.debug(`Cache MISS (compute): ${this.nsKey(key)}`);
-    const data = await compute();
-    this.set(key, data, ttl);
-    return data;
+    const fullKey = this.nsKey(key);
+
+    // In-flight dedup: if another caller is already computing this key,
+    // return the same promise instead of starting a duplicate compute().
+    const existing = this.promises.get(fullKey);
+    if (existing) {
+      logger.debug(`Cache DEDUP (in-flight): ${fullKey}`);
+      return existing;
+    }
+
+    logger.debug(`Cache MISS (compute): ${fullKey}`);
+    const promise = compute()
+      .then(data => {
+        this.set(key, data, ttl);
+        return data;
+      })
+      .finally(() => {
+        this.promises.delete(fullKey);
+      });
+
+    this.promises.set(fullKey, promise);
+    return promise;
   }
 
   /**
@@ -155,14 +191,16 @@ export class CacheStore<T = any> {
 
   /**
    * Return all non-expired keys in this namespace.
+   * Also sweeps expired entries to prevent them from accumulating.
    */
   public keys(): string[] {
-    const now = Date.now();
+    this.sweepExpired();
+
     const prefix = this.config.namespace + ':';
     const keys: string[] = [];
 
-    for (const [key, entry] of this.store) {
-      if (now - entry.timestamp <= entry.ttl) {
+    for (const key of this.store.keys()) {
+      if (key.startsWith(prefix)) {
         keys.push(key.slice(prefix.length));
       }
     }
@@ -186,6 +224,24 @@ export class CacheStore<T = any> {
   }
 
   /**
+   * Remove all expired entries. Called periodically and on keys().
+   */
+  private sweepExpired(): void {
+    const now = Date.now();
+    let removed = 0;
+    for (const [key, entry] of this.store) {
+      if (now - entry.timestamp > entry.ttl) {
+        this.store.delete(key);
+        this.promises.delete(key);
+        removed++;
+      }
+    }
+    if (removed > 0) {
+      logger.debug(`Swept ${removed} expired cache entries in "${this.config.namespace}"`);
+    }
+  }
+
+  /**
    * Evict the least-recently-accessed entry.
    */
   private evictLRU(): void {
@@ -201,6 +257,7 @@ export class CacheStore<T = any> {
 
     if (oldestKey) {
       this.store.delete(oldestKey);
+      this.promises.delete(oldestKey);
       this.evictions++;
       logger.debug(`LRU eviction: ${oldestKey}`);
     }

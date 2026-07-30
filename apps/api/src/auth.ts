@@ -156,6 +156,8 @@ export interface AuthMiddlewareConfig {
   requireAuth?: boolean;
   rateLimit?: RateLimitConfig;
   publicPaths?: string[];
+  /** If true, trust x-forwarded-for header for client IP. Only enable behind a known reverse proxy. */
+  trustProxy?: boolean;
 }
 
 const DEFAULT_RATE_LIMIT: RateLimitConfig = {
@@ -167,6 +169,7 @@ export class AuthMiddleware {
   private keyStore: ApiKeyStore;
   private rateLimiter: RateLimiter;
   private config: Required<AuthMiddlewareConfig>;
+  private authEnabled: boolean;
 
   constructor(config: AuthMiddlewareConfig = {}) {
     this.keyStore = new ApiKeyStore();
@@ -175,12 +178,26 @@ export class AuthMiddleware {
       requireAuth: config.requireAuth ?? true,
       rateLimit: config.rateLimit || DEFAULT_RATE_LIMIT,
       publicPaths: config.publicPaths ?? ['/health'],
+      trustProxy: config.trustProxy ?? false,
     };
 
-    // Warn on startup if auth is required but no keys are configured
+    // Auth is only enforced when both requireAuth is true AND keys exist.
+    // If requireAuth is true but no keys are configured, reject all requests
+    // to prevent accidentally running an open server.
+    this.authEnabled = this.config.requireAuth && this.keyStore.keyCount() > 0;
+
     if (this.config.requireAuth && this.keyStore.keyCount() === 0) {
-      logger.warn('Auth is enabled (requireAuth=true) but no API keys are configured. ' +
-        'Set API_KEY or API_KEYS environment variable, or all requests will be rejected.');
+      logger.error(
+        'CRITICAL: requireAuth=true but no API keys are configured. ' +
+        'ALL non-public requests will be rejected (503). ' +
+        'Set API_KEY or API_KEYS environment variable, or set requireAuth=false.'
+      );
+    }
+
+    if (this.authEnabled) {
+      logger.info(`Auth enabled: ${this.keyStore.keyCount()} API key(s) loaded.`);
+    } else if (!this.config.requireAuth) {
+      logger.warn('Auth disabled (requireAuth=false). All requests are open.');
     }
   }
 
@@ -198,12 +215,27 @@ export class AuthMiddleware {
   public async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<AuthContext | null> {
     const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
 
-    // ── 1. Public path bypass ──
-    if (this.config.publicPaths.some(p => url.pathname === p || url.pathname.startsWith(p + '/'))) {
+    // ── 1. Public path bypass (exact match only — no prefix wildcard) ──
+    if (this.config.publicPaths.some(p => url.pathname === p)) {
       return { authenticated: false, publicPath: true };
     }
 
-    // ── 2. Rate limiting ──
+    // ── 2. Auth required but no keys → reject all ──
+    if (this.config.requireAuth && this.keyStore.keyCount() === 0) {
+      res.writeHead(503, {
+        'Content-Type': 'application/json',
+        'Retry-After': '300',
+      });
+      res.end(JSON.stringify({
+        error: 'Service Unavailable',
+        message: 'Authentication is enabled but no API keys are configured. ' +
+          'Contact the administrator to set up API_KEY or API_KEYS.',
+      }));
+      logger.error('Request rejected: requireAuth=true but no keys configured.');
+      return null;
+    }
+
+    // ── 3. Rate limiting ──
     const clientId = this.getClientId(req);
     if (!this.rateLimiter.consume(clientId)) {
       const retryAfter = Math.ceil(this.rateLimiter.retryAfterMs(clientId) / 1000);
@@ -221,15 +253,15 @@ export class AuthMiddleware {
       return null;
     }
 
-    // ── 3. Auth check ──
+    // ── 4. Auth check ──
     const apiKey = extractApiKey(req);
 
-    if (this.config.requireAuth && this.keyStore.keyCount() > 0) {
+    if (this.authEnabled) {
       if (!apiKey || !this.keyStore.validate(apiKey)) {
         res.writeHead(401, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           error: 'Unauthorized',
-          message: 'Valid API key required. Provide via Authorization: Bearer <key> header or ?api_key= query parameter.',
+          message: 'Valid API key required. Provide via Authorization: Bearer <key> header.',
         }));
         logger.warn(`Authentication failed for client: ${clientId}`);
         return null;
@@ -250,11 +282,13 @@ export class AuthMiddleware {
 
   public addApiKey(key: string): void {
     this.keyStore.addKey(key);
+    this.authEnabled = this.config.requireAuth && this.keyStore.keyCount() > 0;
     logger.info('API key added programmatically.');
   }
 
   public revokeApiKey(key: string): void {
     this.keyStore.revokeKey(key);
+    this.authEnabled = this.config.requireAuth && this.keyStore.keyCount() > 0;
     logger.info('API key revoked.');
   }
 
@@ -262,10 +296,17 @@ export class AuthMiddleware {
     return this.keyStore.keyCount();
   }
 
+  public isAuthEnabled(): boolean {
+    return this.authEnabled;
+  }
+
   /**
-   * Derive a stable client identifier that does NOT leak key material.
-   * Uses a SHA-256 hash prefix of the API key — same key always maps to
-   * the same bucket, but a client cannot infer their key from the hash.
+   * Derive a stable client identifier.
+   *
+   * - If a valid Authorization header is present, hash the key prefix
+   *   so the same key always maps to the same bucket.
+   * - Otherwise use the socket's remote address.
+   * - x-forwarded-for is only trusted when `trustProxy` is explicitly enabled.
    */
   private getClientId(req: http.IncomingMessage): string {
     const authHeader = req.headers['authorization'];
@@ -275,23 +316,24 @@ export class AuthMiddleware {
       return `key:${hash}`;
     }
 
-    const forwarded = req.headers['x-forwarded-for'];
-    if (typeof forwarded === 'string') {
-      return `ip:${forwarded.split(',')[0].trim()}`;
+    // Only trust x-forwarded-for when explicitly behind a known proxy
+    if (this.config.trustProxy) {
+      const forwarded = req.headers['x-forwarded-for'];
+      if (typeof forwarded === 'string') {
+        return `ip:${forwarded.split(',')[0].trim()}`;
+      }
     }
 
     return `ip:${req.socket.remoteAddress || 'unknown'}`;
   }
 }
 
-// ── Helper: extract API key from request ──
+// ── Helper: extract API key from request (Authorization header only) ──
 
 export function extractApiKey(req: http.IncomingMessage): string | undefined {
   const authHeader = req.headers['authorization'];
   if (authHeader?.startsWith('Bearer ')) {
     return authHeader.slice(7);
   }
-
-  const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-  return url.searchParams.get('api_key') || undefined;
+  return undefined;
 }

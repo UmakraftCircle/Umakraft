@@ -4,18 +4,17 @@ import * as path from 'path';
 
 const logger = createLogger('SQLite-Database');
 
-let dbInstance: Database.Database | null = null;
+let dbPromise: Promise<Database.Database> | null = null;
 
 /**
  * Returns the better-sqlite3 Database instance, creating it if it doesn't exist.
- * better-sqlite3 is synchronous; this returns a Promise to keep the same public interface.
+ * Uses a shared init promise to prevent concurrent callers from opening
+ * multiple connections (race condition fix).
  */
 export function getDatabase(): Promise<Database.Database> {
-  return new Promise((resolve, reject) => {
-    if (dbInstance) {
-      return resolve(dbInstance);
-    }
+  if (dbPromise) return dbPromise;
 
+  dbPromise = new Promise((resolve, reject) => {
     const dbPath = path.resolve('platform.db');
     logger.info(`Initializing SQLite Database at: ${dbPath}`);
 
@@ -75,11 +74,13 @@ export function getDatabase(): Promise<Database.Database> {
 
       logger.info('Successfully connected to SQLite database.');
       logger.info('SQLite Tables successfully verified (including memory).');
-      dbInstance = db;
-      resolve(dbInstance);
+      resolve(db);
     } catch (err: any) {
       logger.error(`Failed to initialize SQLite database: ${err.message}`);
+      dbPromise = null; // reset so retry is possible
       reject(err);
     }
   });
+
+  return dbPromise;
 }

@@ -3,21 +3,47 @@ import type { GenerateOptions, AIService } from './index.js';
 
 const logger = createLogger('Providers');
 
-// ── Shared HTTP client ──
+// ── Custom HTTP error with status code ──
 
-async function apiPost(url: string, headers: Record<string, string>, body: any): Promise<any> {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...headers },
-    body: JSON.stringify(body)
-  });
-
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`API request failed (${response.status}): ${errText}`);
+class HttpError extends Error {
+  public statusCode: number;
+  constructor(statusCode: number, message: string) {
+    super(message);
+    this.name = 'HttpError';
+    this.statusCode = statusCode;
   }
+}
 
-  return response.json();
+// ── Shared HTTP client (with timeout) ──
+
+const DEFAULT_TIMEOUT_MS = 30_000; // 30 seconds
+
+async function apiPost(
+  url: string,
+  headers: Record<string, string>,
+  body: any,
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
+): Promise<any> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new HttpError(response.status, `API request failed (${response.status}): ${errText}`);
+    }
+
+    return response.json();
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // ── OpenAI Provider (also used for OpenAI-compatible APIs like Groq) ──
@@ -56,7 +82,7 @@ export class OpenAIProvider implements AIService {
     }
   }
 
-  /** Pick a random key. Use across retries for rate-limit failover. */
+  /** Pick a random key. Used across retries for rate-limit failover. */
   #pickKey(exclude?: string): string {
     const pool = exclude && this.keys.length > 1
       ? this.keys.filter(k => k !== exclude)
@@ -104,12 +130,11 @@ export class OpenAIProvider implements AIService {
     messages: any[],
     extra: Record<string, any>,
   ): Promise<string> {
-    let lastKey: string | undefined;
-    let lastError: Error | undefined;
+    let lastError: Error = new Error('No keys available for provider call');
 
     for (let attempt = 0; attempt < this.keys.length; attempt++) {
-      const key = this.#pickKey(attempt > 0 ? lastKey : undefined);
-      lastKey = key;
+      const key = this.#pickKey(attempt > 0 ? this.keys[(attempt - 1) % this.keys.length] : undefined);
+      const keySuffix = key.slice(-6);
 
       try {
         const result = await apiPost(
@@ -121,17 +146,33 @@ export class OpenAIProvider implements AIService {
       } catch (err: any) {
         lastError = err;
 
-        // 429 = rate limited → try next key
-        const isRateLimit = err.message?.includes('429');
+        // Rate limit (429) → try next key if available
+        const isRateLimit = err instanceof HttpError && err.statusCode === 429;
+
         if (isRateLimit && this.keys.length > 1 && attempt < this.keys.length - 1) {
-          logger.warn(`Key rate-limited (429), rotating to next key (attempt ${attempt + 2}/${this.keys.length})`);
+          logger.warn(
+            `Key ...${keySuffix} rate-limited (429), rotating to next key ` +
+            `(attempt ${attempt + 2}/${this.keys.length})`
+          );
           continue;
         }
+
+        // Network timeout / abort → retry with different key
+        const isTimeout = err.name === 'AbortError' || err.name === 'TimeoutError';
+
+        if (isTimeout && this.keys.length > 1 && attempt < this.keys.length - 1) {
+          logger.warn(
+            `Key ...${keySuffix} timed out, rotating to next key ` +
+            `(attempt ${attempt + 2}/${this.keys.length})`
+          );
+          continue;
+        }
+
         throw err;
       }
     }
 
-    throw lastError!;
+    throw lastError;
   }
 }
 

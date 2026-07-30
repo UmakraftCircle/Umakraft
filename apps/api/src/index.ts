@@ -41,9 +41,9 @@ const planStore = new Map<string, ExecutionPlan>();
 function jsonResponse(res: http.ServerResponse, status: number, data: any): void {
   res.writeHead(status, {
     'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Origin': process.env['CORS_ORIGIN'] || '',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key'
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
   });
   res.end(JSON.stringify(data));
 }
@@ -218,12 +218,15 @@ const server = http.createServer(async (req, res) => {
 
       logger.info(`Executing plan: ${planId}`);
       const PLAN_EXECUTION_TIMEOUT = 60_000; // 60 seconds
+      let timer: ReturnType<typeof setTimeout> | undefined;
       const executedPlan = await Promise.race([
         taskManager.executePlan(plan),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Plan execution timed out after 60 seconds')), PLAN_EXECUTION_TIMEOUT)
-        ),
-      ]);
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('Plan execution timed out after 60 seconds')), PLAN_EXECUTION_TIMEOUT);
+        }),
+      ]).finally(() => {
+        if (timer) clearTimeout(timer);
+      });
 
       const results = Array.from(executedPlan.tasks.values()).map(t => ({
         id: t.id,
@@ -253,8 +256,8 @@ const server = http.createServer(async (req, res) => {
     // ── 404 ──
     jsonResponse(res, 404, { error: 'Not Found', path });
   } catch (error: any) {
-    logger.error(`Request handler error: ${error.message}`);
-    jsonResponse(res, 500, { error: error.message || 'Internal Server Error' });
+    logger.error(`Request handler error: ${error.message}`, error.stack);
+    jsonResponse(res, 500, { error: 'Internal Server Error' });
   }
 });
 
