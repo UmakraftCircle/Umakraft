@@ -113,6 +113,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  try {
   const { path, params } = parseUrl(req);
 
   logger.info(`${req.method} ${path}`);
@@ -262,6 +263,10 @@ const server = http.createServer(async (req, res) => {
   } catch (error: any) {
     logger.error(`Request handler error: ${error.message}`, error.stack);
     jsonResponse(res, 500, { error: 'Internal Server Error' });
+  }
+  } catch (error: any) {
+    logger.error(`Request parsing error: ${error.message}`);
+    jsonResponse(res, 400, { error: 'Bad Request', message: 'Malformed request URL or headers' });
   }
 });
 

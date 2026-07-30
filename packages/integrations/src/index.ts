@@ -93,10 +93,10 @@ export const databaseStoreResult: ToolDefinition = {
           JSON.stringify(task.arguments || {}),
           JSON.stringify(task.dependencies || []),
           task.status,
-          task.result ? JSON.stringify(task.result) : null,
-          task.error || null,
-          task.retryCount || 0,
-          task.maxRetries || 3
+          task.result !== undefined ? JSON.stringify(task.result) : null,
+          task.error ?? null,
+          task.retryCount ?? 0,
+          task.maxRetries ?? 3
         );
       }
 
