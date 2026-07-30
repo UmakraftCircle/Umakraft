@@ -1,18 +1,18 @@
 /**
  * ToolRegistry Unit Tests (singleton-safe)
  */
-import { describe, it } from 'node:test';
+import { describe, it, before } from 'node:test';
 import assert from 'node:assert';
 
 describe('ToolRegistry', () => {
   let ToolRegistry: any;
+  let registry: any;
 
   before(async () => {
     const mod = await import('@ai-agent-platform/core');
     ToolRegistry = mod.ToolRegistry;
+    registry = ToolRegistry.getInstance();
   });
-
-  const registry = ToolRegistry.getInstance();
 
   describe('getInstance', () => {
     it('should return a singleton instance', () => {

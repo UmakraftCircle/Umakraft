@@ -273,9 +273,10 @@ export class RepoIndexer {
     const lines = content.split('\n');
 
     for (const { regex, kind, nameGroup } of PATTERNS) {
+      // Create a fresh copy per file — avoids global regex lastIndex corruption
+      const regexCopy = new RegExp(regex.source, regex.flags);
       let match;
-      const contentCopy = content; // use original for multi-line matches
-      while ((match = regex.exec(contentCopy)) !== null) {
+      while ((match = regexCopy.exec(content)) !== null) {
         const rawNames = match[nameGroup];
         if (!rawNames) continue;
 
@@ -401,8 +402,11 @@ export class RepoIndexer {
       const pkg = importSource.replace('@ai-agent-platform/', '');
       const candidates = [
         `packages/${pkg}/src/index.ts`,
-        `packages/${pkg}/index.ts`,
         `packages/${pkg}/src/index.js`,
+        `packages/${pkg}/index.ts`,
+        // Domains live under packages/domains/
+        `packages/domains/${pkg}/src/index.ts`,
+        `packages/domains/${pkg}/src/index.js`,
       ];
       for (const c of candidates) {
         if (this.files.has(c)) return c;

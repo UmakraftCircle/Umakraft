@@ -4,7 +4,7 @@
  * Tests failure observation recording, pattern matching, adaptation rule derivation,
  * and planner context generation.
  */
-import { describe, it, beforeEach } from 'node:test';
+import { describe, it, beforeEach, before } from 'node:test';
 import assert from 'node:assert';
 
 describe('LearningEngine', () => {

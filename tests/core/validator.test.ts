@@ -3,7 +3,7 @@
  * 
  * Tests Zod schemas for all core entities and Kahn's algorithm for DAG cycle detection.
  */
-import { describe, it } from 'node:test';
+import { describe, it, before } from 'node:test';
 import assert from 'node:assert';
 
 describe('Validator', () => {

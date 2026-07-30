@@ -16,8 +16,8 @@ COPY packages/domains/fan-tracker/package.json packages/domains/fan-tracker/tsco
 COPY packages/domains/pr-monitor/package.json packages/domains/pr-monitor/tsconfig.json packages/domains/pr-monitor/
 COPY apps/api/package.json apps/api/tsconfig.json apps/api/
 
-# Install dependencies
-RUN pnpm install --no-frozen-lockfile
+# Install dependencies (uses committed lockfile for reproducibility)
+RUN pnpm install --frozen-lockfile
 
 # Copy source
 COPY packages/shared/src packages/shared/src
@@ -53,12 +53,14 @@ COPY --from=builder /app/apps apps
 COPY --from=builder /app/package.json package.json
 COPY --from=builder /app/tsconfig.json tsconfig.json
 
-# Install tsx for running TypeScript in production
-RUN npm install -g tsx
-
 ENV NODE_ENV=production
 ENV PORT=3000
 
+USER node
 EXPOSE 3000
 
-CMD ["tsx", "apps/api/src/index.ts"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:3000/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); })"
+
+# Run compiled output, not TypeScript source
+CMD ["node", "--enable-source-maps", "apps/api/dist/index.js"]

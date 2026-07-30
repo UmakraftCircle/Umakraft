@@ -2,9 +2,9 @@
  * Auth Middleware for the API Server
  * 
  * Token-based authentication and rate limiting for the raw HTTP server.
- * Follows the platform principle: minimal but real — no framework, just middleware.
  */
 import * as http from 'http';
+import * as crypto from 'crypto';
 import { createLogger } from '@ai-agent-platform/shared';
 
 const logger = createLogger('Auth');
@@ -15,16 +15,12 @@ export interface AuthContext {
   authenticated: boolean;
   apiKey?: string;
   clientId?: string;
+  publicPath: boolean;   // true if request matched a public path (distinct from un-authenticated)
 }
 
 export interface RateLimitConfig {
-  windowMs: number;       // time window in milliseconds
-  maxRequests: number;     // max requests per window
-}
-
-export interface MiddlewareHandler {
-  (req: http.IncomingMessage, res: http.ServerResponse, ctx: AuthContext): Promise<boolean>;
-  // returns true to continue, false to stop (response already sent)
+  windowMs: number;
+  maxRequests: number;
 }
 
 // ── API Key Store ──
@@ -33,20 +29,20 @@ class ApiKeyStore {
   private keys: Set<string> = new Set();
 
   constructor() {
-    // Load from environment
     const envKey = process.env['API_KEY'];
     if (envKey) {
-      this.keys.add(envKey);
-      logger.info('Loaded 1 API key from API_KEY environment variable.');
+      this.keys.add(envKey.trim());
     }
 
-    // Load multiple keys from comma-separated env var
     const multiKeys = process.env['API_KEYS'];
     if (multiKeys) {
-      for (const key of multiKeys.split(',').map(k => k.trim()).filter(k => k.length > 0)) {
+      const split = multiKeys.split(',').map(k => k.trim()).filter(k => k.length > 0);
+      for (const key of split) {
         this.keys.add(key);
       }
-      logger.info(`Loaded ${multiKeys.split(',').length} API keys from API_KEYS.`);
+      logger.info(`Loaded ${split.length} API key(s) from API_KEYS.`);
+    } else if (envKey) {
+      logger.info('Loaded 1 API key from API_KEY.');
     }
   }
 
@@ -77,7 +73,8 @@ interface TokenBucket {
 class RateLimiter {
   private buckets: Map<string, TokenBucket> = new Map();
   private config: Required<RateLimitConfig>;
-  private refillRate: number; // tokens per millisecond
+  private refillRate: number;
+  private cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(config: RateLimitConfig) {
     this.config = {
@@ -85,11 +82,23 @@ class RateLimiter {
       maxRequests: config.maxRequests,
     };
     this.refillRate = config.maxRequests / config.windowMs;
+
+    // Periodic stale bucket cleanup — runs every 60 seconds
+    this.cleanupTimer = setInterval(() => this.cleanupStale(Date.now()), 60_000);
+    // Allow garbage collection of the timer if the instance is discarded
+    if (this.cleanupTimer.unref) this.cleanupTimer.unref();
   }
 
   /**
-   * Attempt to consume a token. Returns true if allowed, false if rate limited.
+   * Stop the cleanup timer. Call when shutting down the server.
    */
+  public destroy(): void {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
+    }
+  }
+
   public consume(clientId: string): boolean {
     const now = Date.now();
     let bucket = this.buckets.get(clientId);
@@ -99,14 +108,10 @@ class RateLimiter {
       this.buckets.set(clientId, bucket);
     }
 
-    // Refill tokens based on elapsed time
     const elapsed = now - bucket.lastRefill;
     const newTokens = elapsed * this.refillRate;
     bucket.tokens = Math.min(this.config.maxRequests, bucket.tokens + newTokens);
     bucket.lastRefill = now;
-
-    // Periodic cleanup: remove stale buckets
-    if (now % 60000 < 100) this.cleanupStale(now);
 
     if (bucket.tokens >= 1) {
       bucket.tokens -= 1;
@@ -116,9 +121,6 @@ class RateLimiter {
     return false;
   }
 
-  /**
-   * Get remaining tokens for a client (for info/debug).
-   */
   public remainingTokens(clientId: string): number {
     const bucket = this.buckets.get(clientId);
     if (!bucket) return this.config.maxRequests;
@@ -127,9 +129,6 @@ class RateLimiter {
     return Math.min(this.config.maxRequests, bucket.tokens + newTokens);
   }
 
-  /**
-   * Get time until next token is available (ms).
-   */
   public retryAfterMs(clientId: string): number {
     const bucket = this.buckets.get(clientId);
     if (!bucket || bucket.tokens >= 1) return 0;
@@ -138,10 +137,15 @@ class RateLimiter {
 
   private cleanupStale(now: number): void {
     const idleThreshold = 5 * 60 * 1000; // 5 min
+    let removed = 0;
     for (const [clientId, bucket] of this.buckets) {
       if (now - bucket.lastRefill > idleThreshold && bucket.tokens >= this.config.maxRequests * 0.9) {
         this.buckets.delete(clientId);
+        removed++;
       }
+    }
+    if (removed > 0) {
+      logger.debug(`Cleaned up ${removed} stale rate-limit buckets.`);
     }
   }
 }
@@ -149,14 +153,14 @@ class RateLimiter {
 // ── Auth Middleware ──
 
 export interface AuthMiddlewareConfig {
-  requireAuth?: boolean;     // if true, reject unauthenticated requests
+  requireAuth?: boolean;
   rateLimit?: RateLimitConfig;
-  publicPaths?: string[];    // paths that bypass auth (e.g. /health)
+  publicPaths?: string[];
 }
 
 const DEFAULT_RATE_LIMIT: RateLimitConfig = {
-  windowMs: 60 * 1000,       // 1 minute
-  maxRequests: 100,          // 100 requests per minute
+  windowMs: 60 * 1000,
+  maxRequests: 100,
 };
 
 export class AuthMiddleware {
@@ -172,18 +176,31 @@ export class AuthMiddleware {
       rateLimit: config.rateLimit || DEFAULT_RATE_LIMIT,
       publicPaths: config.publicPaths ?? ['/health'],
     };
+
+    // Warn on startup if auth is required but no keys are configured
+    if (this.config.requireAuth && this.keyStore.keyCount() === 0) {
+      logger.warn('Auth is enabled (requireAuth=true) but no API keys are configured. ' +
+        'Set API_KEY or API_KEYS environment variable, or all requests will be rejected.');
+    }
   }
 
   /**
-   * Main middleware handler. Call this at the top of every route handler.
-   * Returns AuthContext if request should proceed, or null if response was already sent.
+   * Stop background timers. Call during graceful shutdown.
+   */
+  public destroy(): void {
+    this.rateLimiter.destroy();
+  }
+
+  /**
+   * Main middleware handler. Returns AuthContext if request should proceed,
+   * or null if response was already sent (401/429).
    */
   public async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<AuthContext | null> {
     const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
 
     // ── 1. Public path bypass ──
     if (this.config.publicPaths.some(p => url.pathname === p || url.pathname.startsWith(p + '/'))) {
-      return { authenticated: false };
+      return { authenticated: false, publicPath: true };
     }
 
     // ── 2. Rate limiting ──
@@ -205,10 +222,7 @@ export class AuthMiddleware {
     }
 
     // ── 3. Auth check ──
-    const authHeader = req.headers['authorization'];
-    const apiKey = authHeader?.startsWith('Bearer ')
-      ? authHeader.slice(7)
-      : (url.searchParams.get('api_key') || undefined);
+    const apiKey = extractApiKey(req);
 
     if (this.config.requireAuth && this.keyStore.keyCount() > 0) {
       if (!apiKey || !this.keyStore.validate(apiKey)) {
@@ -228,42 +242,39 @@ export class AuthMiddleware {
 
     return {
       authenticated: !!apiKey,
-      apiKey: apiKey,
+      apiKey,
       clientId,
+      publicPath: false,
     };
   }
 
-  /**
-   * Add an API key programmatically.
-   */
   public addApiKey(key: string): void {
     this.keyStore.addKey(key);
     logger.info('API key added programmatically.');
   }
 
-  /**
-   * Revoke an API key.
-   */
   public revokeApiKey(key: string): void {
     this.keyStore.revokeKey(key);
     logger.info('API key revoked.');
   }
 
-  /**
-   * Get the number of registered API keys.
-   */
   public getKeyCount(): number {
     return this.keyStore.keyCount();
   }
 
+  /**
+   * Derive a stable client identifier that does NOT leak key material.
+   * Uses a SHA-256 hash prefix of the API key — same key always maps to
+   * the same bucket, but a client cannot infer their key from the hash.
+   */
   private getClientId(req: http.IncomingMessage): string {
-    // Use API key as client ID if available, otherwise fall back to IP
     const authHeader = req.headers['authorization'];
     if (authHeader?.startsWith('Bearer ')) {
-      return `key:${authHeader.slice(7).slice(0, 16)}`;
+      const apiKey = authHeader.slice(7);
+      const hash = crypto.createHash('sha256').update(apiKey).digest('hex').slice(0, 12);
+      return `key:${hash}`;
     }
 
-    // IP-based identification
     const forwarded = req.headers['x-forwarded-for'];
     if (typeof forwarded === 'string') {
       return `ip:${forwarded.split(',')[0].trim()}`;

@@ -103,6 +103,7 @@ export function getDatabase(): Promise<sqlite3.Database> {
             dbInstance = db;
             resolve(dbInstance);
           });
+        });
       });
     });
   });

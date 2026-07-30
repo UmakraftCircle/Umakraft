@@ -1,7 +1,7 @@
 import * as http from 'http';
 import { createLogger, PLATFORM_NAME, ExecutionPlan } from '@ai-agent-platform/shared';
 import { MockAIService } from '@ai-agent-platform/ai';
-import { toolRegistry, Planner, TaskManager } from '@ai-agent-platform/core';
+import { toolRegistry, Planner, TaskManager, MODELS } from '@ai-agent-platform/core';
 import { AuthMiddleware } from './auth.js';
 
 // Register all platform tools
@@ -31,7 +31,9 @@ const aiService = new MockAIService('claude-3-5-sonnet');
 const planner = new Planner(aiService, toolRegistry);
 const taskManager = new TaskManager(toolRegistry);
 
-// In-memory plan store (backed by SQLite on plan completion)
+// In-memory plan store (volatile — plans are persisted to SQLite via the database-store-result
+// tool on completion. On restart, only currently-executing plans are lost; completed plans
+// can be retrieved from the database.)
 const planStore = new Map<string, ExecutionPlan>();
 
 // ── JSON helpers ──
@@ -41,23 +43,45 @@ function jsonResponse(res: http.ServerResponse, status: number, data: any): void
     'Content-Type': 'application/json',
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type'
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key'
   });
   res.end(JSON.stringify(data));
 }
 
 async function readBody(req: http.IncomingMessage): Promise<any> {
   return new Promise((resolve, reject) => {
+    const MAX_BODY_SIZE = 1024 * 1024; // 1 MB
     let body = '';
-    req.on('data', (chunk) => { body += chunk; });
+    let size = 0;
+
+    // Safety timeout — abort if client stalls
+    const timer = setTimeout(() => {
+      req.destroy();
+      reject(new Error('Request body read timed out after 30 seconds'));
+    }, 30_000);
+
+    req.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > MAX_BODY_SIZE) {
+        req.destroy();
+        clearTimeout(timer);
+        reject(new Error(`Request body exceeds ${MAX_BODY_SIZE / 1024 / 1024}MB limit`));
+        return;
+      }
+      body += chunk.toString();
+    });
     req.on('end', () => {
+      clearTimeout(timer);
       try {
         resolve(body ? JSON.parse(body) : {});
       } catch {
         reject(new Error('Invalid JSON body'));
       }
     });
-    req.on('error', reject);
+    req.on('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
   });
 }
 
@@ -103,7 +127,7 @@ const server = http.createServer(async (req, res) => {
       jsonResponse(res, 200, {
         status: 'ok',
         platform: PLATFORM_NAME,
-        version: '1.0.0',
+        version: process.env['APP_VERSION'] || '1.0.0',
         uptime: process.uptime(),
         timestamp: new Date().toISOString()
       });
@@ -193,7 +217,13 @@ const server = http.createServer(async (req, res) => {
       }
 
       logger.info(`Executing plan: ${planId}`);
-      const executedPlan = await taskManager.executePlan(plan);
+      const PLAN_EXECUTION_TIMEOUT = 60_000; // 60 seconds
+      const executedPlan = await Promise.race([
+        taskManager.executePlan(plan),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Plan execution timed out after 60 seconds')), PLAN_EXECUTION_TIMEOUT)
+        ),
+      ]);
 
       const results = Array.from(executedPlan.tasks.values()).map(t => ({
         id: t.id,
@@ -216,7 +246,6 @@ const server = http.createServer(async (req, res) => {
 
     // ── GET /models — available AI models ──
     if (path === '/models' && req.method === 'GET') {
-      const { MODELS } = await import('@ai-agent-platform/core');
       jsonResponse(res, 200, { models: Object.values(MODELS) });
       return;
     }

@@ -11,7 +11,6 @@ export interface KnowledgeNode {
   label: string;
   description?: string;
   metadata?: Record<string, any>; // stored as JSON
-  embedding?: number[];           // optional vector for semantic search
   createdAt: string;
   updatedAt: string;
 }
@@ -56,9 +55,7 @@ export class KnowledgeGraph {
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
           );
-        `, (err) => {
-          if (err) return reject(err);
-        });
+        `, (err) => { if (err) return reject(err); });
 
         db.run(`
           CREATE TABLE IF NOT EXISTS knowledge_edges (
@@ -69,26 +66,23 @@ export class KnowledgeGraph {
             weight REAL DEFAULT 1.0,
             metadata TEXT,
             created_at TEXT NOT NULL,
+            UNIQUE(source_id, target_id, relationship),
             FOREIGN KEY (source_id) REFERENCES knowledge_nodes(id) ON DELETE CASCADE,
             FOREIGN KEY (target_id) REFERENCES knowledge_nodes(id) ON DELETE CASCADE
           );
-        `, (err) => {
-          if (err) return reject(err);
-        });
+        `, (err) => { if (err) return reject(err); });
 
-        // Index for fast graph traversal
         db.run(`
           CREATE INDEX IF NOT EXISTS idx_edges_source ON knowledge_edges(source_id);
-        `);
+        `, (err) => { if (err) return reject(err); });
         db.run(`
           CREATE INDEX IF NOT EXISTS idx_edges_target ON knowledge_edges(target_id);
-        `);
+        `, (err) => { if (err) return reject(err); });
         db.run(`
           CREATE INDEX IF NOT EXISTS idx_nodes_type ON knowledge_nodes(type);
-        `, (err) => {
-          if (err) return reject(err);
-          resolve();
-        });
+        `, (err) => { if (err) return reject(err); });
+
+        resolve();
       });
     });
 
@@ -224,7 +218,9 @@ export class KnowledgeGraph {
 
     await new Promise<void>((resolve, reject) => {
       db.serialize(() => {
-        db.run(`DELETE FROM knowledge_edges WHERE source_id = ? OR target_id = ?`, [id, id]);
+        db.run(`DELETE FROM knowledge_edges WHERE source_id = ? OR target_id = ?`, [id, id], (err) => {
+          if (err) return reject(err);
+        });
         db.run(`DELETE FROM knowledge_nodes WHERE id = ?`, [id], (err) => {
           if (err) return reject(err);
           resolve();

@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@ai-agent-platform/shared": "workspace:*",
+    "sqlite3": "^5.1.7",
     "better-sqlite3": "^13.0.2"
   },
   "devDependencies": {

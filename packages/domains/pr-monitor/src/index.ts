@@ -35,9 +35,9 @@ export interface PullRequest {
 export interface PRSummary {
   repo: string;
   totalOpen: number;
-  totalMerged: number;
-  totalClosed: number;
-  avgTimeToMerge: string;
+  totalMerged?: number;      // requires closed/merged PRs endpoint
+  totalClosed?: number;       // requires closed/merged PRs endpoint
+  avgTimeToMerge?: string;    // requires merged PR data
   topContributors: Array<{ author: string; count: number }>;
   stalePRs: PullRequest[];
   recentActivity: PullRequest[];
@@ -130,7 +130,7 @@ export class PRMonitorAPI {
       if (!this.token) throw new Error('No GitHub token configured');
 
       const response = await fetch(
-        `${this.baseUrl}/issues?filter=all&state=open&labels=needs-review`,
+        `${this.baseUrl}/search/issues?q=is:pr+review-requested:@me+type:pr+state:open&per_page=50`,
         {
           headers: {
             Accept: 'application/vnd.github+json',
@@ -141,11 +141,11 @@ export class PRMonitorAPI {
       );
 
       if (!response.ok) {
-        throw new Error(`GitHub API returned ${response.status}`);
+        throw new Error(`GitHub search API returned ${response.status}`);
       }
 
       const data = await response.json();
-      const requests: ReviewRequest[] = (data || [])
+      const requests: ReviewRequest[] = (data.items || [])
         .filter((issue: any) => issue.pull_request)
         .map((pr: any) => ({
           prId: String(pr.id),
@@ -195,9 +195,9 @@ export class PRMonitorAPI {
     const summary: PRSummary = {
       repo,
       totalOpen: openPRs.length,
-      totalMerged: 0,   // would need closed PRs endpoint
-      totalClosed: 0,
-      avgTimeToMerge: 'N/A',
+      totalMerged: undefined,   // requires closed PRs endpoint — not yet implemented
+      totalClosed: undefined,
+      avgTimeToMerge: undefined,
       topContributors,
       stalePRs,
       recentActivity: openPRs.slice(0, 10),

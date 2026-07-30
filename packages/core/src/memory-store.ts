@@ -57,6 +57,9 @@ export class MemoryStore {
       const db = await getDatabase();
       const rows = await new Promise<any[]>((resolve, reject) => {
         db.all(
+          // Latest 1000 observations — sufficient for pattern analysis.
+          // Historical data beyond this window is retained in the DB for
+          // direct SQL queries but not loaded into the engine at startup.
           `SELECT task_id, task_name, tool_slug, error_message, timestamp, context
            FROM learning_observations ORDER BY id DESC LIMIT 1000`,
           (err: Error | null, rows: any[]) => {
@@ -120,9 +123,9 @@ export class MemoryStore {
       await new Promise<void>((resolve, reject) => {
         const stmt = db.prepare(
           `INSERT INTO adaptation_rules (id, pattern, suggestion, occurrences, last_seen)
-           VALUES (?, ?, ?, ?, ?)
+           VALUES (?, ?, ?, 1, ?)
            ON CONFLICT(id) DO UPDATE SET
-             occurrences = occurrences + 1,
+             occurrences = adaptation_rules.occurrences + 1,
              last_seen = excluded.last_seen`
         );
         stmt.run(rule.id, rule.pattern, rule.suggestion, rule.occurrences, rule.lastSeen,

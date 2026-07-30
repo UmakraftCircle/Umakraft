@@ -96,10 +96,17 @@ export class CacheStore<T = any> {
   }
 
   /**
-   * Check if a key exists and is not expired.
+   * Check if a key exists and is not expired (read-only — does not affect stats).
    */
   public has(key: string): boolean {
-    return this.get(key) !== null;
+    const fullKey = this.nsKey(key);
+    const entry = this.store.get(fullKey);
+    if (!entry) return false;
+    if (Date.now() - entry.timestamp > entry.ttl) {
+      this.store.delete(fullKey);
+      return false;
+    }
+    return true;
   }
 
   /**
@@ -156,7 +163,7 @@ export class CacheStore<T = any> {
 
     for (const [key, entry] of this.store) {
       if (now - entry.timestamp <= entry.ttl) {
-        keys.push(key.replace(prefix, ''));
+        keys.push(key.slice(prefix.length));
       }
     }
 

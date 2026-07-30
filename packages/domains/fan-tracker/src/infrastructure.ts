@@ -3,7 +3,39 @@ import { CacheStore } from '@ai-agent-platform/core';
 
 const logger = createLogger('FanTrackerInfra');
 
-// ── Shared cache (replaces local Map-based implementation) ──
+// ── Rate Limiter (token bucket, 1 req/sec) ──
+
+class RateLimiter {
+  private tokens: number;
+  private lastRefill: number;
+  private readonly maxTokens: number;
+  private readonly refillRate: number; // tokens per ms
+
+  constructor(maxReqsPerSec = 1) {
+    this.maxTokens = maxReqsPerSec;
+    this.tokens = maxReqsPerSec;
+    this.lastRefill = Date.now();
+    this.refillRate = maxReqsPerSec / 1000;
+  }
+
+  async acquire(): Promise<void> {
+    while (true) {
+      const now = Date.now();
+      const elapsed = now - this.lastRefill;
+      this.tokens = Math.min(this.maxTokens, this.tokens + elapsed * this.refillRate);
+      this.lastRefill = now;
+
+      if (this.tokens >= 1) {
+        this.tokens -= 1;
+        return;
+      }
+      // Wait before retrying
+      await new Promise(r => setTimeout(r, 100));
+    }
+  }
+}
+
+// ── Shared cache ──
 
 const cache = new CacheStore({ namespace: 'fan-tracker', defaultTTL: 5 * 60 * 1000 });
 
@@ -12,195 +44,447 @@ const cache = new CacheStore({ namespace: 'fan-tracker', defaultTTL: 5 * 60 * 10
 export interface TrainerStats {
   trainerId: string;
   trainerName: string;
-  activeFans: number;
-  activeTier: 'C-Class' | 'B-Class' | 'A-Class' | 'S-Class' | 'SS-Class';
-  trend: 'upward_strong' | 'upward' | 'stable' | 'downward' | 'downward_strong';
-  supportPoints: number;
-  // Detailed metrics
-  horseCount: number;
-  supportCardCount: number;
-  g1Wins: number;
-  totalRaces: number;
-  winRate: number;
+  // Fan counts
+  totalFans: number;       // lifetime cumulative fans at latest update
+  monthlyFans: number;     // fans earned this month (total - starting baseline)
+  dailyGain: number;       // approximate gain in last 24h (from daily_fans)
+  weeklyGain: number;      // approximate gain in last 7 days
+  // Pre-computed gains from profile API (null when using circles fallback)
+  gain3d: number | null;
+  gain7d: number | null;
+  gain30d: number | null;
+  // Ranks  
+  monthlyRank: number | null;
+  rank3d: number | null;
+  rank7d: number | null;
+  rank30d: number | null;
+  // Activity
+  activeDays: number;
+  avgDaily: number | null;
+  avg3d: number | null;
+  avg7d: number | null;
+  // Tier (from rank thresholds)
+  clubRankTier: string;
+  // Previous club info
+  previousCircleName: string | null;
+  // Metadata
   updatedAt: string;
+  isActive: boolean;
 }
 
 export interface TrendAnalysis {
   trainerId: string;
   period: string;
-  growthVelocity: string;      // e.g. "12.4% weekly"
-  projectedTier: string;
-  recommendations: string[];
-  // Historical snapshots
+  gain: number;
+  rank: number | null;
+  avgFansPerDay: number | null;
+  growthVelocity: string;
   historicalFans: Array<{ date: string; count: number }>;
+}
+
+export interface RankThreshold {
+  rank_index: number;
+  name: string;
+  ranking_from: number | null;
+  ranking_to: number | null;
+  current_min_fans: number | null;
+  current_fans_per_day: number | null;
+  yesterday_min_fans: number | null;
+  daily_fans_delta: number | null;
 }
 
 // ── API Client ──
 
 export class FanTrackerAPI {
+  private circleId: string;
+  private apiKey: string;
   private baseUrl: string;
-  private apiKey?: string;
+  private limiter: RateLimiter;
 
-  constructor(baseUrl?: string, apiKey?: string) {
-    this.baseUrl = baseUrl || process.env['FAN_TRACKER_API_URL'] || 'https://api.umakraft.dev/tracker';
-    this.apiKey = apiKey || process.env['FAN_TRACKER_API_KEY'];
+  constructor(circleId?: string, apiKey?: string) {
+    this.circleId = circleId || process.env['UMAMOE_CIRCLE_ID'] || '974470619';
+    this.apiKey = apiKey || process.env['UMAMOE_API_KEY'] || '';
+    this.baseUrl = 'https://uma.moe';
+    this.limiter = new RateLimiter(1);
   }
 
-  /**
-   * Fetches live trainer statistics from the Umamusume fan tracker API.
-   * Uses caching to avoid rate limits during repeated reads.
-   */
-  public async fetchTrainerStats(trainerId: string): Promise<TrainerStats> {
-    const cacheKey = `trainer-stats:${trainerId}`;
-    const cached = cache.get<TrainerStats>(cacheKey);
-    if (cached) return cached;
+  // ────────────────────────────────────────────────────────────────
+  // Core: fetch circle with all members
+  // ────────────────────────────────────────────────────────────────
 
-    logger.info(`Fetching trainer stats for ${trainerId} from API...`);
+  private async apiGet<T>(path: string, cacheKey?: string, ttl?: number): Promise<T> {
+    if (cacheKey) {
+      const cached = cache.get<T>(cacheKey);
+      if (cached) return cached;
+    }
+
+    await this.limiter.acquire();
+
+    const headers: Record<string, string> = { 'Accept-Encoding': 'gzip, deflate' };
+    if (this.apiKey) headers['X-API-Key'] = this.apiKey;
+
+    const url = `${this.baseUrl}${path}`;
+    logger.debug(`API GET ${url}`);
+
+    const res = await fetch(url, {
+      headers,
+      signal: AbortSignal.timeout(15_000),
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`uma.moe API ${res.status} for ${path}: ${text.slice(0, 200)}`);
+    }
+
+    const data = await res.json() as T;
+    if (cacheKey) cache.set(cacheKey, data, ttl || 5 * 60 * 1000);
+    return data;
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // fetchTrainerStats: uses profile endpoint for rich data
+  // ────────────────────────────────────────────────────────────────
+
+  public async fetchTrainerStats(trainerId: string): Promise<TrainerStats> {
+    const cacheKey = `trainer-profile:${trainerId}`;
 
     try {
-      const headers: Record<string, string> = {};
-      if (this.apiKey) headers['Authorization'] = `Bearer ${this.apiKey}`;
-
-      const response = await fetch(`${this.baseUrl}/trainers/${trainerId}`, {
-        method: 'GET',
-        headers,
-        signal: AbortSignal.timeout(10000)
-      });
-
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new Error(`Trainer ${trainerId} not found in fan tracker database.`);
-        }
-        throw new Error(`Fan tracker API returned ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      const stats: TrainerStats = {
-        trainerId: data.trainer_id || trainerId,
-        trainerName: data.trainer_name || 'Unknown Trainer',
-        activeFans: data.active_fans || 0,
-        activeTier: this.normalizeTier(data.active_tier),
-        trend: data.trend || 'stable',
-        supportPoints: data.support_points || 0,
-        horseCount: data.horse_count || 0,
-        supportCardCount: data.support_card_count || 0,
-        g1Wins: data.g1_wins || 0,
-        totalRaces: data.total_races || 0,
-        winRate: data.win_rate || 0,
-        updatedAt: data.updated_at || new Date().toISOString()
-      };
-
-      cache.set(cacheKey, stats);
-      logger.info(`Successfully fetched stats for trainer ${trainerId}: ${stats.activeTier}, ${stats.activeFans} fans.`);
-      return stats;
+      const profile = await this.apiGet<any>(
+        `/api/v4/user/profile/${trainerId}`,
+        cacheKey,
+        5 * 60 * 1000, // 5 min TTL
+      );
+      return this.mapProfileToStats(trainerId, profile);
     } catch (error: any) {
-      logger.error(`API call failed for trainer ${trainerId}: ${error.message}`);
-
-      // Fallback to mock data for development resilience
-      logger.warn(`Falling back to mock data for trainer ${trainerId}.`);
-      const mockStats: TrainerStats = {
-        trainerId,
-        trainerName: `Trainer #${trainerId}`,
-        activeFans: 1420500,
-        activeTier: 'SS-Class',
-        trend: 'upward_strong',
-        supportPoints: 8520,
-        horseCount: 12,
-        supportCardCount: 5,
-        g1Wins: 42,
-        totalRaces: 320,
-        winRate: 0.68,
-        updatedAt: new Date().toISOString()
-      };
-
-      cache.set(cacheKey, mockStats, 30000); // shorter TTL for mock data
-      return mockStats;
+      logger.warn(`Profile fetch failed for ${trainerId}: ${error.message}. Falling back to circles data.`);
+      return this.fetchTrainerStatsFromCircle(trainerId);
     }
   }
 
   /**
-   * Analyzes fan trends over a specified period using historical data.
+   * Fallback: extract trainer stats from the circles endpoint when profile API fails.
    */
-  public async analyzeTrends(trainerId: string, period: string = 'weekly'): Promise<TrendAnalysis> {
-    const cacheKey = `trend-analysis:${trainerId}:${period}`;
-    const cached = cache.get<TrendAnalysis>(cacheKey);
-    if (cached) return cached;
+  private async fetchTrainerStatsFromCircle(trainerId: string): Promise<TrainerStats> {
+    const members = await this.fetchAllMembers();
+    const member = members.find(m => m.trainerId === trainerId);
 
-    logger.info(`Analyzing trends for trainer ${trainerId} over ${period} period...`);
+    if (member) return member;
+
+    // Last resort: mock
+    logger.warn(`Trainer ${trainerId} not found in circle. Using mock.`);
+    return this.generateMockStats(trainerId);
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // fetchAllMembers: get all members with computed stats (leaderboard)
+  // ────────────────────────────────────────────────────────────────
+
+  public async fetchAllMembers(): Promise<TrainerStats[]> {
+    const cacheKey = `circle-members:${this.circleId}`;
 
     try {
-      const headers: Record<string, string> = {};
-      if (this.apiKey) headers['Authorization'] = `Bearer ${this.apiKey}`;
-
-      const response = await fetch(
-        `${this.baseUrl}/trainers/${trainerId}/trends?period=${period}`,
-        { method: 'GET', headers, signal: AbortSignal.timeout(10000) }
+      const data = await this.apiGet<any>(
+        `/api/v4/circles?circle_id=${this.circleId}`,
+        cacheKey,
+        10 * 60 * 1000, // 10 min TTL
       );
 
-      if (!response.ok) {
-        throw new Error(`Trend API returned ${response.status}`);
+      const members = data.members || [];
+      const statsList: TrainerStats[] = [];
+
+      for (const m of members) {
+        const stats = this.mapCircleMemberToStats(m, data.circle);
+        if (stats.isActive) {
+          statsList.push(stats);
+        }
       }
 
-      const data = await response.json();
-      const analysis: TrendAnalysis = {
-        trainerId,
-        period,
-        growthVelocity: data.growth_velocity || '0%',
-        projectedTier: this.normalizeTier(data.projected_tier),
-        recommendations: data.recommendations || [],
-        historicalFans: (data.historical_fans || []).map((h: any) => ({
-          date: h.date,
-          count: h.count
-        }))
-      };
-
-      cache.set(cacheKey, analysis);
-      return analysis;
+      return statsList;
     } catch (error: any) {
-      logger.error(`Trend analysis failed for trainer ${trainerId}: ${error.message}`);
-
-      // Mock fallback
-      const mockAnalysis: TrendAnalysis = {
-        trainerId,
-        period,
-        growthVelocity: '12.4% weekly',
-        projectedTier: 'SS-Class',
-        recommendations: [
-          'Boost Support Card levels to sustain fan engagement',
-          'Participate in G1 Main Leagues to amplify point multiplier',
-          'Expand horse roster for coverage across race types'
-        ],
-        historicalFans: [
-          { date: new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10), count: 1380000 },
-          { date: new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10), count: 1402000 },
-          { date: new Date().toISOString().slice(0, 10), count: 1420500 }
-        ]
-      };
-
-      cache.set(cacheKey, mockAnalysis, 30000);
-      return mockAnalysis;
+      logger.error(`Circle fetch failed: ${error.message}. Using mock roster.`);
+      return this.getMockRoster().map(t => this.generateMockStats(t.trainerId));
     }
   }
 
-  /**
-   * Clears all cached entries — useful after data mutations.
-   */
-  public clearCache(): void {
-    cache.clear();
+  // ────────────────────────────────────────────────────────────────
+  // listAllTrainers: lightweight name+ID list (autocomplete)
+  // ────────────────────────────────────────────────────────────────
+
+  public async listAllTrainers(): Promise<Array<{ trainerId: string; trainerName: string; tier: string }>> {
+    const members = await this.fetchAllMembers();
+    return members.map(m => ({
+      trainerId: m.trainerId,
+      trainerName: m.trainerName,
+      tier: m.clubRankTier,
+    }));
   }
 
-  /**
-   * Returns cache statistics for monitoring.
-   */
+  // ────────────────────────────────────────────────────────────────
+  // analyzeTrends: uses profile fan_history for gain computation
+  // ────────────────────────────────────────────────────────────────
+
+  public async analyzeTrends(trainerId: string, period: string = 'weekly'): Promise<TrendAnalysis> {
+    const cacheKey = `trend:${trainerId}:${period}`;
+
+    try {
+      const profile = await this.apiGet<any>(
+        `/api/v4/user/profile/${trainerId}`,
+        cacheKey,
+        5 * 60 * 1000,
+      );
+
+      const fanHistory = profile.fan_history || {};
+      const rolling = fanHistory.rolling || {};
+      const monthly = (fanHistory.monthly || [])[0] || {};
+
+      const gainMap: Record<string, { gain: number; rank: number | null; avg: number }> = {
+        daily: { gain: rolling.gain_3d || 0, rank: rolling.rank_3d ?? null, avg: monthly.avg_3d || 0 },
+        weekly: { gain: rolling.gain_7d || 0, rank: rolling.rank_7d ?? null, avg: monthly.avg_7d || 0 },
+        monthly: { gain: monthly.monthly_gain || 0, rank: monthly.rank ?? null, avg: monthly.avg_monthly || 0 },
+      };
+
+      const p = gainMap[period] || gainMap.weekly;
+      const velocity = p.avg > 0
+        ? `${(p.gain / (p.avg * (period === 'monthly' ? 30 : period === 'weekly' ? 7 : 1)) * 100).toFixed(1)}% ${period}`
+        : 'N/A';
+
+      return {
+        trainerId,
+        period,
+        gain: p.gain,
+        rank: p.rank,
+        avgFansPerDay: p.avg,
+        growthVelocity: velocity,
+        historicalFans: [],
+      };
+    } catch (error: any) {
+      logger.warn(`Trend analysis failed for ${trainerId}: ${error.message}`);
+      return this.generateMockTrends(trainerId, period);
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // fetchRankThresholds: D through SS tier boundaries
+  // ────────────────────────────────────────────────────────────────
+
+  public async fetchRankThresholds(): Promise<RankThreshold[]> {
+    try {
+      const data = await this.apiGet<any>(
+        '/api/v4/circles/rank-thresholds',
+        'rank-thresholds',
+        30 * 60 * 1000, // 30 min TTL
+      );
+      return data.thresholds || [];
+    } catch (error: any) {
+      logger.warn(`Rank thresholds fetch failed: ${error.message}`);
+      return [];
+    }
+  }
+
+  public async getTierForRank(rank: number | null): Promise<string> {
+    if (rank === null || rank === undefined) return '?';
+    const thresholds = await this.fetchRankThresholds();
+    for (const t of thresholds) {
+      if (t.ranking_from !== null && t.ranking_to !== null &&
+        rank >= t.ranking_from && rank <= t.ranking_to) {
+        return t.name;
+      }
+    }
+    return '?';
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // Cache management
+  // ────────────────────────────────────────────────────────────────
+
+  public clearCache(): void {
+    cache.clear();
+    logger.info('Fan tracker cache cleared.');
+  }
+
   public getCacheStats() {
     return cache.getStats();
   }
 
-  private normalizeTier(tier: string | undefined): TrainerStats['activeTier'] {
-    const valid = ['C-Class', 'B-Class', 'A-Class', 'S-Class', 'SS-Class'];
-    return valid.includes(tier as string) ? (tier as TrainerStats['activeTier']) : 'C-Class';
+  // ────────────────────────────────────────────────────────────────
+  // Mappers: API response → TrainerStats
+  // ────────────────────────────────────────────────────────────────
+
+  private async mapProfileToStats(trainerId: string, profile: any): Promise<TrainerStats> {
+    const trainer = profile.trainer || {};
+    const circle = profile.circle || {};
+    const fanHistory = profile.fan_history || {};
+    const rolling = fanHistory.rolling || {};
+    const monthly = (fanHistory.monthly || [])[0] || {};
+    const alltime = fanHistory.alltime || {};
+
+    const monthlyRank = circle.monthly_rank ?? null;
+    const tier = await this.getTierForRank(monthlyRank);
+
+    return {
+      trainerId: String(trainerId),
+      trainerName: trainer.name || trainerId,
+      totalFans: alltime.total_fans || monthly.total_fans || 0,
+      monthlyFans: monthly.monthly_gain || 0,
+      dailyGain: rolling.gain_3d ? Math.round(rolling.gain_3d / 3) : 0,
+      weeklyGain: rolling.gain_7d || 0,
+      gain3d: rolling.gain_3d ?? null,
+      gain7d: rolling.gain_7d ?? null,
+      gain30d: rolling.gain_30d ?? null,
+      monthlyRank,
+      rank3d: rolling.rank_3d ?? null,
+      rank7d: rolling.rank_7d ?? null,
+      rank30d: rolling.rank_30d ?? null,
+      activeDays: monthly.active_days || 0,
+      avgDaily: monthly.avg_daily ?? null,
+      avg3d: monthly.avg_3d ?? null,
+      avg7d: monthly.avg_7d ?? null,
+      clubRankTier: tier,
+      previousCircleName: null,
+      updatedAt: new Date().toISOString(),
+      isActive: true,
+    };
+  }
+
+  private mapCircleMemberToStats(m: any, circle: any): TrainerStats {
+    const trainerId = String(m.viewer_id);
+    const dailyFans: number[] = m.daily_fans || [];
+
+    // Find last non-zero index (real data ends, zeros indicate future/no-data days)
+    let lastIdx = dailyFans.length - 1;
+    while (lastIdx >= 0 && dailyFans[lastIdx] === 0) lastIdx--;
+
+    const isActive = lastIdx >= 0 && dailyFans[lastIdx] > 0;
+    const totalFans = isActive ? dailyFans[lastIdx] : (dailyFans.find((f: number) => f > 0) || 0);
+
+    // Find starting baseline: first positive value, or zero after negative transfers
+    let startIdx = 0;
+    for (let i = 0; i <= lastIdx; i++) {
+      if (dailyFans[i] > 0) {
+        startIdx = i;
+        break;
+      }
+    }
+    const baselineFans = dailyFans[startIdx] > 0 ? dailyFans[startIdx] : 0;
+    const monthlyFans = totalFans > 0 ? totalFans - baselineFans : 0;
+
+    // Compute gains from daily array
+    const dailyGain = lastIdx >= 1 && dailyFans[lastIdx - 1] > 0
+      ? dailyFans[lastIdx] - dailyFans[lastIdx - 1] : 0;
+    const weeklyStartIdx = Math.max(0, lastIdx - 7);
+    const weeklyGain = lastIdx >= 7 && dailyFans[weeklyStartIdx] > 0
+      ? dailyFans[lastIdx] - dailyFans[weeklyStartIdx] : monthlyFans;
+
+    const activeDays = lastIdx >= 0 ? lastIdx + 1 : 0;
+
+    // Previous circle info (transfer detection)
+    const previousCircleName = m.previous_circle_name || null;
+
+    return {
+      trainerId,
+      trainerName: m.trainer_name || trainerId,
+      totalFans,
+      monthlyFans: Math.max(0, monthlyFans),
+      dailyGain: Math.max(0, dailyGain),
+      weeklyGain: Math.max(0, weeklyGain),
+      gain3d: null,   // not available from circles endpoint
+      gain7d: null,
+      gain30d: null,
+      monthlyRank: circle?.monthly_rank ?? null,
+      rank3d: null,
+      rank7d: null,
+      rank30d: null,
+      activeDays,
+      avgDaily: activeDays > 0 ? Math.round(monthlyFans / activeDays) : null,
+      avg3d: null,
+      avg7d: null,
+      clubRankTier: '?', // filled in later if needed
+      previousCircleName,
+      updatedAt: m.last_updated || new Date().toISOString(),
+      isActive,
+    };
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // Mock fallbacks (used when API is completely unavailable)
+  // ────────────────────────────────────────────────────────────────
+
+  private generateMockStats(trainerId: string): TrainerStats {
+    const roster = this.getMockRoster();
+    const entry = roster.find(t => t.trainerId === trainerId);
+    const name = entry?.trainerName || `Trainer #${trainerId}`;
+    const tier = entry?.tier || 'B-Class';
+    const seed = trainerId.split('').reduce((s, c) => s + c.charCodeAt(0), 0);
+    const baseFans = 500_000 + (seed % 1_500_000);
+    const gainPerDay = 500 + (seed % 8_000);
+
+    return {
+      trainerId,
+      trainerName: name,
+      totalFans: baseFans,
+      monthlyFans: gainPerDay * 29,
+      dailyGain: gainPerDay,
+      weeklyGain: gainPerDay * 7,
+      gain3d: gainPerDay * 3,
+      gain7d: gainPerDay * 7,
+      gain30d: gainPerDay * 30,
+      monthlyRank: null,
+      rank3d: null,
+      rank7d: null,
+      rank30d: null,
+      activeDays: 29,
+      avgDaily: gainPerDay,
+      avg3d: gainPerDay * 3,
+      avg7d: gainPerDay * 7,
+      clubRankTier: tier,
+      previousCircleName: null,
+      updatedAt: new Date().toISOString(),
+      isActive: true,
+    };
+  }
+
+  private generateMockTrends(trainerId: string, period: string): TrendAnalysis {
+    const stats = this.generateMockStats(trainerId);
+    const days = period === 'monthly' ? 30 : period === 'weekly' ? 7 : 1;
+    const gain = stats.dailyGain * days;
+
+    const historicalFans: Array<{ date: string; count: number }> = [];
+    const base = stats.totalFans - gain;
+    for (let d = 0; d <= days; d++) {
+      historicalFans.push({
+        date: new Date(Date.now() - (days - d) * 86400000).toISOString().slice(0, 10),
+        count: base + Math.round(gain * (d / days)),
+      });
+    }
+
+    return {
+      trainerId,
+      period,
+      gain,
+      rank: null,
+      avgFansPerDay: stats.dailyGain,
+      growthVelocity: `${((gain / stats.totalFans) * 100).toFixed(1)}% ${period === 'monthly' ? 'monthly' : period === 'weekly' ? 'weekly' : 'daily'}`,
+      historicalFans,
+    };
+  }
+
+  private getMockRoster(): Array<{ trainerId: string; trainerName: string; tier: string }> {
+    return [
+      { trainerId: 'trainer-01', trainerName: 'Silence Suzuka', tier: 'SS-Class' },
+      { trainerId: 'trainer-02', trainerName: 'Tokai Teio', tier: 'SS-Class' },
+      { trainerId: 'trainer-03', trainerName: 'Special Week', tier: 'S-Class' },
+      { trainerId: 'trainer-04', trainerName: 'El Condor Pasa', tier: 'S-Class' },
+      { trainerId: 'trainer-05', trainerName: 'Grass Wonder', tier: 'A-Class' },
+      { trainerId: 'trainer-06', trainerName: 'Mejiro McQueen', tier: 'A-Class' },
+      { trainerId: 'trainer-07', trainerName: 'Oguri Cap', tier: 'A-Class' },
+      { trainerId: 'trainer-08', trainerName: 'Symboli Rudolf', tier: 'B-Class' },
+      { trainerId: 'trainer-09', trainerName: 'Narita Brian', tier: 'B-Class' },
+      { trainerId: 'trainer-10', trainerName: 'T M Opera O', tier: 'B-Class' },
+      { trainerId: 'trainer-11', trainerName: 'Maruzensky', tier: 'C-Class' },
+      { trainerId: 'trainer-12', trainerName: 'Fuji Kiseki', tier: 'C-Class' },
+    ];
   }
 }
 
-// Singleton instance
+// Singleton
 export const fanTrackerAPI = new FanTrackerAPI();

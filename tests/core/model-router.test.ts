@@ -3,7 +3,7 @@
  * 
  * Tests model selection based on token count, cost ceiling, and capabilities.
  */
-import { describe, it } from 'node:test';
+import { describe, it, before } from 'node:test';
 import assert from 'node:assert';
 
 describe('ModelRouter', () => {
