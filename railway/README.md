@@ -17,6 +17,8 @@
 | `DISCORD_GUILD_ID` | Your Discord server (guild) ID |
 | `UMAMOE_API_KEY` | Your uma.moe API key |
 | `UMAMOE_CIRCLE_ID` | Your uma.moe circle ID |
+| `TURSO_URL` | Turso database URL (e.g. `libsql://db-name.turso.io`) |
+| `TURSO_AUTH_TOKEN` | Turso auth token (from dashboard → Connect) |
 | `PORT` | Leave empty (Railway sets this automatically) |
 
 ## How to Deploy
@@ -37,6 +39,8 @@ health.js → dummy HTTP server (200 OK)
 spawns → node_modules/.bin/tsx apps/discord/src/index.ts
     ↓
 Discord Gateway (WebSocket)
+    ↓
+Turso (trainer_links table) — persistent, survives redeploys
 ```
 
 The bot doesn't expose an HTTP port itself — it connects OUT to Discord's Gateway.

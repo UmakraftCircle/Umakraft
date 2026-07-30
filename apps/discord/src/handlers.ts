@@ -6,34 +6,9 @@ import {
 } from 'discord.js';
 import { fanTrackerAPI, TrainerStats } from '@ai-agent-platform/fan-tracker';
 import { createLogger } from '@ai-agent-platform/shared';
-import * as fs from 'fs/promises';
-import * as path from 'path';
+import { trainerLinkStore, type TrainerLink } from '@ai-agent-platform/integrations';
 
 const logger = createLogger('Discord-Handlers');
-
-// ── Link store (JSON file) ──
-
-const LINKS_FILE = path.resolve('trainer-links.json');
-
-interface TrainerLink {
-  discordUserId: string;
-  trainerId: string;
-  trainerName: string;
-  linkedAt: string;
-}
-
-async function loadLinks(): Promise<TrainerLink[]> {
-  try {
-    const raw = await fs.readFile(LINKS_FILE, 'utf-8');
-    return JSON.parse(raw);
-  } catch {
-    return [];
-  }
-}
-
-async function saveLinks(links: TrainerLink[]): Promise<void> {
-  await fs.writeFile(LINKS_FILE, JSON.stringify(links, null, 2), 'utf-8');
-}
 
 // ── Helpers ──
 
@@ -82,14 +57,14 @@ export async function handleSync(interaction: ChatInputCommandInteraction) {
 
   // Warm cache by fetching all members
   const members = await fanTrackerAPI.fetchAllMembers();
-  const links = await loadLinks();
+  const linkCount = await trainerLinkStore.count();
 
   logger.info(`Sync: cleared cache, fetched ${members.length} active members from UmaKraft.`);
 
   await interaction.editReply(
     `✅ **Sync complete!**\n` +
     `Fetched **${members.length} active members** from UmaKraft.\n` +
-    `Linked Discord users: **${links.length}**\n` +
+    `Linked Discord users: **${linkCount}**\n` +
     `Top fan: **${members[0]?.trainerName || 'N/A'}** — ${members[0] ? formatFans(members[0].totalFans) : 'N/A'} fans`
   );
 }
@@ -101,8 +76,7 @@ export async function handleFansGain(interaction: ChatInputCommandInteraction) {
   await interaction.deferReply();
 
   // Find linked trainer
-  const links = await loadLinks();
-  const link = links.find(l => l.discordUserId === interaction.user.id);
+  const link = await trainerLinkStore.getByDiscordUser(interaction.user.id);
   if (!link) {
     await interaction.editReply(
       '⚠️ You are not linked to a trainer yet. Ask an admin to use `/link add` to connect you.'
@@ -223,25 +197,15 @@ export async function handleLinkAdd(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  const links = await loadLinks();
-  const existingUser = links.find(l => l.discordUserId === user.id);
+  const existing = await trainerLinkStore.getByDiscordUser(user.id);
+  await trainerLinkStore.upsert({
+    discordUserId: user.id,
+    trainerId,
+    trainerName,
+    linkedAt: new Date().toISOString(),
+  });
 
-  if (existingUser) {
-    existingUser.trainerId = trainerId;
-    existingUser.trainerName = trainerName;
-    existingUser.linkedAt = new Date().toISOString();
-  } else {
-    links.push({
-      discordUserId: user.id,
-      trainerId,
-      trainerName,
-      linkedAt: new Date().toISOString(),
-    });
-  }
-
-  await saveLinks(links);
-
-  const verb = existingUser ? 'Updated' : 'Linked';
+  const verb = existing ? 'Updated' : 'Linked';
   logger.info(`${verb} Discord user ${user.tag} → trainer ${trainerName} (${trainerId})`);
 
   await interaction.reply(
@@ -259,16 +223,12 @@ export async function handleLinkRemove(interaction: ChatInputCommandInteraction)
   }
 
   const user = interaction.options.getUser('user', true);
-  const links = await loadLinks();
 
-  const idx = links.findIndex(l => l.discordUserId === user.id);
-  if (idx === -1) {
+  const removed = await trainerLinkStore.remove(user.id);
+  if (!removed) {
     await interaction.reply({ content: `⚠️ <@${user.id}> is not linked to any trainer.`, ephemeral: true });
     return;
   }
-
-  const removed = links.splice(idx, 1)[0];
-  await saveLinks(links);
 
   logger.info(`Unlinked Discord user ${user.tag} from trainer ${removed.trainerName}`);
   await interaction.reply(
@@ -280,7 +240,7 @@ export async function handleLinkRemove(interaction: ChatInputCommandInteraction)
 // ── /link list ────────────────────────────────────────────
 
 export async function handleLinkList(interaction: ChatInputCommandInteraction) {
-  const links = await loadLinks();
+  const links = await trainerLinkStore.getAll();
 
   if (links.length === 0) {
     await interaction.reply('📭 No Discord ↔ trainer links configured yet. Admins can use `/link add`.');
