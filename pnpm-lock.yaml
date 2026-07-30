@@ -91,6 +91,9 @@ importers:
       '@ai-agent-platform/integrations':
         specifier: workspace:*
         version: link:../../packages/integrations
+      '@ai-agent-platform/pr-monitor':
+        specifier: workspace:*
+        version: link:../../packages/domains/pr-monitor
       '@ai-agent-platform/shared':
         specifier: workspace:*
         version: link:../../packages/shared

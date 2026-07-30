@@ -50,7 +50,7 @@ export class CacheStore<T = any> {
   /**
    * Retrieve a cached value. Returns null on miss or expiry.
    */
-  public get(key: string): T | null {
+  public get<U = T>(key: string): U | null {
     const fullKey = this.nsKey(key);
     const entry = this.store.get(fullKey);
 
@@ -71,7 +71,7 @@ export class CacheStore<T = any> {
     entry.lastAccess = Date.now();
     this.hits++;
     logger.debug(`Cache HIT: ${fullKey}`);
-    return entry.data;
+    return entry.data as unknown as U;
   }
 
   /**

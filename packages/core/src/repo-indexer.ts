@@ -301,7 +301,7 @@ export class RepoIndexer {
             pos += lines[i].length + 1;
           }
 
-          const isExported = kind === 'export' || contentCopy.substring(match.index, match.index + 7) === 'export ';
+          const isExported = kind === 'export' || content.substring(match.index, match.index + 7) === 'export ';
 
           symbols.push({
             name: cleanName,

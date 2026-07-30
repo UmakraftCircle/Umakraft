@@ -43,49 +43,37 @@ export class KnowledgeGraph {
     if (this.initialized) return;
 
     const db = await getDatabase();
-    await new Promise<void>((resolve, reject) => {
-      db.serialize(() => {
-        db.run(`
-          CREATE TABLE IF NOT EXISTS knowledge_nodes (
-            id TEXT PRIMARY KEY,
-            type TEXT NOT NULL,
-            label TEXT NOT NULL,
-            description TEXT,
-            metadata TEXT,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-          );
-        `, (err) => { if (err) return reject(err); });
 
-        db.run(`
-          CREATE TABLE IF NOT EXISTS knowledge_edges (
-            id TEXT PRIMARY KEY,
-            source_id TEXT NOT NULL,
-            target_id TEXT NOT NULL,
-            relationship TEXT NOT NULL,
-            weight REAL DEFAULT 1.0,
-            metadata TEXT,
-            created_at TEXT NOT NULL,
-            UNIQUE(source_id, target_id, relationship),
-            FOREIGN KEY (source_id) REFERENCES knowledge_nodes(id) ON DELETE CASCADE,
-            FOREIGN KEY (target_id) REFERENCES knowledge_nodes(id) ON DELETE CASCADE
-          );
-        `, (err) => { if (err) return reject(err); });
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS knowledge_nodes (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        label TEXT NOT NULL,
+        description TEXT,
+        metadata TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
 
-        db.run(`
-          CREATE INDEX IF NOT EXISTS idx_edges_source ON knowledge_edges(source_id);
-        `, (err) => { if (err) return reject(err); });
-        db.run(`
-          CREATE INDEX IF NOT EXISTS idx_edges_target ON knowledge_edges(target_id);
-        `, (err) => { if (err) return reject(err); });
-        db.run(`
-          CREATE INDEX IF NOT EXISTS idx_nodes_type ON knowledge_nodes(type);
-        `, (err) => {
-          if (err) return reject(err);
-          resolve();
-        });
-      });
-    });
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS knowledge_edges (
+        id TEXT PRIMARY KEY,
+        source_id TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        relationship TEXT NOT NULL,
+        weight REAL DEFAULT 1.0,
+        metadata TEXT,
+        created_at TEXT NOT NULL,
+        UNIQUE(source_id, target_id, relationship),
+        FOREIGN KEY (source_id) REFERENCES knowledge_nodes(id) ON DELETE CASCADE,
+        FOREIGN KEY (target_id) REFERENCES knowledge_nodes(id) ON DELETE CASCADE
+      );
+    `);
+
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_edges_source ON knowledge_edges(source_id);`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_edges_target ON knowledge_edges(target_id);`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_nodes_type ON knowledge_nodes(type);`);
 
     logger.info('Knowledge Graph tables initialized.');
     this.initialized = true;
@@ -106,29 +94,21 @@ export class KnowledgeGraph {
       updatedAt: node.updatedAt || now,
     };
 
-    await new Promise<void>((resolve, reject) => {
-      const stmt = db.prepare(`
-        INSERT INTO knowledge_nodes (id, type, label, description, metadata, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-          type = excluded.type,
-          label = excluded.label,
-          description = excluded.description,
-          metadata = excluded.metadata,
-          updated_at = excluded.updated_at
-      `);
-      stmt.run(
-        result.id, result.type, result.label,
-        result.description || null,
-        result.metadata ? JSON.stringify(result.metadata) : null,
-        result.createdAt, result.updatedAt,
-        (err: Error | null) => {
-          stmt.finalize();
-          if (err) return reject(err);
-          resolve();
-        }
-      );
-    });
+    db.prepare(`
+      INSERT INTO knowledge_nodes (id, type, label, description, metadata, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        type = excluded.type,
+        label = excluded.label,
+        description = excluded.description,
+        metadata = excluded.metadata,
+        updated_at = excluded.updated_at
+    `).run(
+      result.id, result.type, result.label,
+      result.description || null,
+      result.metadata ? JSON.stringify(result.metadata) : null,
+      result.createdAt, result.updatedAt
+    );
 
     logger.debug(`Upserted knowledge node: ${node.id} (${node.type}: ${node.label})`);
     return result;
@@ -140,20 +120,9 @@ export class KnowledgeGraph {
   public async getNode(id: string): Promise<KnowledgeNode | null> {
     await this.init();
     const db = await getDatabase();
-
-    const rows = await new Promise<any[]>((resolve, reject) => {
-      db.all(
-        `SELECT * FROM knowledge_nodes WHERE id = ?`,
-        [id],
-        (err: Error | null, rows: any[]) => {
-          if (err) return reject(err);
-          resolve(rows || []);
-        }
-      );
-    });
-
-    if (rows.length === 0) return null;
-    return this.rowToNode(rows[0]);
+    const row = db.prepare(`SELECT * FROM knowledge_nodes WHERE id = ?`).get(id) as any;
+    if (!row) return null;
+    return this.rowToNode(row);
   }
 
   /**
@@ -173,13 +142,7 @@ export class KnowledgeGraph {
 
     sql += ` ORDER BY updated_at DESC LIMIT 50`;
 
-    const rows = await new Promise<any[]>((resolve, reject) => {
-      db.all(sql, params, (err: Error | null, rows: any[]) => {
-        if (err) return reject(err);
-        resolve(rows || []);
-      });
-    });
-
+    const rows = db.prepare(sql).all(...params) as any[];
     return rows.map(r => this.rowToNode(r));
   }
 
@@ -200,13 +163,7 @@ export class KnowledgeGraph {
 
     sql += ` ORDER BY updated_at DESC`;
 
-    const rows = await new Promise<any[]>((resolve, reject) => {
-      db.all(sql, params, (err: Error | null, rows: any[]) => {
-        if (err) return reject(err);
-        resolve(rows || []);
-      });
-    });
-
+    const rows = db.prepare(sql).all(...params) as any[];
     return rows.map(r => this.rowToNode(r));
   }
 
@@ -216,19 +173,8 @@ export class KnowledgeGraph {
   public async deleteNode(id: string): Promise<void> {
     await this.init();
     const db = await getDatabase();
-
-    await new Promise<void>((resolve, reject) => {
-      db.serialize(() => {
-        db.run(`DELETE FROM knowledge_edges WHERE source_id = ? OR target_id = ?`, [id, id], (err) => {
-          if (err) return reject(err);
-        });
-        db.run(`DELETE FROM knowledge_nodes WHERE id = ?`, [id], (err) => {
-          if (err) return reject(err);
-          resolve();
-        });
-      });
-    });
-
+    db.prepare(`DELETE FROM knowledge_edges WHERE source_id = ? OR target_id = ?`).run(id, id);
+    db.prepare(`DELETE FROM knowledge_nodes WHERE id = ?`).run(id);
     logger.debug(`Deleted knowledge node: ${id}`);
   }
 
@@ -243,29 +189,17 @@ export class KnowledgeGraph {
     const id = `edge-${edge.sourceId}-${edge.targetId}-${edge.relationship}-${Date.now()}`;
     const now = new Date().toISOString();
 
-    const result: KnowledgeEdge = {
-      ...edge,
-      id,
-      createdAt: now,
-    };
+    const result: KnowledgeEdge = { ...edge, id, createdAt: now };
 
-    await new Promise<void>((resolve, reject) => {
-      const stmt = db.prepare(`
-        INSERT INTO knowledge_edges (id, source_id, target_id, relationship, weight, metadata, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `);
-      stmt.run(
-        result.id, result.sourceId, result.targetId, result.relationship,
-        result.weight ?? 1.0,
-        result.metadata ? JSON.stringify(result.metadata) : null,
-        result.createdAt,
-        (err: Error | null) => {
-          stmt.finalize();
-          if (err) return reject(err);
-          resolve();
-        }
-      );
-    });
+    db.prepare(`
+      INSERT INTO knowledge_edges (id, source_id, target_id, relationship, weight, metadata, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      result.id, result.sourceId, result.targetId, result.relationship,
+      result.weight ?? 1.0,
+      result.metadata ? JSON.stringify(result.metadata) : null,
+      result.createdAt
+    );
 
     logger.debug(`Added knowledge edge: ${result.id} (${result.sourceId} -[${result.relationship}]-> ${result.targetId})`);
     return result;
@@ -279,25 +213,15 @@ export class KnowledgeGraph {
     const db = await getDatabase();
 
     let sql: string;
-    const params: any[] = [];
+    let rows: any[];
 
     if (direction === 'inbound') {
-      sql = `SELECT * FROM knowledge_edges WHERE target_id = ?`;
+      rows = db.prepare(`SELECT * FROM knowledge_edges WHERE target_id = ?`).all(nodeId) as any[];
     } else if (direction === 'outbound') {
-      sql = `SELECT * FROM knowledge_edges WHERE source_id = ?`;
+      rows = db.prepare(`SELECT * FROM knowledge_edges WHERE source_id = ?`).all(nodeId) as any[];
     } else {
-      sql = `SELECT * FROM knowledge_edges WHERE source_id = ? OR target_id = ?`;
-      params.push(nodeId);
+      rows = db.prepare(`SELECT * FROM knowledge_edges WHERE source_id = ? OR target_id = ?`).all(nodeId, nodeId) as any[];
     }
-
-    params.unshift(nodeId);
-
-    const rows = await new Promise<any[]>((resolve, reject) => {
-      db.all(sql, params, (err: Error | null, rows: any[]) => {
-        if (err) return reject(err);
-        resolve(rows || []);
-      });
-    });
 
     return rows.map(r => this.rowToEdge(r));
   }
@@ -308,13 +232,7 @@ export class KnowledgeGraph {
   public async deleteEdge(id: string): Promise<void> {
     await this.init();
     const db = await getDatabase();
-
-    await new Promise<void>((resolve, reject) => {
-      db.run(`DELETE FROM knowledge_edges WHERE id = ?`, [id], (err) => {
-        if (err) return reject(err);
-        resolve();
-      });
-    });
+    db.prepare(`DELETE FROM knowledge_edges WHERE id = ?`).run(id);
   }
 
   // ── Traversal ──
@@ -341,12 +259,9 @@ export class KnowledgeGraph {
         const edges = await this.getEdges(nodeId);
         results.push({ node, edges, depth });
 
-        // Enqueue neighbors
         for (const edge of edges) {
           const neighbor = edge.sourceId === nodeId ? edge.targetId : edge.sourceId;
-          if (!visited.has(neighbor)) {
-            nextFrontier.push(neighbor);
-          }
+          if (!visited.has(neighbor)) nextFrontier.push(neighbor);
         }
       }
 
@@ -381,7 +296,6 @@ export class KnowledgeGraph {
           parent.set(neighbor, { nodeId: current, edge });
 
           if (neighbor === toId) {
-            // Reconstruct path
             const path: KnowledgeEdge[] = [];
             let step = neighbor;
             while (step !== fromId) {
@@ -397,7 +311,7 @@ export class KnowledgeGraph {
       }
     }
 
-    return null; // no path found
+    return null;
   }
 
   // ── Statistics ──
@@ -414,12 +328,10 @@ export class KnowledgeGraph {
     await this.init();
     const db = await getDatabase();
 
-    const [nodeRows, edgeRows, typeRows, relRows] = await Promise.all([
-      new Promise<any[]>((res, rej) => db.all(`SELECT COUNT(*) as c FROM knowledge_nodes`, (e, r) => e ? rej(e) : res(r || []))),
-      new Promise<any[]>((res, rej) => db.all(`SELECT COUNT(*) as c FROM knowledge_edges`, (e, r) => e ? rej(e) : res(r || []))),
-      new Promise<any[]>((res, rej) => db.all(`SELECT type, COUNT(*) as c FROM knowledge_nodes GROUP BY type`, (e, r) => e ? rej(e) : res(r || []))),
-      new Promise<any[]>((res, rej) => db.all(`SELECT relationship, COUNT(*) as c FROM knowledge_edges GROUP BY relationship`, (e, r) => e ? rej(e) : res(r || []))),
-    ]);
+    const nodeRow = db.prepare(`SELECT COUNT(*) as c FROM knowledge_nodes`).get() as any;
+    const edgeRow = db.prepare(`SELECT COUNT(*) as c FROM knowledge_edges`).get() as any;
+    const typeRows = db.prepare(`SELECT type, COUNT(*) as c FROM knowledge_nodes GROUP BY type`).all() as any[];
+    const relRows = db.prepare(`SELECT relationship, COUNT(*) as c FROM knowledge_edges GROUP BY relationship`).all() as any[];
 
     const byType: Record<string, number> = {};
     for (const r of typeRows) byType[r.type] = r.c;
@@ -428,8 +340,8 @@ export class KnowledgeGraph {
     for (const r of relRows) byRelationship[r.relationship] = r.c;
 
     return {
-      totalNodes: nodeRows[0]?.c || 0,
-      totalEdges: edgeRows[0]?.c || 0,
+      totalNodes: nodeRow?.c || 0,
+      totalEdges: edgeRow?.c || 0,
       byType,
       byRelationship,
     };
@@ -441,17 +353,8 @@ export class KnowledgeGraph {
   public async reset(): Promise<void> {
     await this.init();
     const db = await getDatabase();
-
-    await new Promise<void>((resolve, reject) => {
-      db.serialize(() => {
-        db.run(`DELETE FROM knowledge_edges`);
-        db.run(`DELETE FROM knowledge_nodes`, (err) => {
-          if (err) return reject(err);
-          resolve();
-        });
-      });
-    });
-
+    db.prepare(`DELETE FROM knowledge_edges`).run();
+    db.prepare(`DELETE FROM knowledge_nodes`).run();
     logger.info('Knowledge Graph reset — all nodes and edges cleared.');
   }
 

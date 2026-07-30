@@ -6,7 +6,7 @@ const logger = createLogger('MemoryStore');
 
 /**
  * Persistent Memory Store backed by SQLite.
- * 
+ *
  * Survives process restarts — the Learning Engine's observations and
  * adaptation rules persist across deployments so lessons are never lost.
  */
@@ -30,19 +30,10 @@ export class MemoryStore {
   public async saveObservation(obs: FailureObservation): Promise<void> {
     try {
       const db = await getDatabase();
-      await new Promise<void>((resolve, reject) => {
-        const stmt = db.prepare(
-          `INSERT INTO learning_observations (task_id, task_name, tool_slug, error_message, timestamp, context)
-           VALUES (?, ?, ?, ?, ?, ?)`
-        );
-        stmt.run(obs.taskId, obs.taskName, obs.toolSlug, obs.errorMessage, obs.timestamp, obs.context || null,
-          (err: Error | null) => {
-            stmt.finalize();
-            if (err) return reject(err);
-            resolve();
-          }
-        );
-      });
+      db.prepare(
+        `INSERT INTO learning_observations (task_id, task_name, tool_slug, error_message, timestamp, context)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      ).run(obs.taskId, obs.taskName, obs.toolSlug, obs.errorMessage, obs.timestamp, obs.context || null);
       logger.debug(`Saved observation for task [${obs.taskId}]`);
     } catch (err: any) {
       logger.error(`Failed to save observation: ${err.message}`);
@@ -55,19 +46,10 @@ export class MemoryStore {
   public async loadObservations(): Promise<FailureObservation[]> {
     try {
       const db = await getDatabase();
-      const rows = await new Promise<any[]>((resolve, reject) => {
-        db.all(
-          // Latest 1000 observations — sufficient for pattern analysis.
-          // Historical data beyond this window is retained in the DB for
-          // direct SQL queries but not loaded into the engine at startup.
-          `SELECT task_id, task_name, tool_slug, error_message, timestamp, context
-           FROM learning_observations ORDER BY id DESC LIMIT 1000`,
-          (err: Error | null, rows: any[]) => {
-            if (err) return reject(err);
-            resolve(rows || []);
-          }
-        );
-      });
+      const rows = db.prepare(
+        `SELECT task_id, task_name, tool_slug, error_message, timestamp, context
+         FROM learning_observations ORDER BY id DESC LIMIT 1000`
+      ).all() as any[];
 
       return rows.map((r: any) => ({
         taskId: r.task_id,
@@ -84,23 +66,17 @@ export class MemoryStore {
   }
 
   /**
-   * Get failure stats for a specific tool — useful for targeted debugging.
+   * Get failure stats per tool — useful for targeted debugging.
    */
   public async getToolFailureStats(): Promise<Array<{ toolSlug: string; count: number; lastSeen: string }>> {
     try {
       const db = await getDatabase();
-      const rows = await new Promise<any[]>((resolve, reject) => {
-        db.all(
-          `SELECT tool_slug, COUNT(*) as count, MAX(timestamp) as last_seen
-           FROM learning_observations
-           GROUP BY tool_slug
-           ORDER BY count DESC`,
-          (err: Error | null, rows: any[]) => {
-            if (err) return reject(err);
-            resolve(rows || []);
-          }
-        );
-      });
+      const rows = db.prepare(
+        `SELECT tool_slug, COUNT(*) as count, MAX(timestamp) as last_seen
+         FROM learning_observations
+         GROUP BY tool_slug
+         ORDER BY count DESC`
+      ).all() as any[];
       return rows.map((r: any) => ({
         toolSlug: r.tool_slug,
         count: r.count,
@@ -120,22 +96,13 @@ export class MemoryStore {
   public async saveRule(rule: AdaptationRule): Promise<void> {
     try {
       const db = await getDatabase();
-      await new Promise<void>((resolve, reject) => {
-        const stmt = db.prepare(
-          `INSERT INTO adaptation_rules (id, pattern, suggestion, occurrences, last_seen)
-           VALUES (?, ?, ?, 1, ?)
-           ON CONFLICT(id) DO UPDATE SET
-             occurrences = adaptation_rules.occurrences + 1,
-             last_seen = excluded.last_seen`
-        );
-        stmt.run(rule.id, rule.pattern, rule.suggestion, rule.occurrences, rule.lastSeen,
-          (err: Error | null) => {
-            stmt.finalize();
-            if (err) return reject(err);
-            resolve();
-          }
-        );
-      });
+      db.prepare(
+        `INSERT INTO adaptation_rules (id, pattern, suggestion, occurrences, last_seen)
+         VALUES (?, ?, ?, 1, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           occurrences = adaptation_rules.occurrences + 1,
+           last_seen = excluded.last_seen`
+      ).run(rule.id, rule.pattern, rule.suggestion, rule.lastSeen);
     } catch (err: any) {
       logger.error(`Failed to save rule: ${err.message}`);
     }
@@ -147,16 +114,10 @@ export class MemoryStore {
   public async loadRules(): Promise<AdaptationRule[]> {
     try {
       const db = await getDatabase();
-      const rows = await new Promise<any[]>((resolve, reject) => {
-        db.all(
-          `SELECT id, pattern, suggestion, occurrences, last_seen
-           FROM adaptation_rules ORDER BY occurrences DESC`,
-          (err: Error | null, rows: any[]) => {
-            if (err) return reject(err);
-            resolve(rows || []);
-          }
-        );
-      });
+      const rows = db.prepare(
+        `SELECT id, pattern, suggestion, occurrences, last_seen
+         FROM adaptation_rules ORDER BY occurrences DESC`
+      ).all() as any[];
 
       return rows.map((r: any) => ({
         id: r.id,
@@ -191,15 +152,8 @@ export class MemoryStore {
   public async reset(): Promise<void> {
     try {
       const db = await getDatabase();
-      await new Promise<void>((resolve, reject) => {
-        db.serialize(() => {
-          db.run('DELETE FROM learning_observations');
-          db.run('DELETE FROM adaptation_rules', (err) => {
-            if (err) return reject(err);
-            resolve();
-          });
-        });
-      });
+      db.prepare('DELETE FROM learning_observations').run();
+      db.prepare('DELETE FROM adaptation_rules').run();
       logger.info('Memory store reset — all observations and rules cleared.');
     } catch (err: any) {
       logger.error(`Failed to reset memory store: ${err.message}`);

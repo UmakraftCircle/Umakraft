@@ -71,7 +71,7 @@ export const fanCommand = new SlashCommandBuilder()
       )
   )
   .setDMPermission(false)
-  .toJSON(); ─────────────────────────────────────────────────
+  .toJSON();
 
 export const linkCommand = new SlashCommandBuilder()
   .setName('link')

@@ -40,9 +40,9 @@ export const databaseStoreResult: ToolDefinition = {
   handler: async (args) => {
     const planId = args['planId'];
     const planData = args['data'];
-    
+
     logger.info(`Persisting plan results for plan ${planId} into SQLite database...`);
-    
+
     try {
       const db = await getDatabase();
 
@@ -56,67 +56,44 @@ export const databaseStoreResult: ToolDefinition = {
       }
 
       // 1. Insert or update the Execution Plan
-      await new Promise<void>((resolve, reject) => {
-        const stmt = db.prepare(`
-          INSERT INTO execution_plans (id, intent, model_used, created_at, estimated_steps, status)
-          VALUES (?, ?, ?, ?, ?, ?)
-          ON CONFLICT(id) DO UPDATE SET
-            status = excluded.status
-        `);
-
-        stmt.run(
-          planId,
-          planData.intent || 'Unknown intent',
-          planData.metadata?.modelUsed || 'unknown-model',
-          planData.metadata?.createdAt || new Date().toISOString(),
-          tasksList.length,
-          planStatus,
-          (err: Error | null) => {
-            stmt.finalize();
-            if (err) {
-              logger.error(`Failed to insert plan in SQLite: ${err.message}`);
-              return reject(err);
-            }
-            resolve();
-          }
-        );
-      });
+      db.prepare(`
+        INSERT INTO execution_plans (id, intent, model_used, created_at, estimated_steps, status)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          status = excluded.status
+      `).run(
+        planId,
+        planData.intent || 'Unknown intent',
+        planData.metadata?.modelUsed || 'unknown-model',
+        planData.metadata?.createdAt || new Date().toISOString(),
+        tasksList.length,
+        planStatus
+      );
 
       // 2. Insert or update individual Tasks
+      const taskStmt = db.prepare(`
+        INSERT INTO tasks (id, plan_id, name, tool_slug, arguments, dependencies, status, result, error, retry_count, max_retries)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id, plan_id) DO UPDATE SET
+          status = excluded.status,
+          result = excluded.result,
+          error = excluded.error,
+          retry_count = excluded.retry_count
+      `);
       for (const task of tasksList) {
-        await new Promise<void>((resolve, reject) => {
-          const stmt = db.prepare(`
-            INSERT INTO tasks (id, plan_id, name, tool_slug, arguments, dependencies, status, result, error, retry_count, max_retries)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id, plan_id) DO UPDATE SET
-              status = excluded.status,
-              result = excluded.result,
-              error = excluded.error,
-              retry_count = excluded.retry_count
-          `);
-
-          stmt.run(
-            task.id,
-            planId,
-            task.name,
-            task.toolSlug,
-            JSON.stringify(task.arguments || {}),
-            JSON.stringify(task.dependencies || []),
-            task.status,
-            task.result ? JSON.stringify(task.result) : null,
-            task.error || null,
-            task.retryCount || 0,
-            task.maxRetries || 3,
-            (err: Error | null) => {
-              stmt.finalize();
-              if (err) {
-                logger.error(`Failed to insert task ${task.id} in SQLite: ${err.message}`);
-                return reject(err);
-              }
-              resolve();
-            }
-          );
-        });
+        taskStmt.run(
+          task.id,
+          planId,
+          task.name,
+          task.toolSlug,
+          JSON.stringify(task.arguments || {}),
+          JSON.stringify(task.dependencies || []),
+          task.status,
+          task.result ? JSON.stringify(task.result) : null,
+          task.error || null,
+          task.retryCount || 0,
+          task.maxRetries || 3
+        );
       }
 
       logger.info(`Successfully stored plan ${planId} and ${tasksList.length} tasks in SQLite platform.db!`);
