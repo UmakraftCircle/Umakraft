@@ -19,6 +19,8 @@
 | `UMAMOE_CIRCLE_ID` | Your uma.moe circle ID |
 | `TURSO_URL` | Turso database URL (e.g. `libsql://db-name.turso.io`) |
 | `TURSO_AUTH_TOKEN` | Turso auth token (from dashboard → Connect) |
+| `AI_PROVIDER` | `groq` (or `openai` / `anthropic`) |
+| `GROQ_API_KEY` | Comma-separated Groq keys: `key1,key2,key3` |
 | `PORT` | Leave empty (Railway sets this automatically) |
 
 ## How to Deploy

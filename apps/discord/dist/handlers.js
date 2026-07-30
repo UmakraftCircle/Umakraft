@@ -1,8 +1,23 @@
 import { EmbedBuilder, PermissionFlagsBits, } from 'discord.js';
 import { fanTrackerAPI } from '@ai-agent-platform/fan-tracker';
 import { createLogger } from '@ai-agent-platform/shared';
-import { trainerLinkStore } from '@ai-agent-platform/integrations';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 const logger = createLogger('Discord-Handlers');
+// ── Link store (JSON file) ──
+const LINKS_FILE = path.resolve('trainer-links.json');
+async function loadLinks() {
+    try {
+        const raw = await fs.readFile(LINKS_FILE, 'utf-8');
+        return JSON.parse(raw);
+    }
+    catch {
+        return [];
+    }
+}
+async function saveLinks(links) {
+    await fs.writeFile(LINKS_FILE, JSON.stringify(links, null, 2), 'utf-8');
+}
 // ── Helpers ──
 function isAdmin(interaction) {
     const perms = interaction.memberPermissions;
@@ -47,11 +62,11 @@ export async function handleSync(interaction) {
     fanTrackerAPI.clearCache();
     // Warm cache by fetching all members
     const members = await fanTrackerAPI.fetchAllMembers();
-    const linkCount = await trainerLinkStore.count();
+    const links = await loadLinks();
     logger.info(`Sync: cleared cache, fetched ${members.length} active members from UmaKraft.`);
     await interaction.editReply(`✅ **Sync complete!**\n` +
         `Fetched **${members.length} active members** from UmaKraft.\n` +
-        `Linked Discord users: **${linkCount}**\n` +
+        `Linked Discord users: **${links.length}**\n` +
         `Top fan: **${members[0]?.trainerName || 'N/A'}** — ${members[0] ? formatFans(members[0].totalFans) : 'N/A'} fans`);
 }
 // ── /fans gain ────────────────────────────────────────────
@@ -59,7 +74,8 @@ export async function handleFansGain(interaction) {
     const period = (interaction.options.getString('period') || 'daily');
     await interaction.deferReply();
     // Find linked trainer
-    const link = await trainerLinkStore.getByDiscordUser(interaction.user.id);
+    const links = await loadLinks();
+    const link = links.find(l => l.discordUserId === interaction.user.id);
     if (!link) {
         await interaction.editReply('⚠️ You are not linked to a trainer yet. Ask an admin to use `/link add` to connect you.');
         return;
@@ -148,14 +164,23 @@ export async function handleLinkAdd(interaction) {
         await interaction.reply({ content: `⚠️ Invalid trainer. Use autocomplete to select a valid trainer. Got: \`${trainerInput}\``, ephemeral: true });
         return;
     }
-    const existing = await trainerLinkStore.getByDiscordUser(user.id);
-    await trainerLinkStore.upsert({
-        discordUserId: user.id,
-        trainerId,
-        trainerName,
-        linkedAt: new Date().toISOString(),
-    });
-    const verb = existing ? 'Updated' : 'Linked';
+    const links = await loadLinks();
+    const existingUser = links.find(l => l.discordUserId === user.id);
+    if (existingUser) {
+        existingUser.trainerId = trainerId;
+        existingUser.trainerName = trainerName;
+        existingUser.linkedAt = new Date().toISOString();
+    }
+    else {
+        links.push({
+            discordUserId: user.id,
+            trainerId,
+            trainerName,
+            linkedAt: new Date().toISOString(),
+        });
+    }
+    await saveLinks(links);
+    const verb = existingUser ? 'Updated' : 'Linked';
     logger.info(`${verb} Discord user ${user.tag} → trainer ${trainerName} (${trainerId})`);
     await interaction.reply(`✅ **${verb}!**\n` +
         `<@${user.id}> is now linked to **${trainerName}** (${trainerId}).`);
@@ -167,18 +192,21 @@ export async function handleLinkRemove(interaction) {
         return;
     }
     const user = interaction.options.getUser('user', true);
-    const removed = await trainerLinkStore.remove(user.id);
-    if (!removed) {
+    const links = await loadLinks();
+    const idx = links.findIndex(l => l.discordUserId === user.id);
+    if (idx === -1) {
         await interaction.reply({ content: `⚠️ <@${user.id}> is not linked to any trainer.`, ephemeral: true });
         return;
     }
+    const removed = links.splice(idx, 1)[0];
+    await saveLinks(links);
     logger.info(`Unlinked Discord user ${user.tag} from trainer ${removed.trainerName}`);
     await interaction.reply(`🗑️ **Unlinked!**\n` +
         `<@${user.id}> is no longer linked to **${removed.trainerName}**.`);
 }
 // ── /link list ────────────────────────────────────────────
 export async function handleLinkList(interaction) {
-    const links = await trainerLinkStore.getAll();
+    const links = await loadLinks();
     if (links.length === 0) {
         await interaction.reply('📭 No Discord ↔ trainer links configured yet. Admins can use `/link add`.');
         return;

@@ -20,58 +20,118 @@ async function apiPost(url: string, headers: Record<string, string>, body: any):
   return response.json();
 }
 
-// ── OpenAI Provider ──
+// ── OpenAI Provider (also used for OpenAI-compatible APIs like Groq) ──
 
 export class OpenAIProvider implements AIService {
   private model: string;
+  private keys: string[];
+  private baseUrl: string;
 
+  /**
+   * @param apiKey   Single key, comma-separated keys ("k1,k2,k3"), or array
+   * @param model    Model name (default: gpt-4o-mini)
+   * @param baseUrl  API base URL (default: https://api.openai.com)
+   */
   constructor(
-    private apiKey: string,
-    model: string = 'gpt-4o-mini'
+    apiKey: string | string[],
+    model: string = 'gpt-4o-mini',
+    baseUrl: string = 'https://api.openai.com'
   ) {
     this.model = model;
+    this.baseUrl = baseUrl.replace(/\/+$/, ''); // strip trailing slashes
+
+    // Normalise: string → array, split comma-separated
+    if (Array.isArray(apiKey)) {
+      this.keys = apiKey.filter(Boolean);
+    } else {
+      this.keys = apiKey.split(',').map(k => k.trim()).filter(Boolean);
+    }
+
+    if (this.keys.length === 0) {
+      throw new Error('OpenAIProvider requires at least one API key');
+    }
+
+    if (this.keys.length > 1) {
+      logger.info(`OpenAIProvider: ${this.keys.length} keys loaded for rotation`);
+    }
+  }
+
+  /** Pick a random key. Use across retries for rate-limit failover. */
+  #pickKey(exclude?: string): string {
+    const pool = exclude && this.keys.length > 1
+      ? this.keys.filter(k => k !== exclude)
+      : this.keys;
+    return pool[Math.floor(Math.random() * pool.length)];
   }
 
   public getCurrentModel(): string {
     return this.model;
   }
 
-  public async generate(options: GenerateOptions): Promise<string> {
-    logger.info(`Calling OpenAI ${this.model} for text generation...`);
+  // ── generate ────────────────────────────────────────────
 
+  public async generate(options: GenerateOptions): Promise<string> {
     const messages: any[] = [];
     if (options.system) messages.push({ role: 'system', content: options.system });
     messages.push({ role: 'user', content: options.prompt });
 
-    const result = await apiPost(
-      'https://api.openai.com/v1/chat/completions',
-      { Authorization: `Bearer ${this.apiKey}` },
-      { model: this.model, messages, temperature: 0.7 }
-    );
-
-    return result.choices[0].message.content;
+    return this.#callWithRetry(messages, { temperature: 0.7 });
   }
 
-  public async generateStructuredOutput(options: GenerateOptions): Promise<any> {
-    logger.info(`Calling OpenAI ${this.model} for structured output...`);
+  // ── generateStructuredOutput ─────────────────────────────
 
+  public async generateStructuredOutput(options: GenerateOptions): Promise<any> {
     const messages: any[] = [];
     if (options.system) messages.push({ role: 'system', content: options.system });
     messages.push({ role: 'user', content: options.prompt });
 
-    const result = await apiPost(
-      'https://api.openai.com/v1/chat/completions',
-      { Authorization: `Bearer ${this.apiKey}` },
-      { model: this.model, messages, temperature: 0.3, response_format: { type: 'json_object' } }
-    );
+    const raw = await this.#callWithRetry(messages, {
+      temperature: 0.3,
+      response_format: { type: 'json_object' },
+    });
 
-    const raw = result.choices[0].message.content;
     try {
       return JSON.parse(raw);
     } catch {
-      logger.warn(`Failed to parse OpenAI structured output as JSON. Raw: ${raw.slice(0, 200)}`);
-      throw new Error('OpenAI structured output was not valid JSON.');
+      logger.warn(`Failed to parse structured output as JSON. Raw: ${raw.slice(0, 200)}`);
+      throw new Error('Structured output was not valid JSON.');
     }
+  }
+
+  // ── Internal: call with key rotation & rate-limit retry ─
+
+  async #callWithRetry(
+    messages: any[],
+    extra: Record<string, any>,
+  ): Promise<string> {
+    let lastKey: string | undefined;
+    let lastError: Error | undefined;
+
+    for (let attempt = 0; attempt < this.keys.length; attempt++) {
+      const key = this.#pickKey(attempt > 0 ? lastKey : undefined);
+      lastKey = key;
+
+      try {
+        const result = await apiPost(
+          `${this.baseUrl}/v1/chat/completions`,
+          { Authorization: `Bearer ${key}` },
+          { model: this.model, messages, ...extra }
+        );
+        return result.choices[0].message.content;
+      } catch (err: any) {
+        lastError = err;
+
+        // 429 = rate limited → try next key
+        const isRateLimit = err.message?.includes('429');
+        if (isRateLimit && this.keys.length > 1 && attempt < this.keys.length - 1) {
+          logger.warn(`Key rate-limited (429), rotating to next key (attempt ${attempt + 2}/${this.keys.length})`);
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    throw lastError!;
   }
 }
 
@@ -147,14 +207,26 @@ export class AnthropicProvider implements AIService {
 
 // ── Factory ──
 
-export type ProviderType = 'openai' | 'anthropic';
+export type ProviderType = 'openai' | 'anthropic' | 'groq';
 
+/**
+ * Create an AI provider instance.
+ *
+ * Groq uses the OpenAI-compatible endpoint with key rotation.
+ * Pass multiple keys as comma-separated: `GROQ_API_KEY=key1,key2,key3`
+ */
 export function createProvider(type: ProviderType, apiKey: string, model?: string): AIService {
   switch (type) {
     case 'openai':
       return new OpenAIProvider(apiKey, model);
     case 'anthropic':
       return new AnthropicProvider(apiKey, model);
+    case 'groq':
+      return new OpenAIProvider(
+        apiKey,
+        model || 'llama-3.3-70b-versatile',
+        'https://api.groq.com/openai'
+      );
     default:
       throw new Error(`Unsupported provider type: ${type}`);
   }
