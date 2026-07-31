@@ -56,15 +56,14 @@ export const emailSend: ToolDefinition = {
           const errText = await response.text();
           throw new Error(`Email provider returned ${response.status}: ${errText}`);
         }
-      } finally {
-        clearTimeout(timer);
-      }
 
         logger.info(`Email sent successfully to ${to}`);
         return { success: true, to, subject, timestamp: new Date().toISOString() };
       } catch (error: any) {
         logger.error(`Failed to send email via provider: ${error.message}`);
         throw new Error(`Email delivery failed: ${error.message}`);
+      } finally {
+        clearTimeout(timer);
       }
     }
 
@@ -120,15 +119,14 @@ export const slackSendMessage: ToolDefinition = {
         if (!response.ok) {
           throw new Error(`Slack webhook returned ${response.status}`);
         }
-      } finally {
-        clearTimeout(timer);
-      }
 
         logger.info('Slack message sent successfully.');
         return { success: true, platform: 'slack', timestamp: new Date().toISOString() };
       } catch (error: any) {
         logger.error(`Failed to send Slack message: ${error.message}`);
         throw new Error(`Slack delivery failed: ${error.message}`);
+      } finally {
+        clearTimeout(timer);
       }
     }
 
