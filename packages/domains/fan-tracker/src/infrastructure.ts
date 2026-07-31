@@ -170,9 +170,10 @@ export class FanTrackerAPI {
 
     if (member) return member;
 
-    // Last resort: mock
-    logger.warn(`Trainer ${trainerId} not found in circle. Using mock.`);
-    return this.generateMockStats(trainerId);
+    throw new Error(
+      `Trainer ${trainerId} not found in circle ${this.circleId}. ` +
+      `The trainer may have transferred or the API may be degraded.`
+    );
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -201,8 +202,8 @@ export class FanTrackerAPI {
 
       return statsList;
     } catch (error: any) {
-      logger.error(`Circle fetch failed: ${error.message}. Using mock roster.`);
-      return this.getMockRoster().map(t => this.generateMockStats(t.trainerId));
+      logger.error(`Circle fetch failed: ${error.message}`);
+      throw new Error(`Fan tracker unavailable: ${error.message}`, { cause: error });
     }
   }
 
@@ -258,8 +259,8 @@ export class FanTrackerAPI {
         historicalFans: [],
       };
     } catch (error: any) {
-      logger.warn(`Trend analysis failed for ${trainerId}: ${error.message}`);
-      return this.generateMockTrends(trainerId, period);
+      logger.error(`Trend analysis failed for ${trainerId}: ${error.message}`);
+      throw new Error(`Trend analysis unavailable for ${trainerId}`, { cause: error });
     }
   }
 

@@ -99,6 +99,8 @@ export class PRMonitorAPI {
    * Fetch open PRs for a repository.
    */
   public async fetchOpenPRs(repo: string): Promise<PullRequest[]> {
+    validateRepoArg(repo);
+
     const cacheKey = `open-prs:${repo}`;
     const cached = cache.get<PullRequest[]>(cacheKey);
     if (cached) return cached;
@@ -143,7 +145,7 @@ export class PRMonitorAPI {
       return prs;
     } catch (error: any) {
       logger.error(`Failed to fetch PRs for ${repo}: ${error.message}`);
-      return this.mockPRs(repo);
+      throw new Error(`GitHub PR data unavailable for ${repo}`, { cause: error });
     }
   }
 
@@ -192,7 +194,7 @@ export class PRMonitorAPI {
       return requests;
     } catch (error: any) {
       logger.error(`Failed to fetch review requests: ${error.message}`);
-      return this.mockReviewRequests();
+      throw new Error(`GitHub review requests unavailable`, { cause: error });
     }
   }
 
@@ -200,6 +202,8 @@ export class PRMonitorAPI {
    * Generate a summary of PR activity for a repo.
    */
   public async generateSummary(repo: string): Promise<PRSummary> {
+    validateRepoArg(repo);
+
     const cacheKey = `summary:${repo}`;
     const cached = cache.get<PRSummary>(cacheKey);
     if (cached) return cached;

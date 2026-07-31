@@ -2,7 +2,7 @@ import { createLogger } from '@ai-agent-platform/shared';
 import type { LlamaModel, LlamaContext, LlamaChatSession } from 'node-llama-cpp';
 import { resolve } from 'path';
 import { existsSync, mkdirSync, createWriteStream } from 'fs';
-import { finished } from 'stream/promises';
+import { pipeline } from 'stream/promises';
 import { Readable } from 'stream';
 import { freemem } from 'os';
 
@@ -153,6 +153,30 @@ export class LocalBrain {
     );
   }
 
+  // ── Idle timer management ─────────────────────────────
+
+  /** Start (or restart) the idle sleep countdown. */
+  #resetIdleTimer(): void {
+    this.#clearIdleTimer();
+    if (this.config.idleTimeoutMs > 0 && this.ready) {
+      this.idleTimer = setTimeout(() => {
+        const idleSec = Math.round(this.config.idleTimeoutMs / 1000);
+        logger.info(`LocalBrain idle for ${idleSec}s — going to sleep`);
+        void this.unload().catch(e =>
+          logger.error(`Idle unload failed: ${(e as Error).message}`)
+        );
+      }, this.config.idleTimeoutMs);
+      this.idleTimer.unref?.();
+    }
+  }
+
+  #clearIdleTimer(): void {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+  }
+
   async prompt(userMessage: string, systemMessage?: string): Promise<string> {
     await this.init();
 
@@ -289,8 +313,7 @@ export class LocalBrain {
 
     // Node.js fetch returns a web ReadableStream — pipe it
     const nodeStream = Readable.fromWeb(response.body as any);
-    nodeStream.pipe(fileStream);
-    await finished(fileStream);
+    await pipeline(nodeStream, fileStream);
 
     logger.info('Model download complete.');
   }

@@ -67,10 +67,22 @@ export function getDatabase(): Promise<Database.Database> {
           id TEXT PRIMARY KEY,
           pattern TEXT NOT NULL,
           suggestion TEXT NOT NULL,
+          tool_slug TEXT NOT NULL DEFAULT '',
+          last_error_message TEXT NOT NULL DEFAULT '',
+          fix_id TEXT,
           occurrences INTEGER NOT NULL DEFAULT 1,
           last_seen TEXT NOT NULL
         );
       `);
+
+      // Migrate existing databases that lack the v2 columns (graceful no-op if columns exist)
+      for (const col of [
+        'tool_slug TEXT NOT NULL DEFAULT \'\'',
+        'last_error_message TEXT NOT NULL DEFAULT \'\'',
+        'fix_id TEXT',
+      ]) {
+        try { db.exec(`ALTER TABLE adaptation_rules ADD COLUMN ${col};`); } catch { /* column already exists */ }
+      }
 
       logger.info('Successfully connected to SQLite database.');
       logger.info('SQLite Tables successfully verified (including memory).');

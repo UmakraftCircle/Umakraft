@@ -166,9 +166,12 @@ export async function handleFansLeaderboard(interaction: ChatInputCommandInterac
       `　└ ${formatFans(s.totalFans)} total · ${s.activeDays}d active · Day +${formatFans(s.avgDaily || 0)} avg`;
   });
 
+  const raw = lines.join('\n\n');
+  const desc = raw.length > 4093 ? raw.slice(0, 4090) + '...' : raw;
+
   const embed = new EmbedBuilder()
     .setTitle(`🏆 UmaKraft Leaderboard — Top ${topN.length} (${periodLabel})`)
-    .setDescription(lines.join('\n\n'))
+    .setDescription(desc)
     .setColor(0xF1C40F)
     .setFooter({ text: `UmaKraft · ${members.length} active members` });
 
@@ -251,9 +254,12 @@ export async function handleLinkList(interaction: ChatInputCommandInteraction) {
     `• <@${l.discordUserId}> → **${l.trainerName}** (${l.trainerId}) — linked <t:${Math.floor(new Date(l.linkedAt).getTime() / 1000)}:R>`
   );
 
+  const rawLinks = lines.join('\n');
+  const descLinks = rawLinks.length > 4093 ? rawLinks.slice(0, 4090) + '...' : rawLinks;
+
   const embed = new EmbedBuilder()
     .setTitle(`🔗 Trainer Links (${links.length})`)
-    .setDescription(lines.join('\n'))
+    .setDescription(descLinks)
     .setColor(0x5865F2);
 
   await interaction.reply({ embeds: [embed] });

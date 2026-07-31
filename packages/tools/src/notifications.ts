@@ -39,6 +39,8 @@ export const emailSend: ToolDefinition = {
     const providerKey = process.env['EMAIL_API_KEY'];
 
     if (providerUrl && providerKey) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 10_000);
       try {
         const response = await fetch(providerUrl, {
           method: 'POST',
@@ -46,13 +48,17 @@ export const emailSend: ToolDefinition = {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${providerKey}`
           },
-          body: JSON.stringify({ to, subject, text: body })
+          body: JSON.stringify({ to, subject, text: body }),
+          signal: controller.signal,
         });
 
         if (!response.ok) {
           const errText = await response.text();
           throw new Error(`Email provider returned ${response.status}: ${errText}`);
         }
+      } finally {
+        clearTimeout(timer);
+      }
 
         logger.info(`Email sent successfully to ${to}`);
         return { success: true, to, subject, timestamp: new Date().toISOString() };
@@ -101,16 +107,22 @@ export const slackSendMessage: ToolDefinition = {
     logger.info(`Sending Slack message: "${message.slice(0, 80)}..."`);
 
     if (webhookUrl) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 10_000);
       try {
         const response = await fetch(webhookUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: message })
+          body: JSON.stringify({ text: message }),
+          signal: controller.signal,
         });
 
         if (!response.ok) {
           throw new Error(`Slack webhook returned ${response.status}`);
         }
+      } finally {
+        clearTimeout(timer);
+      }
 
         logger.info('Slack message sent successfully.');
         return { success: true, platform: 'slack', timestamp: new Date().toISOString() };

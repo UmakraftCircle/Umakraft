@@ -142,7 +142,11 @@ export class OpenAIProvider implements AIService {
           { Authorization: `Bearer ${key}` },
           { model: this.model, messages, ...extra }
         );
-        return result.choices[0].message.content;
+        const content = result?.choices?.[0]?.message?.content;
+        if (typeof content !== 'string') {
+          throw new HttpError(502, 'OpenAI API returned no message content');
+        }
+        return content;
       } catch (err: any) {
         lastError = err;
 
@@ -209,7 +213,11 @@ export class AnthropicProvider implements AIService {
       }
     );
 
-    return result.content[0].text;
+    const text = result?.content?.[0]?.text;
+    if (typeof text !== 'string') {
+      throw new Error('Anthropic API returned no text content');
+    }
+    return text;
   }
 
   public async generateStructuredOutput(options: GenerateOptions): Promise<any> {
@@ -231,7 +239,10 @@ export class AnthropicProvider implements AIService {
       }
     );
 
-    const raw = result.content[0].text;
+    const raw = result?.content?.[0]?.text;
+    if (typeof raw !== 'string') {
+      throw new Error('Anthropic API returned no text content for structured output');
+    }
     try {
       return JSON.parse(raw);
     } catch {
