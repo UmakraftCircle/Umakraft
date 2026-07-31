@@ -130,9 +130,12 @@ export const filesystemReadFile: ToolDefinition = {
   }
 };
 
-// ── Re-export web and notification tools ──
-export { webFetch, webSearch, webTools } from './web.js';
-export { emailSend, slackSendMessage, notificationTools } from './notifications.js';
+// ── Import, then re-export web and notification tools ──
+import { webFetch, webSearch, webTools } from './web.js';
+import { emailSend, slackSendMessage, notificationTools } from './notifications.js';
+
+export { webFetch, webSearch, webTools };
+export { emailSend, slackSendMessage, notificationTools };
 
 export const allTools = [
   filesystemWriteFile,
