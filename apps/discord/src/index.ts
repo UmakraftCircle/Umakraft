@@ -109,7 +109,7 @@ async function startGatewayBot() {
   let monthlyService: MonthlyAchievementService;
   let reminderService: ReminderMessageService;
   let raceCommentaryService: RaceCommentaryService;
-  let supervisor: MessageSupervisor;
+  const supervisor = new MessageSupervisor();
 
   if (groqKey) {
     const primaryAI = createProvider('groq', groqKey, 'llama-3.3-70b-versatile');
@@ -131,7 +131,6 @@ async function startGatewayBot() {
     raceCommentaryService = new RaceCommentaryService(null, promptLibrary);
   }
 
-  supervisor = new MessageSupervisor();
   logger.info(`MessageSupervisor initialized (60min retry, ${supervisor.pendingCount} pending)`);
 
   client.on(Events.GuildMemberAdd, async (member) => {
@@ -445,7 +444,7 @@ async function startGatewayBot() {
       newState.month = currentMonth;
 
       if (state) {
-        newState.day = state.day + 1 > new Date(newState.month, 0).getDate() ? 1 : state.day + 1;
+        newState.day = state.day + 1 > new Date(new Date().getFullYear(), newState.month, 0).getDate() ? 1 : state.day + 1;
       }
 
       const msg = await raceCommentaryService.generateCommentary(

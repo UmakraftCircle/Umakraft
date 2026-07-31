@@ -58,7 +58,8 @@ export class OpenAIEmbeddingGenerator extends EmbeddingGenerator {
   }
 
   public override async embedBatch(texts: string[]): Promise<EmbeddingResult[]> {
-    await this.limiter.acquire();
+    // Acquire one permit per item to enforce per-item rate limiting
+    await Promise.all(texts.map(() => this.limiter.acquire()));
     logger.info(`Generating embeddings for ${texts.length} texts via OpenAI ${this.model}...`);
 
     const response = await fetch('https://api.openai.com/v1/embeddings', {

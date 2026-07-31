@@ -349,14 +349,18 @@ export class LocalBrain {
 
       // Optional SHA256 checksum verification
       if (EXPECTED_MODEL_SHA256) {
-        const hash = createHash('sha256');
-        const fileBytes = await fetch(`file://${destPath}`).then(r => r.arrayBuffer()).catch(() => null);
-        if (fileBytes) {
-          const actual = createHash('sha256').update(Buffer.from(fileBytes)).digest('hex');
+        const { default: fsReadFile } = await import('fs/promises');
+        try {
+          const fileBuffer = await fsReadFile(destPath);
+          const actual = createHash('sha256').update(fileBuffer).digest('hex');
           if (actual !== EXPECTED_MODEL_SHA256) {
             unlinkSync(destPath);
             throw new Error(`SHA256 mismatch: expected ${EXPECTED_MODEL_SHA256}, got ${actual}`);
           }
+          logger.info('SHA256 checksum verified ✓');
+        } catch (err: any) {
+          if (err.message.includes('SHA256')) throw err;
+          logger.warn(`Could not verify SHA256: ${err.message}. Skipping integrity check.`);
         }
       }
 

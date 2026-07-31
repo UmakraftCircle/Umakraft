@@ -51,7 +51,7 @@ const planOwners = new Map<string, string>();
 function jsonResponse(res: http.ServerResponse, status: number, data: any): void {
   res.writeHead(status, {
     'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': process.env['CORS_ORIGIN'] || '',
+    'Access-Control-Allow-Origin': process.env['CORS_ORIGIN'] || '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization'
   });
@@ -306,3 +306,15 @@ server.listen(PORT, () => {
   logger.info(`  GET  /models             — Available AI models`);
   logger.info(`==================================================`);
 });
+
+// ── Graceful shutdown ──
+const shutdown = () => {
+  logger.info('Shutting down API server...');
+  server.close(() => {
+    auth.destroy();
+    logger.info('API server shut down cleanly.');
+    process.exit(0);
+  });
+};
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);

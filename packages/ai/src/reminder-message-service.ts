@@ -168,8 +168,11 @@ export class ReminderMessageService {
     const info = BOOTSTRAP_POOL;
 
     if (pool.length >= 2) {
-      const msg = this.cache.get(pool[Math.floor(Math.random() * pool.length)]);
-      if (msg) { logger.info(`Gap reminder fallback: random cache (${pool.length})`); return msg; }
+      const shuffled = pool.sort(() => Math.random() - 0.5);
+      for (const key of shuffled) {
+        const msg = this.cache.get(key);
+        if (msg) { logger.info(`Gap reminder fallback: random cache (${pool.length})`); return msg; }
+      }
     }
 
     if (pool.length === 1) {
@@ -202,6 +205,7 @@ export class ReminderMessageService {
     }
     if (!msg.includes('@everyone')) msg = `@everyone ${msg}`;
     const words = msg.split(/\s+/);
+    if (words.length < MIN_WORDS) throw new Error('AI response too short');
     if (words.length > MAX_WORDS) msg = words.slice(0, MAX_WORDS).join(' ') + ' 👑';
     return msg;
   }

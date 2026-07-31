@@ -324,8 +324,11 @@ export class MonthlyAchievementService {
     const info = MONTHLY_TIERS[tier];
 
     if (pool.length >= 2) {
-      const msg = cache.get(pool[Math.floor(Math.random() * pool.length)]);
-      if (msg) { logger.info(`Monthly [${tier}] fallback: random cache (${pool.length})`); return msg; }
+      const shuffled = pool.sort(() => Math.random() - 0.5);
+      for (const key of shuffled) {
+        const msg = cache.get(key);
+        if (msg) { logger.info(`Monthly [${tier}] fallback: random cache (${pool.length})`); return msg; }
+      }
     }
     if (pool.length === 1) {
       const msg = cache.get(pool[0]);
@@ -349,6 +352,7 @@ export class MonthlyAchievementService {
     }
     if (!msg.includes('@everyone')) msg = `@everyone ${msg}`;
     const words = msg.split(/\s+/);
+    if (words.length < MIN_WORDS) throw new Error('AI response too short');
     if (words.length > MAX_WORDS) msg = words.slice(0, MAX_WORDS).join(' ') + ' 👑';
     return msg;
   }

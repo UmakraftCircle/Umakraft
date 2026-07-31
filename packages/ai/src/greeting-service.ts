@@ -244,11 +244,13 @@ export class GreetingService {
     const pool = this.cache.keys(GREETING_KEY_PREFIX);
 
     if (pool.length >= 2) {
-      const randomKey = pool[Math.floor(Math.random() * pool.length)];
-      const msg = this.cache.get(randomKey);
-      if (msg) {
-        logger.info(`Fallback: randomly selected cached greeting (pool: ${pool.length})`);
-        return msg;
+      const shuffled = pool.sort(() => Math.random() - 0.5);
+      for (const key of shuffled) {
+        const msg = this.cache.get(key);
+        if (msg) {
+          logger.info(`Fallback: randomly selected cached greeting (pool: ${pool.length})`);
+          return msg;
+        }
       }
     }
 
@@ -282,6 +284,7 @@ export class GreetingService {
 
     // Enforce word limit
     const words = greeting.split(/\s+/);
+    if (words.length < MIN_WORDS) throw new Error('AI response too short');
     if (words.length > MAX_WORDS) {
       greeting = words.slice(0, MAX_WORDS).join(' ') + ' 💕';
     }

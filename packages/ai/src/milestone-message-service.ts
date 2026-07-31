@@ -377,11 +377,13 @@ export class MilestoneMessageService {
     const info = MILESTONE_TIERS[tier];
 
     if (pool.length >= 2) {
-      const randomKey = pool[Math.floor(Math.random() * pool.length)];
-      const msg = cache.get(randomKey);
-      if (msg) {
-        logger.info(`Milestone [${tier}] fallback: random cache (pool: ${pool.length})`);
-        return msg;
+      const shuffled = pool.sort(() => Math.random() - 0.5);
+      for (const key of shuffled) {
+        const msg = cache.get(key);
+        if (msg) {
+          logger.info(`Milestone [${tier}] fallback: random cache (pool: ${pool.length})`);
+          return msg;
+        }
       }
     }
 
@@ -413,6 +415,7 @@ export class MilestoneMessageService {
     }
 
     const words = msg.split(/\s+/);
+    if (words.length < MIN_WORDS) throw new Error('AI response too short');
     if (words.length > MAX_WORDS) {
       msg = words.slice(0, MAX_WORDS).join(' ') + ' 👑';
     }

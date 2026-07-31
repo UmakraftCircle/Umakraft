@@ -131,9 +131,11 @@ export class OpenAIProvider implements AIService {
     extra: Record<string, any>,
   ): Promise<string> {
     let lastError: Error = new Error('No keys available for provider call');
+    let lastUsedKey: string | undefined;
 
     for (let attempt = 0; attempt < this.keys.length; attempt++) {
-      const key = this.#pickKey(attempt > 0 ? this.keys[(attempt - 1) % this.keys.length] : undefined);
+      const key = this.#pickKey(lastUsedKey);
+      lastUsedKey = key;
       const keySuffix = key.slice(-6);
 
       try {

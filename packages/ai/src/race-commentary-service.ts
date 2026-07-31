@@ -36,7 +36,7 @@ export interface RaceState {
   month: number;
   day: number;
   previousPositions: Record<string, TrainerPosition>;
-  previousRacers: string[];  // trainerIds from yesterday's top 30
+  previousRacerNames: string[];  // trainer names from yesterday's top 30
 }
 
 // ── Bootstrap pool (5 pre-written race broadcasts) ──────
@@ -342,8 +342,11 @@ export class RaceCommentaryService {
   #fallbackCommentary(): string {
     const pool = this.cache.keys();
     if (pool.length >= 2) {
-      const msg = this.cache.get(pool[Math.floor(Math.random() * pool.length)]);
-      if (msg) { logger.info(`Race commentary fallback: random cache (${pool.length})`); return msg; }
+      const shuffled = pool.sort(() => Math.random() - 0.5);
+      for (const key of shuffled) {
+        const msg = this.cache.get(key);
+        if (msg) { logger.info(`Race commentary fallback: random cache (${pool.length})`); return msg; }
+      }
     }
     if (pool.length === 1) {
       const msg = this.cache.get(pool[0]);
@@ -422,6 +425,7 @@ export class RaceCommentaryService {
     }
     if (!msg.includes('@everyone')) msg = `@everyone ${msg}`;
     const words = msg.split(/\s+/);
+    if (words.length < MIN_WORDS) throw new Error('AI response too short');
     if (words.length > MAX_WORDS) msg = words.slice(0, MAX_WORDS).join(' ') + ' 🔥';
     return msg;
   }
@@ -449,7 +453,7 @@ export async function saveRaceState(filePath: string, state: RaceState): Promise
 
 export function buildRaceState(
   positions: TrainerPosition[],
-  racerIds: string[],
+  racerNames: string[],
 ): RaceState {
   const now = new Date();
   const previousPositions: Record<string, TrainerPosition> = {};
@@ -460,7 +464,7 @@ export function buildRaceState(
     month: now.getMonth() + 1,
     day: now.getDate(),
     previousPositions,
-    previousRacers: racerIds,
+    previousRacerNames: racerNames,
   };
 }
 

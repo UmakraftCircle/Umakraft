@@ -288,11 +288,13 @@ export class DailyMessageService {
     const poolLabel = bootstrapPoolLabel(timeSlot);
 
     if (pool.length >= 2) {
-      const randomKey = pool[Math.floor(Math.random() * pool.length)];
-      const msg = cache.get(randomKey);
-      if (msg) {
-        logger.info(`Daily [${timeSlot}] fallback: random cache (pool: ${pool.length})`);
-        return msg;
+      const shuffled = pool.sort(() => Math.random() - 0.5);
+      for (const key of shuffled) {
+        const msg = cache.get(key);
+        if (msg) {
+          logger.info(`Daily [${timeSlot}] fallback: random cache (pool: ${pool.length})`);
+          return msg;
+        }
       }
     }
 
@@ -327,6 +329,7 @@ export class DailyMessageService {
 
     // Enforce word limits
     const words = msg.split(/\s+/);
+    if (words.length < MIN_WORDS) throw new Error('AI response too short');
     if (words.length > MAX_WORDS) {
       msg = words.slice(0, MAX_WORDS).join(' ') + ' 💕';
     }

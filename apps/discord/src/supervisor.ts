@@ -21,10 +21,11 @@ interface RetryEntry {
  *
  * Retry policy:
  *   1. trySend() attempts channel.send()
- *   2. On failure → schedules one retry after 60 minutes
- *   3. On retry success → logged as "recovered"
- *   4. On retry failure → logged as "permanent failure", discarded
- *   5. One retry only — no infinite loops
+ *   2. On failure → schedules retry after 60 minutes
+ *   3. On retry failure → schedules up to 2 more retries with exponential backoff
+ *      (60min → 120min → 240min = 3 total attempts)
+ *   4. On retry success → logged as "recovered"
+ *   5. On retry exhausted → logged as "permanent failure", discarded
  *
  * Channel references are stored directly (Discord.js caches them in-memory
  * for the process lifetime). Retries are lost on process restart — by design:
