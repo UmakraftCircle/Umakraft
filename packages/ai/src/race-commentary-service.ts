@@ -286,7 +286,7 @@ export class RaceCommentaryService {
         const msg = await this.#generateViaAI(this.primaryAI, racerText, eventsText, state.day, totalDays, serverName);
         this.cache.set(`race-d${state.day}`, msg);
         logger.info(`Race commentary generated via primary (day ${state.day}, ${positions.length} racers)`);
-        return msg;
+        return msg.slice(0, 2000);
       } catch (err: any) {
         logger.warn(`Race commentary primary failed: ${err.message}. Trying fallback...`);
       }
@@ -298,14 +298,14 @@ export class RaceCommentaryService {
         const msg = await this.#generateViaAI(this.fallbackAI, racerText, eventsText, state.day, totalDays, serverName);
         this.cache.set(`race-d${state.day}`, msg);
         logger.info(`Race commentary generated via fallback (day ${state.day})`);
-        return msg;
+        return msg.slice(0, 2000);
       } catch (err: any) {
         logger.warn(`Race commentary fallback failed: ${err.message}. Going to cache...`);
       }
     }
 
     // Tiers 3-5: Cache → Sole → Bootstrap
-    return this.#fallbackCommentary();
+    return this.#fallbackCommentary().slice(0, 2000);
   }
 
   getPoolSize(): number { return this.cache.size; }
