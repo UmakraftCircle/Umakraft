@@ -5,9 +5,9 @@
 
 FROM node:20-slim
 
-# Native modules (sqlite3, node-llama-cpp) need build tools
+# Native modules (sqlite3) need build tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 make gcc g++ cmake \
+    python3 make gcc g++ \
     && rm -rf /var/lib/apt/lists/*
 
 RUN npm install -g pnpm@9.0.5
@@ -46,15 +46,6 @@ RUN find packages apps -maxdepth 4 -name package.json \
 
 # ── Runtime ────────────────────────────────────────────────
 ENV NODE_ENV=production
-
-# Local AI model directory (Railway volume mount point)
-# Mount a volume at /data to persist the GGUF model across deployments.
-# Without a volume, the model re-downloads on every deploy (~339 MB).
-ENV LOCAL_MODEL_DIR=/data/models
-
-# Limit Node.js heap to leave RAM for the model (~400 MB).
-# --expose-gc lets LocalBrain.unload() hint V8 to collect model memory.
-ENV NODE_OPTIONS="--max-old-space-size=384 --expose-gc"
 
 # health.js → dummy HTTP server on $PORT + spawns the bot
 CMD ["node", "health.js"]

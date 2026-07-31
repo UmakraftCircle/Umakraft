@@ -46,10 +46,6 @@ export const databaseStoreResult: ToolDefinition = {
     try {
       const db = await getDatabase();
 
-      // Wrap entire upsert in a transaction for atomicity.
-      // If any statement fails, the whole plan persistence is rolled back.
-      const upsertPlan = db.transaction(() => {
-
       // Determine overall plan status
       let planStatus = 'completed';
       const tasksList = planData.tasks instanceof Map ? Array.from(planData.tasks.values()) : (planData.tasks || []);
@@ -93,15 +89,12 @@ export const databaseStoreResult: ToolDefinition = {
           JSON.stringify(task.arguments || {}),
           JSON.stringify(task.dependencies || []),
           task.status,
-          task.result !== undefined ? JSON.stringify(task.result) : null,
-          task.error ?? null,
-          task.retryCount ?? 0,
-          task.maxRetries ?? 3
+          task.result ? JSON.stringify(task.result) : null,
+          task.error || null,
+          task.retryCount || 0,
+          task.maxRetries || 3
         );
       }
-
-      });
-      upsertPlan();
 
       logger.info(`Successfully stored plan ${planId} and ${tasksList.length} tasks in SQLite platform.db!`);
       return {

@@ -166,12 +166,9 @@ export async function handleFansLeaderboard(interaction: ChatInputCommandInterac
       `　└ ${formatFans(s.totalFans)} total · ${s.activeDays}d active · Day +${formatFans(s.avgDaily || 0)} avg`;
   });
 
-  const raw = lines.join('\n\n');
-  const desc = raw.length > 4093 ? raw.slice(0, 4090) + '...' : raw;
-
   const embed = new EmbedBuilder()
     .setTitle(`🏆 UmaKraft Leaderboard — Top ${topN.length} (${periodLabel})`)
-    .setDescription(desc)
+    .setDescription(lines.join('\n\n'))
     .setColor(0xF1C40F)
     .setFooter({ text: `UmaKraft · ${members.length} active members` });
 
@@ -190,12 +187,12 @@ export async function handleLinkAdd(interaction: ChatInputCommandInteraction) {
   const trainerInput = interaction.options.getString('trainer', true);
 
   // Parse "Name (trainer-XX)" format or "Name (viewer_id)" from autocomplete
-  const match = trainerInput.match(/^(.+?)\s*\(([^)]+)\)$/);
+  const match = trainerInput.match(/^(.+?)\s*\((\d+)\)$/);
   const trainerId = match ? match[2] : trainerInput;
   const trainerName = match ? match[1] : trainerInput;
 
-  // Validate: trainerId must be numeric OR match mock format "trainer-NN"
-  if (!/^\d+$/.test(trainerId) && !/^trainer-\d+$/.test(trainerId)) {
+  // Validate: trainerId must be numeric
+  if (!/^\d+$/.test(trainerId)) {
     await interaction.reply({ content: `⚠️ Invalid trainer. Use autocomplete to select a valid trainer. Got: \`${trainerInput}\``, ephemeral: true });
     return;
   }
@@ -254,12 +251,9 @@ export async function handleLinkList(interaction: ChatInputCommandInteraction) {
     `• <@${l.discordUserId}> → **${l.trainerName}** (${l.trainerId}) — linked <t:${Math.floor(new Date(l.linkedAt).getTime() / 1000)}:R>`
   );
 
-  const rawLinks = lines.join('\n');
-  const descLinks = rawLinks.length > 4093 ? rawLinks.slice(0, 4090) + '...' : rawLinks;
-
   const embed = new EmbedBuilder()
     .setTitle(`🔗 Trainer Links (${links.length})`)
-    .setDescription(descLinks)
+    .setDescription(lines.join('\n'))
     .setColor(0x5865F2);
 
   await interaction.reply({ embeds: [embed] });

@@ -15,34 +15,24 @@ export interface TrainerLink {
 // ── Store ─────────────────────────────────────────────────
 
 export class TrainerLinkStore {
-  private initPromise: Promise<void> | null = null;
+  private tableReady = false;
 
-  /** Ensure the trainer_links table exists (idempotent). Uses a shared promise to prevent init races. */
+  /** Ensure the trainer_links table exists (idempotent). */
   async init(): Promise<void> {
-    if (this.initPromise) return this.initPromise;
+    if (this.tableReady) return;
 
-    this.initPromise = this.doInit();
-    return this.initPromise;
-  }
+    const db = getTursoClient();
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS trainer_links (
+        discord_user_id TEXT PRIMARY KEY,
+        trainer_id      TEXT NOT NULL,
+        trainer_name    TEXT NOT NULL,
+        linked_at       TEXT NOT NULL
+      )
+    `);
 
-  private async doInit(): Promise<void> {
-    try {
-      const db = getTursoClient();
-      await db.execute(`
-        CREATE TABLE IF NOT EXISTS trainer_links (
-          discord_user_id TEXT PRIMARY KEY,
-          trainer_id      TEXT NOT NULL,
-          trainer_name    TEXT NOT NULL,
-          linked_at       TEXT NOT NULL
-        )
-      `);
-
-      logger.info('trainer_links table ready');
-    } catch (err: any) {
-      logger.error(`trainer_links init failed: ${err.message}`);
-      this.initPromise = null; // allow retry on next call
-      throw err;
-    }
+    this.tableReady = true;
+    logger.info('trainer_links table ready');
   }
 
   /** Return all linked trainer records. */

@@ -45,64 +45,47 @@ async function startGatewayBot() {
 
   // ── Register slash commands on ready ──
   client.on(Events.ClientReady, async () => {
-    try {
-      logger.info(`Logged in as ${client.user?.tag}!`);
+    logger.info(`Logged in as ${client.user?.tag}!`);
 
-      const rest = new REST({ version: '10' }).setToken(token);
+    const rest = new REST({ version: '10' }).setToken(token);
+
+    try {
       logger.info(`Registering ${ALL_COMMANDS.length} slash commands...`);
 
+      // Register globally (can also register per-guild during dev)
       const guildId = process.env['DISCORD_GUILD_ID'];
       if (guildId) {
+        // Guild-specific: instant updates (good for development)
         await rest.put(Routes.applicationGuildCommands(clientId, guildId), {
           body: ALL_COMMANDS,
         });
         logger.info(`Registered ${ALL_COMMANDS.length} slash commands to guild ${guildId}.`);
       } else {
+        // Global: takes up to 1 hour to propagate (production)
         await rest.put(Routes.applicationCommands(clientId), {
           body: ALL_COMMANDS,
         });
         logger.info(`Registered ${ALL_COMMANDS.length} slash commands globally.`);
       }
     } catch (err: any) {
-      logger.error(`Failed during ready handler: ${err.message}`);
+      logger.error(`Failed to register slash commands: ${err.message}`);
     }
   });
 
   // ── Handle interactions ──
   client.on(Events.InteractionCreate, async (interaction: Interaction) => {
-    try {
-      if (interaction.isAutocomplete()) {
-        await handleTrainerAutocomplete(interaction);
-        return;
-      }
+    if (interaction.isAutocomplete()) {
+      await handleTrainerAutocomplete(interaction);
+      return;
+    }
 
-      if (interaction.isChatInputCommand()) {
-        await routeCommand(interaction);
-        return;
-      }
-    } catch (err: any) {
-      logger.error(`Unhandled error in interaction handler: ${err.message}`);
-      // Try to reply if the interaction hasn't been handled yet
-      try {
-        if (!interaction.isAutocomplete() && !interaction.replied && !interaction.deferred) {
-          await interaction.reply({
-            content: '❌ An unexpected error occurred. Please try again.',
-            ephemeral: true,
-          });
-        }
-      } catch {
-        // Interaction may already be expired — nothing we can do
-      }
+    if (interaction.isChatInputCommand()) {
+      await routeCommand(interaction);
+      return;
     }
   });
 
-  // Catch unhandled login errors
-  try {
-    await client.login(token);
-  } catch (err: any) {
-    logger.error(`Failed to login to Discord: ${err.message}`);
-    process.exit(1);
-  }
+  await client.login(token);
 }
 
 // ── CLI Simulator Mode ──
@@ -137,18 +120,13 @@ function startSimulator() {
         process.exit(0);
       }
 
-      try {
-        if (trimmed.startsWith('!agent ')) {
-          await runAgentPipeline(trimmed.replace('!agent ', ''));
-        } else if (trimmed.startsWith('/')) {
-          console.log('\x1b[33m[Simulator]\x1b[0m Slash commands require a real Discord connection.');
-          console.log('  Set DISCORD_BOT_TOKEN + DISCORD_CLIENT_ID to enable full Gateway mode.\n');
-        } else if (trimmed !== '') {
-          console.log('\x1b[90m[System] Message sent (use !agent or /command)\x1b[0m\n');
-        }
-      } catch (err: any) {
-        logger.error(`Simulator handler error: ${err.message}`);
-        console.log(`\x1b[31m[Error]\x1b[0m ${err.message}\n`);
+      if (trimmed.startsWith('!agent ')) {
+        await runAgentPipeline(trimmed.replace('!agent ', ''));
+      } else if (trimmed.startsWith('/')) {
+        console.log('\x1b[33m[Simulator]\x1b[0m Slash commands require a real Discord connection.');
+        console.log('  Set DISCORD_BOT_TOKEN + DISCORD_CLIENT_ID to enable full Gateway mode.\n');
+      } else if (trimmed !== '') {
+        console.log('\x1b[90m[System] Message sent (use !agent or /command)\x1b[0m\n');
       }
 
       promptUser();
@@ -193,30 +171,25 @@ async function runAgentPipeline(prompt: string) {
 // ── Entry point ──
 
 async function startBot() {
-  try {
-    const token = process.env['DISCORD_BOT_TOKEN'];
-    const clientId = process.env['DISCORD_CLIENT_ID'];
-    const umaKey = process.env['UMAMOE_API_KEY'];
-    const circleId = process.env['UMAMOE_CIRCLE_ID'] || '974470619';
+  const token = process.env['DISCORD_BOT_TOKEN'];
+  const clientId = process.env['DISCORD_CLIENT_ID'];
+  const umaKey = process.env['UMAMOE_API_KEY'];
+  const circleId = process.env['UMAMOE_CIRCLE_ID'] || '974470619';
 
-    logger.info('='.repeat(50));
-    logger.info(`Starting ${PLATFORM_NAME} Discord Service...`);
-    logger.info('='.repeat(50));
-    logger.info(`uma.moe API: ${umaKey ? '✅ key configured' : '⚠️ no key — may hit rate limits'}`);
-    logger.info(`Circle ID: ${circleId}`);
+  logger.info('='.repeat(50));
+  logger.info(`Starting ${PLATFORM_NAME} Discord Service...`);
+  logger.info('='.repeat(50));
+  logger.info(`uma.moe API: ${umaKey ? '✅ key configured' : '⚠️ no key — may hit rate limits'}`);
+  logger.info(`Circle ID: ${circleId}`);
 
-    if (token && clientId) {
-      await startGatewayBot();
-    } else {
-      if (token && !clientId) {
-        logger.warn('DISCORD_BOT_TOKEN is set but DISCORD_CLIENT_ID is missing.');
-        logger.warn('Both are required for Gateway mode. Falling back to simulator.');
-      }
-      startSimulator();
+  if (token && clientId) {
+    await startGatewayBot();
+  } else {
+    if (token && !clientId) {
+      logger.warn('DISCORD_BOT_TOKEN is set but DISCORD_CLIENT_ID is missing.');
+      logger.warn('Both are required for Gateway mode. Falling back to simulator.');
     }
-  } catch (err: any) {
-    logger.error(`Fatal startup error: ${err.message}`);
-    process.exit(1);
+    startSimulator();
   }
 }
 

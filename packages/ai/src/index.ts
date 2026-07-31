@@ -159,5 +159,3 @@ export class MockAIService extends AIService {
 export * from './providers.js';
 export * from './embeddings.js';
 export * from './prompts.js';
-export * from './local-brain.js';
-export * from './local-provider.js';

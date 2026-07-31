@@ -1,6 +1,8 @@
 import { ToolDefinition } from '@ai-agent-platform/shared';
 /**
- * Fetches text content from a public web URL.
+ * Fetches text content from a public HTTPS URL.
+ * Blocks loopback, RFC1918, link-local, and cloud metadata endpoints.
+ * Validates redirect targets to prevent SSRF bypass via redirect chains.
  */
 export declare const webFetch: ToolDefinition;
 /**

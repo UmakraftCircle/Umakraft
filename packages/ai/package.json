@@ -11,7 +11,6 @@
   },
   "dependencies": {
     "@ai-agent-platform/shared": "workspace:*",
-    "node-llama-cpp": "^3.6.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

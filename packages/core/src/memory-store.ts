@@ -97,13 +97,12 @@ export class MemoryStore {
     try {
       const db = await getDatabase();
       db.prepare(
-        `INSERT INTO adaptation_rules (id, pattern, suggestion, tool_slug, last_error_message, fix_id, occurrences, last_seen)
-         VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+        `INSERT INTO adaptation_rules (id, pattern, suggestion, occurrences, last_seen)
+         VALUES (?, ?, ?, 1, ?)
          ON CONFLICT(id) DO UPDATE SET
            occurrences = adaptation_rules.occurrences + 1,
-           last_seen = excluded.last_seen,
-           last_error_message = excluded.last_error_message`
-      ).run(rule.id, rule.pattern, rule.suggestion, rule.toolSlug, rule.lastErrorMessage, rule.fixId || null, rule.lastSeen);
+           last_seen = excluded.last_seen`
+      ).run(rule.id, rule.pattern, rule.suggestion, rule.lastSeen);
     } catch (err: any) {
       logger.error(`Failed to save rule: ${err.message}`);
     }
@@ -111,13 +110,12 @@ export class MemoryStore {
 
   /**
    * Load all adaptation rules from disk, sorted by occurrence frequency.
-   * Reconstructs autoFix functions from persisted fix_id values.
    */
   public async loadRules(): Promise<AdaptationRule[]> {
     try {
       const db = await getDatabase();
       const rows = db.prepare(
-        `SELECT id, pattern, suggestion, tool_slug, last_error_message, fix_id, occurrences, last_seen
+        `SELECT id, pattern, suggestion, occurrences, last_seen
          FROM adaptation_rules ORDER BY occurrences DESC`
       ).all() as any[];
 
@@ -125,10 +123,6 @@ export class MemoryStore {
         id: r.id,
         pattern: r.pattern,
         suggestion: r.suggestion,
-        toolSlug: r.tool_slug || '',
-        lastErrorMessage: r.last_error_message || '',
-        fixId: r.fix_id || undefined,
-        autoFix: r.fix_id ? reconstructAutoFix(r.fix_id) : undefined,
         occurrences: r.occurrences,
         lastSeen: r.last_seen
       }));
@@ -164,25 +158,5 @@ export class MemoryStore {
     } catch (err: any) {
       logger.error(`Failed to reset memory store: ${err.message}`);
     }
-  }
-}
-
-// ── AutoFix reconstruction ──────────────────────────────
-// When rules are loaded from SQLite, autoFix functions must be
-// reconstructed from their persisted fix_id. Add new fix types here.
-
-function reconstructAutoFix(
-  fixId: string
-): ((args: Record<string, any>) => Record<string, any>) | undefined {
-  switch (fixId) {
-    case 'make-absolute-path':
-      return (args: Record<string, any>) => {
-        if (args['path'] && !args['path'].startsWith('/')) {
-          return { ...args, path: '/' + args['path'] };
-        }
-        return args;
-      };
-    default:
-      return undefined;
   }
 }

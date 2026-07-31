@@ -7,8 +7,7 @@ const logger = createLogger('Validator');
 
 export const TaskStatusSchema = z.enum(['pending', 'running', 'completed', 'failed']);
 
-// Schema for RAW task data (array form, before Map construction)
-export const RawAgentTaskSchema = z.object({
+export const AgentTaskSchema = z.object({
   id: z.string().min(1, 'Task ID is required'),
   name: z.string().min(1, 'Task name is required'),
   toolSlug: z.string().min(1, 'Tool slug is required'),
@@ -21,11 +20,10 @@ export const RawAgentTaskSchema = z.object({
   maxRetries: z.number().int().min(0)
 });
 
-// Schema for the raw AI output (array of tasks — NOT a Map)
 export const ExecutionPlanSchema = z.object({
   id: z.string().min(1),
   intent: z.string().min(1),
-  tasks: z.array(RawAgentTaskSchema).min(1, 'Plan must contain at least one task'),
+  tasks: z.array(AgentTaskSchema).min(1, 'Plan must contain at least one task'),
   metadata: z.object({
     modelUsed: z.string(),
     createdAt: z.string(),
@@ -55,7 +53,7 @@ export interface ValidationResult {
 }
 
 /**
- * Validates a raw execution plan payload (array form) before it enters the scheduler.
+ * Validates a raw execution plan payload before it enters the scheduler.
  */
 export function validateExecutionPlan(plan: unknown): ValidationResult {
   const result = ExecutionPlanSchema.safeParse(plan);
@@ -69,14 +67,6 @@ export function validateExecutionPlan(plan: unknown): ValidationResult {
   // Additional semantic checks
   const data = result.data;
   const taskIds = new Set(data.tasks.map(t => t.id));
-
-  // Check for duplicate task IDs
-  if (taskIds.size !== data.tasks.length) {
-    return {
-      valid: false,
-      errors: ['Plan contains duplicate task IDs']
-    };
-  }
 
   // Check that all dependency references are valid
   for (const task of data.tasks) {
@@ -106,58 +96,20 @@ export function validateExecutionPlan(plan: unknown): ValidationResult {
 
 /**
  * Validates tool arguments against its declared parameter schema.
- * Now handles array, object, and enum constraints correctly.
  */
 export function validateToolArguments(
   toolSlug: string,
-  params: Record<string, { type: string; required: boolean; enum?: string[] }>,
+  params: Record<string, { type: string; required: boolean }>,
   args: Record<string, any>
 ): ValidationResult {
   const errors: string[] = [];
 
   for (const [key, param] of Object.entries(params)) {
-    const value = args[key];
-
-    // ── Required check ──
-    if (param.required && (value === undefined || value === null)) {
+    if (param.required && (args[key] === undefined || args[key] === null)) {
       errors.push(`Tool "${toolSlug}": required parameter "${key}" is missing`);
-      continue;
     }
-
-    if (value === undefined) continue;
-
-    // ── Type check (with proper array detection) ──
-    switch (param.type) {
-      case 'array':
-        if (!Array.isArray(value)) {
-          errors.push(
-            `Tool "${toolSlug}": parameter "${key}" expected array but got ${typeof value}`
-          );
-        }
-        break;
-      case 'object':
-        if (Array.isArray(value) || value === null || typeof value !== 'object') {
-          errors.push(
-            `Tool "${toolSlug}": parameter "${key}" expected object but got ${Array.isArray(value) ? 'array' : typeof value}`
-          );
-        }
-        break;
-      default:
-        if (typeof value !== param.type) {
-          errors.push(
-            `Tool "${toolSlug}": parameter "${key}" expected type "${param.type}" but got "${typeof value}"`
-          );
-        }
-    }
-
-    // ── Enum check ──
-    if (param.enum && param.enum.length > 0) {
-      // Only validate string values against enums
-      if (typeof value === 'string' && !param.enum.includes(value)) {
-        errors.push(
-          `Tool "${toolSlug}": parameter "${key}" value "${value}" is not in allowed values: [${param.enum.join(', ')}]`
-        );
-      }
+    if (args[key] !== undefined && typeof args[key] !== param.type && param.type !== 'array' && param.type !== 'object') {
+      errors.push(`Tool "${toolSlug}": parameter "${key}" expected type "${param.type}" but got "${typeof args[key]}"`);
     }
   }
 

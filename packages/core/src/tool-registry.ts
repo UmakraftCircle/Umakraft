@@ -1,5 +1,4 @@
 import { ToolDefinition, ToolResult, createLogger } from '@ai-agent-platform/shared';
-import { validateToolArguments } from './validator.js';
 
 const logger = createLogger('ToolRegistry');
 
@@ -61,24 +60,14 @@ export class ToolRegistry {
     }
   }
 
-  /**
-   * Validates tool arguments against the declared parameter schema.
-   * Uses shared validator with full array/object/enum support.
-   */
   private validateArguments(tool: ToolDefinition, args: Record<string, any>): void {
-    // Convert param definitions to the format expected by validateToolArguments
-    const params: Record<string, { type: string; required: boolean; enum?: string[] }> = {};
     for (const [key, param] of Object.entries(tool.parameters)) {
-      params[key] = {
-        type: param.type,
-        required: param.required ?? false,
-        enum: param.enum,
-      };
-    }
-
-    const result = validateToolArguments(tool.slug, params, args);
-    if (!result.valid) {
-      throw new Error(`Validation Error: ${result.errors.join('; ')}`);
+      if (param.required && (args[key] === undefined || args[key] === null)) {
+        throw new Error(`Validation Error: Parameter '${key}' is required for tool '${tool.slug}'`);
+      }
+      if (args[key] !== undefined && typeof args[key] !== param.type && param.type !== 'array' && param.type !== 'object') {
+        throw new Error(`Validation Error: Parameter '${key}' must be of type '${param.type}'`);
+      }
     }
   }
 }

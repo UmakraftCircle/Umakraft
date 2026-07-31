@@ -2,16 +2,16 @@ import Database from 'better-sqlite3';
 import { createLogger } from '@ai-agent-platform/shared';
 import * as path from 'path';
 const logger = createLogger('SQLite-Database');
-let dbInstance = null;
+let dbPromise = null;
 /**
  * Returns the better-sqlite3 Database instance, creating it if it doesn't exist.
- * better-sqlite3 is synchronous; this returns a Promise to keep the same public interface.
+ * Uses a shared init promise to prevent concurrent callers from opening
+ * multiple connections (race condition fix).
  */
 export function getDatabase() {
-    return new Promise((resolve, reject) => {
-        if (dbInstance) {
-            return resolve(dbInstance);
-        }
+    if (dbPromise)
+        return dbPromise;
+    dbPromise = new Promise((resolve, reject) => {
         const dbPath = path.resolve('platform.db');
         logger.info(`Initializing SQLite Database at: ${dbPath}`);
         try {
@@ -65,13 +65,14 @@ export function getDatabase() {
       `);
             logger.info('Successfully connected to SQLite database.');
             logger.info('SQLite Tables successfully verified (including memory).');
-            dbInstance = db;
-            resolve(dbInstance);
+            resolve(db);
         }
         catch (err) {
             logger.error(`Failed to initialize SQLite database: ${err.message}`);
+            dbPromise = null; // reset so retry is possible
             reject(err);
         }
     });
+    return dbPromise;
 }
 //# sourceMappingURL=database.js.map

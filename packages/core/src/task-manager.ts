@@ -23,20 +23,14 @@ function isRetryable(error: string): boolean {
   return RETRYABLE_ERROR_PATTERNS.some(p => p.test(error));
 }
 
-export interface ExecutePlanOptions {
-  signal?: AbortSignal;
-}
-
 export class TaskManager {
   constructor(private registry: ToolRegistry = ToolRegistry.getInstance()) {}
 
   /**
-   * Orchestrates the execution of a multi-step Agent plan.
-   * Accepts an optional AbortSignal to cancel in-flight execution.
-   * Awaits all active tasks before returning, even on failure/abort.
+   * Orchestrates the execution of a multi-step Agent plan in parallel,
+   * respecting task dependency graphs, managing retries, and returning results.
    */
-  public async executePlan(plan: ExecutionPlan, opts: ExecutePlanOptions = {}): Promise<ExecutionPlan> {
-    const { signal } = opts;
+  public async executePlan(plan: ExecutionPlan): Promise<ExecutionPlan> {
     logger.info(`Starting execution of plan: ${plan.id}`);
 
     // Seed completedTasks from tasks already marked completed in the plan
@@ -52,13 +46,6 @@ export class TaskManager {
     let hasFailed = false;
 
     while (completedTasks.size < plan.tasks.size && !hasFailed) {
-      // Check for external abort signal
-      if (signal?.aborted) {
-        logger.warn(`Plan ${plan.id} aborted by external signal.`);
-        hasFailed = true;
-        break;
-      }
-
       // Find all tasks that are currently "pending" and whose dependencies are fully met
       const executableTasks: AgentTask[] = [];
 
@@ -75,17 +62,9 @@ export class TaskManager {
       // then we must have an unresolved dependency deadlock.
       if (executableTasks.length === 0 && activePromises.size === 0) {
         const pending = Array.from(plan.tasks.values())
-          .filter(t => t.status === 'pending');
-        logger.error(
-          `Deadlock detected! ${pending.length} stuck task(s): ` +
-          pending.map(t => `${t.id}(deps:[${t.dependencies.filter(d => !completedTasks.has(d))}])`).join(', ')
-        );
-
-        // Mark stuck tasks as failed so the API response reflects the failure
-        for (const task of pending) {
-          task.status = 'failed';
-          task.error = `Deadlock: unresolved dependencies [${task.dependencies.filter(d => !completedTasks.has(d)).join(', ')}]`;
-        }
+          .filter(t => t.status === 'pending')
+          .map(t => `${t.id}(deps:[${t.dependencies.filter(d => !completedTasks.has(d))}])`);
+        logger.error(`Deadlock detected! Unresolved tasks: ${pending.join(', ')}`);
         hasFailed = true;
         break;
       }
@@ -93,7 +72,7 @@ export class TaskManager {
       // Start all executable tasks
       for (const task of executableTasks) {
         task.status = 'running';
-        const promise = this.runTaskWithRetry(task, signal)
+        const promise = this.runTaskWithRetry(task)
           .then(() => {
             if (task.status === 'completed') {
               completedTasks.add(task.id);
@@ -119,13 +98,6 @@ export class TaskManager {
       }
     }
 
-    // ── Await ALL remaining active tasks before returning ──
-    // This prevents orphaned side effects and ensures the plan is in a stable state.
-    if (activePromises.size > 0) {
-      logger.info(`Awaiting ${activePromises.size} in-flight task(s) before returning plan ${plan.id}...`);
-      await Promise.allSettled(activePromises.values());
-    }
-
     if (hasFailed) {
       logger.error(`Plan execution failed for plan ${plan.id}`);
     } else {
@@ -135,18 +107,10 @@ export class TaskManager {
     return plan;
   }
 
-  private async runTaskWithRetry(task: AgentTask, signal?: AbortSignal): Promise<void> {
+  private async runTaskWithRetry(task: AgentTask): Promise<void> {
     logger.info(`Running task: [${task.id}] - "${task.name}" using tool: ${task.toolSlug}`);
 
     while (task.retryCount <= task.maxRetries) {
-      // Check abort between retries
-      if (signal?.aborted) {
-        task.status = 'failed';
-        task.error = 'Plan execution aborted.';
-        logger.warn(`Task [${task.id}] aborted.`);
-        return;
-      }
-
       const result = await this.registry.execute(task.toolSlug, task.arguments);
 
       if (result.success) {

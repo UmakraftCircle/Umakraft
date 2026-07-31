@@ -33,34 +33,26 @@ export class OpenAIEmbeddingGenerator extends EmbeddingGenerator {
   public override async embedBatch(texts: string[]): Promise<EmbeddingResult[]> {
     logger.info(`Generating embeddings for ${texts.length} texts via OpenAI ${this.model}...`);
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 30_000);
+    const response = await fetch('https://api.openai.com/v1/embeddings', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.apiKey}`
+      },
+      body: JSON.stringify({ model: this.model, input: texts })
+    });
 
-    try {
-      const response = await fetch('https://api.openai.com/v1/embeddings', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.apiKey}`
-        },
-        body: JSON.stringify({ model: this.model, input: texts }),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`OpenAI embeddings failed (${response.status}): ${errText}`);
-      }
-
-      const result = await response.json();
-      return result.data.map((d: any) => ({
-        embedding: d.embedding,
-        model: this.model,
-        tokens: d.usage?.total_tokens || 0
-      }));
-    } finally {
-      clearTimeout(timer);
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`OpenAI embeddings failed (${response.status}): ${errText}`);
     }
+
+    const result = await response.json();
+    return result.data.map((d: any) => ({
+      embedding: d.embedding,
+      model: this.model,
+      tokens: d.usage?.total_tokens || 0
+    }));
   }
 }
 

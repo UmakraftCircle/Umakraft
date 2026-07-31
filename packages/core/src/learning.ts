@@ -16,9 +16,6 @@ export interface AdaptationRule {
   pattern: string;            // regex to match error messages
   suggestion: string;        // human-readable correction advice
   autoFix?: (args: Record<string, any>) => Record<string, any>;
-  fixId?: string;            // stable identifier for reconstructing autoFix on restart
-  toolSlug: string;          // which tool this rule applies to
-  lastErrorMessage: string;  // the error that most recently triggered this rule
   occurrences: number;
   lastSeen: string;
 }
@@ -122,11 +119,7 @@ export class LearningEngine {
     let fixed = { ...args };
 
     for (const rule of this.rules.values()) {
-      if (rule.autoFix && rule.toolSlug === toolSlug) {
-        // Only apply if the rule's last error matches its learned pattern
-        const patternMatches = new RegExp(rule.pattern, 'i').test(rule.lastErrorMessage || '');
-        if (!patternMatches) continue;
-
+      if (rule.autoFix) {
         try {
           fixed = rule.autoFix(fixed);
           logger.info(`Applied auto-fix rule [${rule.id}] to tool "${toolSlug}"`);
@@ -160,7 +153,6 @@ export class LearningEngine {
       {
         pattern: /no such file|enotdir|eacces/i,
         suggestion: 'Ensure file paths are absolute and parent directories exist.',
-        fixId: 'make-absolute-path',
         autoFix: (args) => {
           if (args['path'] && !args['path'].startsWith('/')) {
             return { ...args, path: '/' + args['path'] };
@@ -194,7 +186,6 @@ export class LearningEngine {
         if (existing) {
           existing.occurrences++;
           existing.lastSeen = obs.timestamp;
-          existing.lastErrorMessage = obs.errorMessage;
           rule = existing;
         } else {
           rule = {
@@ -202,9 +193,6 @@ export class LearningEngine {
             pattern: p.pattern.source,
             suggestion: p.suggestion,
             autoFix: p.autoFix,
-            fixId: p.fixId,
-            toolSlug: obs.toolSlug,
-            lastErrorMessage: obs.errorMessage,
             occurrences: 1,
             lastSeen: obs.timestamp
           };

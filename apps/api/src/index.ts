@@ -5,7 +5,7 @@ import { toolRegistry, Planner, TaskManager, MODELS } from '@ai-agent-platform/c
 import { AuthMiddleware } from './auth.js';
 
 // Register all platform tools
-import { allTools } from '@ai-agent-platform/tools';
+import { allTools, webTools, notificationTools } from '@ai-agent-platform/tools';
 import { allIntegrations } from '@ai-agent-platform/integrations';
 import { allDomainTools as fanTrackerTools } from '@ai-agent-platform/fan-tracker';
 import { allDomainTools as prMonitorTools } from '@ai-agent-platform/pr-monitor';
@@ -14,7 +14,7 @@ const logger = createLogger('API-Server');
 const PORT = parseInt(process.env['PORT'] || '3000', 10);
 
 // Bootstrap tool registry
-for (const tool of allTools) {
+for (const tool of [...allTools, ...webTools, ...notificationTools]) {
   toolRegistry.register(tool);
 }
 for (const integration of allIntegrations) {
@@ -113,7 +113,6 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  try {
   const { path, params } = parseUrl(req);
 
   logger.info(`${req.method} ${path}`);
@@ -219,15 +218,11 @@ const server = http.createServer(async (req, res) => {
 
       logger.info(`Executing plan: ${planId}`);
       const PLAN_EXECUTION_TIMEOUT = 60_000; // 60 seconds
-      const controller = new AbortController();
       let timer: ReturnType<typeof setTimeout> | undefined;
       const executedPlan = await Promise.race([
-        taskManager.executePlan(plan, { signal: controller.signal }),
+        taskManager.executePlan(plan),
         new Promise<never>((_, reject) => {
-          timer = setTimeout(() => {
-            controller.abort();  // cancel in-flight execution
-            reject(new Error('Plan execution timed out after 60 seconds'));
-          }, PLAN_EXECUTION_TIMEOUT);
+          timer = setTimeout(() => reject(new Error('Plan execution timed out after 60 seconds')), PLAN_EXECUTION_TIMEOUT);
         }),
       ]).finally(() => {
         if (timer) clearTimeout(timer);
@@ -263,10 +258,6 @@ const server = http.createServer(async (req, res) => {
   } catch (error: any) {
     logger.error(`Request handler error: ${error.message}`, error.stack);
     jsonResponse(res, 500, { error: 'Internal Server Error' });
-  }
-  } catch (error: any) {
-    logger.error(`Request parsing error: ${error.message}`);
-    jsonResponse(res, 400, { error: 'Bad Request', message: 'Malformed request URL or headers' });
   }
 });
 
