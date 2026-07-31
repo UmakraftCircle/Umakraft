@@ -19,6 +19,8 @@ const RawTaskSchema = z.object({
 const RawPlanSchema = z.object({
   tasks: z.array(RawTaskSchema).min(1, 'Plan must contain at least one task'),
 });
+
+export class Planner {
   constructor(
     private aiService: AIService,
     private registry: ToolRegistry = ToolRegistry.getInstance()
