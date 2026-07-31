@@ -17,9 +17,11 @@
     "@ai-agent-platform/integrations": "workspace:*",
     "@ai-agent-platform/fan-tracker": "workspace:*",
     "@ai-agent-platform/pr-monitor": "workspace:*",
-    "discord.js": "^14.15.3"
+    "discord.js": "^14.15.3",
+    "node-cron": "^3.0.3"
   },
   "devDependencies": {
+    "@types/node-cron": "^3.0.11",
     "typescript": "^5.4.5"
   }
 }
