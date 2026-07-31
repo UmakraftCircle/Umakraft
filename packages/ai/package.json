@@ -13,6 +13,9 @@
     "@ai-agent-platform/shared": "workspace:*",
     "zod": "^3.23.8"
   },
+  "optionalDependencies": {
+    "node-llama-cpp": "^3.0.0"
+  },
   "devDependencies": {
     "typescript": "^5.4.5"
   }

@@ -1,10 +1,24 @@
 import { ExecutionPlan, AgentTask, PlanValidationError, createLogger } from '@ai-agent-platform/shared';
 import { ToolRegistry } from './tool-registry.js';
 import { AIService } from '@ai-agent-platform/ai';
+import { z } from 'zod';
 
 const logger = createLogger('Planner');
 
-export class Planner {
+// ── AI output schema validation ──
+
+const RawTaskSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  toolSlug: z.string().min(1),
+  arguments: z.record(z.any()).default({}),
+  dependencies: z.array(z.string()).default([]),
+  maxRetries: z.number().int().min(0).max(10).optional(),
+});
+
+const RawPlanSchema = z.object({
+  tasks: z.array(RawTaskSchema).min(1, 'Plan must contain at least one task'),
+});
   constructor(
     private aiService: AIService,
     private registry: ToolRegistry = ToolRegistry.getInstance()
@@ -31,9 +45,17 @@ export class Planner {
       prompt: `Plan a sequence of operations to solve this: "${intent}"`
     });
 
+    // Validate AI output shape before building the plan
+    const parsed = RawPlanSchema.safeParse(rawResult);
+    if (!parsed.success) {
+      const issues = parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ');
+      logger.error(`AI planner returned invalid output: ${issues}`);
+      throw new PlanValidationError(`AI generated an invalid plan structure: ${issues}`);
+    }
+
     const tasksMap = new Map<string, AgentTask>();
 
-    for (const taskData of rawResult.tasks) {
+    for (const taskData of parsed.data.tasks) {
       tasksMap.set(taskData.id, {
         id: taskData.id,
         name: taskData.name,

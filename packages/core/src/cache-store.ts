@@ -38,6 +38,7 @@ export class CacheStore<T = any> {
   private misses = 0;
   private evictions = 0;
   private sweepTimer: ReturnType<typeof setInterval> | null = null;
+  private evictLock = false; // prevents concurrent eviction loops
 
   constructor(config: CacheStoreConfig = {}) {
     this.config = {
@@ -245,21 +246,28 @@ export class CacheStore<T = any> {
    * Evict the least-recently-accessed entry.
    */
   private evictLRU(): void {
-    let oldestKey: string | null = null;
-    let oldestAccess = Infinity;
+    // Guard against concurrent eviction loops
+    if (this.evictLock) return;
+    this.evictLock = true;
+    try {
+      let oldestKey: string | null = null;
+      let oldestAccess = Infinity;
 
-    for (const [key, entry] of this.store) {
-      if (entry.lastAccess < oldestAccess) {
-        oldestAccess = entry.lastAccess;
-        oldestKey = key;
+      for (const [key, entry] of this.store) {
+        if (entry.lastAccess < oldestAccess) {
+          oldestAccess = entry.lastAccess;
+          oldestKey = key;
+        }
       }
-    }
 
-    if (oldestKey) {
-      this.store.delete(oldestKey);
-      this.promises.delete(oldestKey);
-      this.evictions++;
-      logger.debug(`LRU eviction: ${oldestKey}`);
+      if (oldestKey) {
+        this.store.delete(oldestKey);
+        this.promises.delete(oldestKey);
+        this.evictions++;
+        logger.debug(`LRU eviction: ${oldestKey}`);
+      }
+    } finally {
+      this.evictLock = false;
     }
   }
 }

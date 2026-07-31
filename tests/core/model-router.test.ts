@@ -103,9 +103,17 @@ describe('ModelRouter', () => {
         requiresVision: false,
       });
       assert.ok(small && large);
+      // Cost should scale with tokens — if same model, large cost > small cost
       if (small.model.id === large.model.id) {
-        assert.ok(large.estimatedCost > small.estimatedCost);
+        assert.ok(large.estimatedCost > small.estimatedCost,
+          `Expected large cost ${large.estimatedCost} > small cost ${small.estimatedCost}`);
       }
+      // Even if different models, they should be different routing decisions
+      // (context window enforcement now prevents same-model routing for 100k tokens)
+      assert.ok(
+        small.model.id !== large.model.id || large.estimatedCost > small.estimatedCost,
+        'Different prompt lengths should produce different routing outcomes'
+      );
     });
 
     it('should require structured output capability when specified', () => {

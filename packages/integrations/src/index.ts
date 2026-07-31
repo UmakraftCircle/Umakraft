@@ -16,8 +16,17 @@ export const discordSendMessage: ToolDefinition = {
   },
   handler: async (args) => {
     const message = args['message'];
-    logger.info(`Sending message to Discord API: "${message}"`);
-    return { success: true, timestamp: new Date().toISOString(), platform: 'discord' };
+    logger.warn(
+      'discord-send-message is a stub — message was NOT sent to Discord. ' +
+      'Use the Discord bot gateway (apps/discord) for real Discord integration.'
+    );
+    logger.info(`[STUB] Would send to Discord: "${message.slice(0, 100)}"`);
+    return {
+      success: true,
+      timestamp: new Date().toISOString(),
+      platform: 'discord',
+      warning: 'This tool is a stub. Messages are logged but not sent to Discord.',
+    };
   }
 };
 
@@ -46,7 +55,8 @@ export const databaseStoreResult: ToolDefinition = {
     try {
       const db = await getDatabase();
 
-      // Determine overall plan status
+      // Wrap all writes in a single transaction
+      const persist = db.transaction(() => {
       let planStatus = 'completed';
       const tasksList = planData.tasks instanceof Map ? Array.from(planData.tasks.values()) : (planData.tasks || []);
       if (tasksList.some((t: any) => t.status === 'failed')) {
@@ -95,6 +105,10 @@ export const databaseStoreResult: ToolDefinition = {
           task.maxRetries || 3
         );
       }
+
+      }); // end transaction
+
+      persist(); // execute transaction
 
       logger.info(`Successfully stored plan ${planId} and ${tasksList.length} tasks in SQLite platform.db!`);
       return {

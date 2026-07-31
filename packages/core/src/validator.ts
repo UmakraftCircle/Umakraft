@@ -23,7 +23,14 @@ export const AgentTaskSchema = z.object({
 export const ExecutionPlanSchema = z.object({
   id: z.string().min(1),
   intent: z.string().min(1),
-  tasks: z.array(AgentTaskSchema).min(1, 'Plan must contain at least one task'),
+  tasks: z.preprocess(
+    (val: unknown) => {
+      if (val instanceof Map) return Array.from((val as Map<string, unknown>).values());
+      if (typeof val === 'object' && val !== null && !Array.isArray(val)) return Object.values(val as Record<string, unknown>);
+      return val;
+    },
+    z.array(AgentTaskSchema).min(1, 'Plan must contain at least one task'),
+  ),
   metadata: z.object({
     modelUsed: z.string(),
     createdAt: z.string(),

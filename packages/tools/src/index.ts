@@ -4,6 +4,19 @@ import * as path from 'path';
 
 const logger = createLogger('FilesystemTools');
 
+// ── Path sandboxing ──
+
+const WORKSPACE_ROOT = path.resolve(process.env['WORKSPACE_ROOT'] || process.cwd());
+
+function resolveSafe(filePath: string): string {
+  const resolved = path.resolve(WORKSPACE_ROOT, filePath);
+  const relative = path.relative(WORKSPACE_ROOT, resolved);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error(`Path traversal blocked: "${filePath}" resolves outside workspace root`);
+  }
+  return resolved;
+}
+
 export const filesystemWriteFile: ToolDefinition = {
   slug: 'filesystem-write-file',
   name: 'Write File',
@@ -27,7 +40,7 @@ export const filesystemWriteFile: ToolDefinition = {
     logger.info(`Writing content to file: ${filePath}`);
     
     try {
-      const fullPath = path.resolve(filePath);
+      const fullPath = resolveSafe(filePath);
       await fs.mkdir(path.dirname(fullPath), { recursive: true });
       await fs.writeFile(fullPath, content, 'utf-8');
       return { success: true, path: fullPath, bytesWritten: Buffer.byteLength(content) };
@@ -52,7 +65,7 @@ export const filesystemReadFile: ToolDefinition = {
     const filePath = args['path'];
     logger.info(`Reading content from file: ${filePath}`);
     try {
-      const fullPath = path.resolve(filePath);
+      const fullPath = resolveSafe(filePath);
       const content = await fs.readFile(fullPath, 'utf-8');
       return { success: true, content };
     } catch (error: any) {

@@ -6,10 +6,11 @@ const logger = createLogger('Turso');
 // ── Singleton client ──────────────────────────────────────
 
 let client: Client | null = null;
+let connectAttempts = 0;
+const MAX_CONNECT_ATTEMPTS = 3;
 
 /**
- * Returns the shared Turso client instance.
- * Initializes on first call using TURSO_URL and TURSO_AUTH_TOKEN env vars.
+ * Returns the shared Turso client instance with retry logic.
  */
 export function getTursoClient(): Client {
   if (client) return client;
@@ -24,9 +25,21 @@ export function getTursoClient(): Client {
     );
   }
 
-  client = createClient({ url, authToken });
-  logger.info(`Turso client connected to ${url}`);
-  return client;
+  try {
+    client = createClient({ url, authToken });
+    connectAttempts = 0;
+    logger.info(`Turso client connected to ${url}`);
+    return client;
+  } catch (err: any) {
+    connectAttempts++;
+    if (connectAttempts < MAX_CONNECT_ATTEMPTS) {
+      logger.warn(`Turso connection attempt ${connectAttempts}/${MAX_CONNECT_ATTEMPTS} failed: ${err.message}`);
+    } else {
+      logger.error(`Turso connection failed after ${MAX_CONNECT_ATTEMPTS} attempts: ${err.message}`);
+      throw err;
+    }
+  }
+  throw new Error('Turso connection failed');
 }
 
 /**

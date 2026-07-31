@@ -207,7 +207,7 @@ describe('TaskManager', () => {
       await mgr.executePlan(plan);
 
       assert.equal(plan.tasks.get('f2').status, 'failed');
-      assert.equal(plan.tasks.get('f2').retryCount, 2); // tried once, then retry, then gave up
+      assert.equal(plan.tasks.get('f2').retryCount, 1); // permanent error: 1 attempt, no retry
     });
 
     it('should back off linearly between retries', async () => {

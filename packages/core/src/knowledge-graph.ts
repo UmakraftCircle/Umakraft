@@ -192,7 +192,7 @@ export class KnowledgeGraph {
     const result: KnowledgeEdge = { ...edge, id, createdAt: now };
 
     db.prepare(`
-      INSERT INTO knowledge_edges (id, source_id, target_id, relationship, weight, metadata, created_at)
+      INSERT OR IGNORE INTO knowledge_edges (id, source_id, target_id, relationship, weight, metadata, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(
       result.id, result.sourceId, result.targetId, result.relationship,

@@ -124,7 +124,8 @@ export class MemoryStore {
         pattern: r.pattern,
         suggestion: r.suggestion,
         occurrences: r.occurrences,
-        lastSeen: r.last_seen
+        lastSeen: r.last_seen,
+        // autoFix functions cannot be serialized — they are re-derived from patterns at runtime
       }));
     } catch (err: any) {
       logger.error(`Failed to load rules: ${err.message}`);

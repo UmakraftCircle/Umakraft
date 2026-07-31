@@ -100,6 +100,7 @@ export class ModelRouter {
   public route(context: RoutingContext): RoutingDecision {
     const candidates = Array.from(this.profiles.values())
       .filter(m => {
+        if (context.promptLength > m.contextWindow) return false;
         if (context.requiresStructuredOutput && !m.capabilities.includes('structured-output')) return false;
         if (context.requiresVision && !m.capabilities.includes('vision')) return false;
         if (context.preferLocal && !m.isLocal) return false;

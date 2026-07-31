@@ -23,22 +23,22 @@ export interface RateLimitConfig {
   maxRequests: number;
 }
 
-// ── API Key Store ──
+// ── API Key Store (timing-safe via SHA-256 hash comparison) ──
 
 class ApiKeyStore {
-  private keys: Set<string> = new Set();
+  private hashes: Buffer[] = [];
 
   constructor() {
     const envKey = process.env['API_KEY'];
     if (envKey) {
-      this.keys.add(envKey.trim());
+      this.hashes.push(this.#hashKey(envKey.trim()));
     }
 
     const multiKeys = process.env['API_KEYS'];
     if (multiKeys) {
       const split = multiKeys.split(',').map(k => k.trim()).filter(k => k.length > 0);
       for (const key of split) {
-        this.keys.add(key);
+        this.hashes.push(this.#hashKey(key));
       }
       logger.info(`Loaded ${split.length} API key(s) from API_KEYS.`);
     } else if (envKey) {
@@ -46,24 +46,37 @@ class ApiKeyStore {
     }
   }
 
+  #hashKey(key: string): Buffer {
+    return crypto.createHash('sha256').update(key).digest();
+  }
+
   public validate(key: string): boolean {
-    return this.keys.has(key);
+    const incoming = this.#hashKey(key);
+    for (const stored of this.hashes) {
+      if (incoming.length === stored.length && crypto.timingSafeEqual(incoming, stored)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   public addKey(key: string): void {
-    this.keys.add(key);
+    this.hashes.push(this.#hashKey(key));
   }
 
   public revokeKey(key: string): void {
-    this.keys.delete(key);
+    const hash = this.#hashKey(key);
+    this.hashes = this.hashes.filter(h => !(h.length === hash.length && crypto.timingSafeEqual(h, hash)));
   }
 
   public keyCount(): number {
-    return this.keys.size;
+    return this.hashes.length;
   }
 }
 
 // ── Token Bucket Rate Limiter ──
+// NOTE: Buckets are stored in-memory — adequate for single-instance deployments.
+// For multi-instance, replace with a shared store (Redis) or configure a sticky load balancer.
 
 interface TokenBucket {
   tokens: number;

@@ -1,4 +1,5 @@
 import { ToolDefinition, createLogger } from '@ai-agent-platform/shared';
+import * as dns from 'dns/promises';
 
 const logger = createLogger('WebTools');
 
@@ -55,6 +56,53 @@ function validateUrl(raw: string): URL {
   return url;
 }
 
+// ── DNS rebinding protection ──
+
+async function validateUrlWithDns(raw: string): Promise<URL> {
+  const url = validateUrl(raw);
+  try {
+    const addresses = await dns.resolve4(url.hostname).catch(() => [] as string[]);
+    for (const addr of addresses) {
+      if (isPrivateIPv4(addr)) {
+        throw new Error(`DNS resolution of ${url.hostname} returned private IP: ${addr}`);
+      }
+    }
+    const ipv6 = await dns.resolve6(url.hostname).catch(() => [] as string[]);
+    for (const addr of ipv6) {
+      if (isPrivateIPv6(addr)) {
+        throw new Error(`DNS resolution of ${url.hostname} returned private IPv6: ${addr}`);
+      }
+    }
+  } catch (err: any) {
+    if (err.message.includes('ENOTFOUND') || err.message.includes('ENODATA')) {
+      // DNS resolution failed — host doesn't exist, let fetch handle it
+    } else if (err.message.includes('private IP') || err.message.includes('private IPv6')) {
+      throw err;
+    }
+    logger.warn(`DNS resolution warning for ${url.hostname}: ${err.message}`);
+  }
+  return url;
+}
+
+function isPrivateIPv4(addr: string): boolean {
+  const octets = addr.split('.').map(Number);
+  if (octets.length !== 4) return false;
+  if (octets[0] === 10) return true;
+  if (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) return true;
+  if (octets[0] === 192 && octets[1] === 168) return true;
+  if (octets[0] === 127) return true;
+  if (octets[0] === 169 && octets[1] === 254) return true;
+  if (octets[0] === 0) return true;
+  return false;
+}
+
+function isPrivateIPv6(addr: string): boolean {
+  const lower = addr.toLowerCase();
+  if (lower === '::1') return true;
+  if (lower.startsWith('fe80:')) return true;
+  return false;
+}
+
 /**
  * Fetches text content from a public HTTPS URL.
  * Blocks loopback, RFC1918, link-local, and cloud metadata endpoints.
@@ -75,7 +123,7 @@ export const webFetch: ToolDefinition = {
     const rawUrl = args['url'];
     logger.info(`Fetching web page: ${rawUrl}`);
 
-    const url = validateUrl(rawUrl);
+    const url = await validateUrlWithDns(rawUrl);
 
     try {
       // Use fetch with redirect: 'manual' to validate each hop
@@ -84,9 +132,9 @@ export const webFetch: ToolDefinition = {
         signal: AbortSignal.timeout(30_000),
       });
 
-      // Validate final URL after redirects
+      // Validate final URL after redirects (DNS check + hostname block)
       if (response.url !== url.href) {
-        validateUrl(response.url);
+        await validateUrlWithDns(response.url);
         logger.info(`Redirected to: ${response.url}`);
       }
 

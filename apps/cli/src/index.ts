@@ -9,7 +9,34 @@ import { allDomainTools } from '@ai-agent-platform/fan-tracker';
 
 const logger = createLogger('CLI-Bootstrap');
 
+// ── Safe JSON stringify (guards against circular references) ──
+function safeStringify(value: any, space?: number): string {
+  const seen = new WeakSet();
+  try {
+    return JSON.stringify(value, (_, v) => {
+      if (typeof v === 'object' && v !== null) {
+        if (seen.has(v)) return '[Circular]';
+        seen.add(v);
+      }
+      return v;
+    }, space);
+  } catch {
+    return '[unserializable]';
+  }
+}
+
 async function main() {
+  // ── Graceful shutdown ──
+  let shuttingDown = false;
+  const shutdown = (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    logger.warn(`\nReceived ${signal} — shutting down gracefully...`);
+    process.exit(0);
+  };
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+
   logger.info(`==================================================`);
   logger.info(`Starting ${PLATFORM_NAME} Engine...`);
   logger.info(`==================================================`);
@@ -80,7 +107,7 @@ async function main() {
       logger.info(`  Task [${task.id}] - Status: ${task.status.toUpperCase()} (Retries: ${task.retryCount})`);
       if (task.status === 'completed') {
         completedCount++;
-        logger.info(`    -> Result: ` + JSON.stringify(task.result, null, 2));
+        logger.info(`    -> Result: ` + safeStringify(task.result, 2));
       } else {
         logger.error(`    -> Error: ${task.error}`);
       }

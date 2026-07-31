@@ -2,6 +2,31 @@ import { createLogger } from '@ai-agent-platform/shared';
 
 const logger = createLogger('Embeddings');
 
+// ── Rate limiter (prevents burst-rate API limit exhaustion) ──
+
+class EmbeddingRateLimiter {
+  private tokens: number;
+  private lastRefill: number;
+  private refillRate: number;
+
+  constructor(maxPerSec = 5, private maxTokens = maxPerSec) {
+    this.tokens = maxTokens;
+    this.lastRefill = Date.now();
+    this.refillRate = maxPerSec / 1000;
+  }
+
+  async acquire(): Promise<void> {
+    while (true) {
+      const now = Date.now();
+      const elapsed = now - this.lastRefill;
+      this.tokens = Math.min(this.maxTokens, this.tokens + elapsed * this.refillRate);
+      this.lastRefill = now;
+      if (this.tokens >= 1) { this.tokens -= 1; return; }
+      await new Promise(r => setTimeout(r, 100));
+    }
+  }
+}
+
 export interface EmbeddingResult {
   embedding: number[];
   model: string;
@@ -21,6 +46,8 @@ export abstract class EmbeddingGenerator {
  * OpenAI embedding adapter (text-embedding-3-small).
  */
 export class OpenAIEmbeddingGenerator extends EmbeddingGenerator {
+  private limiter = new EmbeddingRateLimiter(5);
+
   constructor(private apiKey: string, private model: string = 'text-embedding-3-small') {
     super();
   }
@@ -31,6 +58,7 @@ export class OpenAIEmbeddingGenerator extends EmbeddingGenerator {
   }
 
   public override async embedBatch(texts: string[]): Promise<EmbeddingResult[]> {
+    await this.limiter.acquire();
     logger.info(`Generating embeddings for ${texts.length} texts via OpenAI ${this.model}...`);
 
     const response = await fetch('https://api.openai.com/v1/embeddings', {

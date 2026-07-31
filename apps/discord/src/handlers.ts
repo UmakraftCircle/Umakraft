@@ -10,7 +10,23 @@ import { trainerLinkStore, type TrainerLink } from '@ai-agent-platform/integrati
 
 const logger = createLogger('Discord-Handlers');
 
-// ── Helpers ──
+// ── Input sanitization ──
+
+const ALLOWED_PERIODS = new Set(['daily', 'weekly', 'monthly']);
+const ALLOWED_LEADERBOARD_TOPS = new Set([10, 15, 20, 30]);
+
+function sanitizePeriod(input: string): 'daily' | 'weekly' | 'monthly' {
+  return ALLOWED_PERIODS.has(input) ? (input as 'daily' | 'weekly' | 'monthly') : 'monthly';
+}
+
+function sanitizeTop(input: number): number {
+  return ALLOWED_LEADERBOARD_TOPS.has(input) ? input : 10;
+}
+
+function sanitizeTrainerInput(input: string): string {
+  // Strip any non-alphanumeric characters except spaces, hyphens, and parentheses
+  return input.replace(/[^a-zA-Z0-9\s\-()]/g, '').slice(0, 100);
+}
 
 function isAdmin(interaction: ChatInputCommandInteraction): boolean {
   const perms = interaction.memberPermissions;
@@ -72,7 +88,7 @@ export async function handleSync(interaction: ChatInputCommandInteraction) {
 // ── /fans gain ────────────────────────────────────────────
 
 export async function handleFansGain(interaction: ChatInputCommandInteraction) {
-  const period = (interaction.options.getString('period') || 'daily') as 'daily' | 'weekly' | 'monthly';
+  const period = sanitizePeriod(interaction.options.getString('period') || 'monthly');
   await interaction.deferReply();
 
   // Find linked trainer
@@ -129,8 +145,8 @@ export async function handleFansGain(interaction: ChatInputCommandInteraction) {
 // ── /fans leaderboard ─────────────────────────────────────
 
 export async function handleFansLeaderboard(interaction: ChatInputCommandInteraction) {
-  const top = interaction.options.getInteger('top') || 10;
-  const period = (interaction.options.getString('period') || 'daily') as 'daily' | 'weekly' | 'monthly';
+  const top = sanitizeTop(interaction.options.getInteger('top') || 10);
+  const period = sanitizePeriod(interaction.options.getString('period') || 'monthly');
   await interaction.deferReply();
 
   const members = await fanTrackerAPI.fetchAllMembers();

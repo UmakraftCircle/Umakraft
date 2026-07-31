@@ -62,6 +62,15 @@ export class PRMonitorAPI {
   constructor(baseUrl?: string, token?: string) {
     this.baseUrl = baseUrl || process.env['GITHUB_API_URL'] || 'https://api.github.com';
     this.token = token || process.env['GITHUB_TOKEN'];
+
+    if (!this.token) {
+      logger.warn(
+        'PR Monitor: No GITHUB_TOKEN configured — API calls will use unauthenticated rate limits. ' +
+        'Set GITHUB_TOKEN env var for higher limits and access to private repos.'
+      );
+    } else {
+      logger.info('PR Monitor: GitHub token configured ✅');
+    }
   }
 
   /**

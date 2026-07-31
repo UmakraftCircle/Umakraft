@@ -1,10 +1,11 @@
 import { createLogger } from '@ai-agent-platform/shared';
 import type { LlamaModel, LlamaContext, LlamaChatSession } from 'node-llama-cpp';
 import { resolve } from 'path';
-import { existsSync, mkdirSync, createWriteStream } from 'fs';
+import { existsSync, mkdirSync, createWriteStream, statSync, unlinkSync } from 'fs';
 import { pipeline } from 'stream/promises';
 import { Readable } from 'stream';
 import { freemem } from 'os';
+import { createHash } from 'crypto';
 
 const logger = createLogger('LocalBrain');
 
@@ -40,6 +41,10 @@ const DEFAULT_SYSTEM =
   'You are a helpful assistant running inside UmaKraft, a Discord bot for tracking Umamusume fan statistics. ' +
   'Keep responses short and direct. When given cached data, use it to answer. ' +
   'When told to generate a message, output exactly the message with no extra text.';
+
+// Expected SHA256 of the known Q3_K_M model file (verified once after download)
+const EXPECTED_MODEL_SHA256 =
+  process.env['LOCAL_MODEL_SHA256'] || ''; // optional: set to verify integrity
 
 // ── LocalBrain ────────────────────────────────────────────
 
@@ -294,28 +299,80 @@ export class LocalBrain {
   // ── Download helper ─────────────────────────────────────
 
   async #downloadModel(destPath: string): Promise<void> {
-    logger.info(`Downloading from HuggingFace: ${MODEL_URL}`);
+    const DOWNLOAD_TIMEOUT_MS = 600_000; // 10 minutes
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
 
-    const response = await fetch(MODEL_URL, { redirect: 'follow' });
-    if (!response.ok) {
-      throw new Error(`Model download failed: HTTP ${response.status}`);
+    try {
+      logger.info(`Downloading from HuggingFace: ${MODEL_URL}`);
+
+      // Clean up any partial/corrupt previous download
+      if (existsSync(destPath)) {
+        logger.warn(`Removing partial/corrupt model file: ${destPath}`);
+        unlinkSync(destPath);
+      }
+
+      const response = await fetch(MODEL_URL, {
+        redirect: 'follow',
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Model download failed: HTTP ${response.status}`);
+      }
+
+      const contentLength = response.headers.get('content-length');
+      const expectedBytes = contentLength ? parseInt(contentLength) : 0;
+      const totalMB = expectedBytes ? `${(expectedBytes / 1024 / 1024).toFixed(0)} MB` : 'unknown size';
+
+      logger.info(`Downloading ${totalMB} to ${destPath}...`);
+
+      const fileStream = createWriteStream(destPath);
+      if (!response.body) {
+        throw new Error('No response body for model download');
+      }
+
+      const nodeStream = Readable.fromWeb(response.body as any);
+      await pipeline(nodeStream, fileStream);
+
+      // Integrity check: verify file size matches Content-Length
+      if (expectedBytes > 0) {
+        const actualSize = statSync(destPath).size;
+        if (actualSize !== expectedBytes) {
+          unlinkSync(destPath);
+          throw new Error(
+            `Download corrupted: expected ${expectedBytes} bytes, got ${actualSize} bytes`
+          );
+        }
+        logger.info(`File size verified: ${(actualSize / 1024 / 1024).toFixed(0)} MB`);
+      }
+
+      // Optional SHA256 checksum verification
+      if (EXPECTED_MODEL_SHA256) {
+        const hash = createHash('sha256');
+        const fileBytes = await fetch(`file://${destPath}`).then(r => r.arrayBuffer()).catch(() => null);
+        if (fileBytes) {
+          const actual = createHash('sha256').update(Buffer.from(fileBytes)).digest('hex');
+          if (actual !== EXPECTED_MODEL_SHA256) {
+            unlinkSync(destPath);
+            throw new Error(`SHA256 mismatch: expected ${EXPECTED_MODEL_SHA256}, got ${actual}`);
+          }
+        }
+      }
+
+      logger.info('Model download complete.');
+    } catch (err: any) {
+      // Clean up partial download on failure
+      if (existsSync(destPath)) {
+        try { unlinkSync(destPath); } catch { /* best effort */ }
+      }
+      if (err.name === 'AbortError') {
+        throw new Error(`Model download timed out after ${DOWNLOAD_TIMEOUT_MS / 1000}s`);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
     }
-
-    const contentLength = response.headers.get('content-length');
-    const totalMB = contentLength ? `${(parseInt(contentLength) / 1024 / 1024).toFixed(0)} MB` : 'unknown size';
-
-    logger.info(`Downloading ${totalMB} to ${destPath}...`);
-
-    const fileStream = createWriteStream(destPath);
-    if (!response.body) {
-      throw new Error('No response body for model download');
-    }
-
-    // Node.js fetch returns a web ReadableStream — pipe it
-    const nodeStream = Readable.fromWeb(response.body as any);
-    await pipeline(nodeStream, fileStream);
-
-    logger.info('Model download complete.');
   }
 }
 

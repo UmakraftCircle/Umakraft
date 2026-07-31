@@ -2,6 +2,19 @@ import { ToolDefinition, createLogger } from '@ai-agent-platform/shared';
 
 const logger = createLogger('NotificationTools');
 
+// ── SSRF protection for webhook URLs ──
+
+function validateWebhookUrl(raw: string): URL {
+  let url: URL;
+  try { url = new URL(raw); } catch { throw new Error(`Invalid webhook URL: "${raw}"`); }
+  if (url.protocol !== 'https:') throw new Error('Webhook URL must use HTTPS');
+  const blocked = ['localhost', '127.0.0.1', '0.0.0.0', '::1', '169.254.169.254'];
+  if (blocked.some(h => url.hostname.includes(h))) {
+    throw new Error(`Webhook URL hostname is blocked: ${url.hostname}`);
+  }
+  return url;
+}
+
 /**
  * Sends an email notification via SMTP or a configured email provider.
  * Falls back to logging if no email credentials are configured.
@@ -40,6 +53,7 @@ export const emailSend: ToolDefinition = {
 
     if (providerUrl && providerKey) {
       try {
+        validateWebhookUrl(providerUrl);
         const response = await fetch(providerUrl, {
           method: 'POST',
           headers: {
@@ -102,6 +116,7 @@ export const slackSendMessage: ToolDefinition = {
 
     if (webhookUrl) {
       try {
+        validateWebhookUrl(webhookUrl);
         const response = await fetch(webhookUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

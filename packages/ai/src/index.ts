@@ -17,6 +17,17 @@ export abstract class AIService {
 export class MockAIService extends AIService {
   constructor(private modelName: string = 'mock-claude-3-5-sonnet') {
     super();
+    const env = process.env['NODE_ENV'] || 'development';
+    if (env === 'production') {
+      throw new Error(
+        'MockAIService must NOT be used in production. ' +
+        'Set GROQ_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY for real AI.'
+      );
+    }
+    logger.warn(
+      `MockAIService active for model "${modelName}" — ` +
+      'responses are static placeholders. Set a real API key for production use.'
+    );
   }
 
   public override getCurrentModel(): string {
@@ -159,3 +170,9 @@ export class MockAIService extends AIService {
 export * from './providers.js';
 export * from './embeddings.js';
 export * from './prompts.js';
+export * from './greeting-service.js';
+export * from './daily-message-service.js';
+export * from './milestone-message-service.js';
+export * from './monthly-achievement-service.js';
+export * from './reminder-message-service.js';
+export * from './race-commentary-service.js';

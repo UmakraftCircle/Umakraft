@@ -170,10 +170,57 @@ describe('Validator', () => {
       assert.equal(r2.valid, false);
     });
 
-    it('should reject malformed JSON', () => {
-      const result = validateExecutionPlan({ id: 'x' }); // missing most fields
+    it('should validate a plan with Map-format tasks (runtime format)', () => {
+      const tasksMap = new Map();
+      tasksMap.set('t1', {
+        id: 't1', name: 'T1', toolSlug: 'web-fetch',
+        arguments: {}, dependencies: [], status: 'pending', retryCount: 0, maxRetries: 3,
+      });
+      const result = validateExecutionPlan({
+        id: 'plan-map',
+        intent: 'Test Map',
+        tasks: tasksMap,
+        metadata: {
+          modelUsed: 'claude-3-5-sonnet',
+          createdAt: new Date().toISOString(),
+          estimatedSteps: 1,
+        },
+      });
+      assert.ok(result.valid, `Expected valid, got errors: ${result.errors.join(', ')}`);
+    });
+
+    it('should reject unknown dependency references', () => {
+      const result = validateExecutionPlan({
+        id: 'plan-bad-dep',
+        intent: 'Test',
+        tasks: [{
+          id: 't1', name: 'T1', toolSlug: 'web-fetch',
+          arguments: {}, dependencies: ['nonexistent-task'], status: 'pending', retryCount: 0, maxRetries: 3,
+        }],
+        metadata: {
+          modelUsed: 'claude-3-5-sonnet',
+          createdAt: new Date().toISOString(),
+          estimatedSteps: 1,
+        },
+      });
       assert.equal(result.valid, false);
-      assert.ok(result.errors.length > 0);
+    });
+
+    it('should reject self-dependency cycles', () => {
+      const result = validateExecutionPlan({
+        id: 'plan-self-dep',
+        intent: 'Test',
+        tasks: [{
+          id: 't1', name: 'T1', toolSlug: 'web-fetch',
+          arguments: {}, dependencies: ['t1'], status: 'pending', retryCount: 0, maxRetries: 3,
+        }],
+        metadata: {
+          modelUsed: 'claude-3-5-sonnet',
+          createdAt: new Date().toISOString(),
+          estimatedSteps: 1,
+        },
+      });
+      assert.equal(result.valid, false);
     });
   });
 

@@ -1,6 +1,7 @@
 import * as http from 'http';
+import * as crypto from 'crypto';
 import { createLogger, PLATFORM_NAME, ExecutionPlan } from '@ai-agent-platform/shared';
-import { MockAIService } from '@ai-agent-platform/ai';
+import { MockAIService, createProvider } from '@ai-agent-platform/ai';
 import { toolRegistry, Planner, TaskManager, MODELS } from '@ai-agent-platform/core';
 import { AuthMiddleware } from './auth.js';
 
@@ -26,15 +27,24 @@ for (const domainTool of [...fanTrackerTools, ...prMonitorTools]) {
 
 logger.info(`Registered ${toolRegistry.getDeclarativeSchemas().length} tools in API server.`);
 
-// Core services
-const aiService = new MockAIService('claude-3-5-sonnet');
+// Core services — use real provider when keys are set, fall back to mock in dev only
+const aiService = (() => {
+  const groqKey = process.env['GROQ_API_KEY'];
+  const openaiKey = process.env['OPENAI_API_KEY'];
+  if (groqKey) return createProvider('groq', groqKey);
+  if (openaiKey) return createProvider('openai', openaiKey);
+  if (process.env['NODE_ENV'] === 'production') {
+    throw new Error('No AI API key configured for production. Set GROQ_API_KEY or OPENAI_API_KEY.');
+  }
+  logger.warn('No AI keys found — using MockAIService (static responses). NOT for production.');
+  return new MockAIService('claude-3-5-sonnet');
+})();
 const planner = new Planner(aiService, toolRegistry);
 const taskManager = new TaskManager(toolRegistry);
 
-// In-memory plan store (volatile — plans are persisted to SQLite via the database-store-result
-// tool on completion. On restart, only currently-executing plans are lost; completed plans
-// can be retrieved from the database.)
+// In-memory plan store with owner tracking (API key hash → plan ownership)
 const planStore = new Map<string, ExecutionPlan>();
+const planOwners = new Map<string, string>();
 
 // ── JSON helpers ──
 
@@ -149,6 +159,9 @@ const server = http.createServer(async (req, res) => {
       logger.info(`Generating plan for intent: "${intent}"`);
       const plan = await planner.plan(intent);
       planStore.set(plan.id, plan);
+      if (authCtx.apiKey) {
+        planOwners.set(plan.id, crypto.createHash('sha256').update(authCtx.apiKey).digest('hex'));
+      }
 
       const planSummary = {
         id: plan.id,
@@ -167,15 +180,19 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // ── GET /plans — list all plans ──
+    // ── GET /plans — list all plans (paginated) ──
     if (path === '/plans' && req.method === 'GET') {
-      const plans = Array.from(planStore.values()).map(p => ({
+      const limit = Math.min(Math.max(parseInt(params['limit'] || '50'), 1), 200);
+      const offset = Math.max(parseInt(params['offset'] || '0'), 0);
+      const all = Array.from(planStore.values());
+      const page = all.slice(offset, offset + limit);
+      const plans = page.map(p => ({
         id: p.id,
         intent: p.intent,
         taskCount: p.tasks.size,
         metadata: p.metadata
       }));
-      jsonResponse(res, 200, { count: plans.length, plans });
+      jsonResponse(res, 200, { count: plans.length, total: all.length, limit, offset, plans });
       return;
     }
 
@@ -205,7 +222,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // ── POST /plans/:id/execute — execute a plan ──
+    // ── POST /plans/:id/execute — execute a plan (owner-restricted) ──
     const executeMatch = path.match(/^\/plans\/(.+)\/execute$/);
     if (executeMatch && req.method === 'POST') {
       const planId = executeMatch[1];
@@ -214,6 +231,16 @@ const server = http.createServer(async (req, res) => {
       if (!plan) {
         jsonResponse(res, 404, { error: `Plan not found: ${planId}` });
         return;
+      }
+
+      // Ownership check: only the creator can execute
+      if (authCtx.apiKey && planOwners.has(planId)) {
+        const ownerHash = planOwners.get(planId);
+        const callerHash = crypto.createHash('sha256').update(authCtx.apiKey).digest('hex');
+        if (ownerHash !== callerHash) {
+          jsonResponse(res, 403, { error: 'Forbidden: you are not the owner of this plan' });
+          return;
+        }
       }
 
       logger.info(`Executing plan: ${planId}`);
@@ -257,7 +284,11 @@ const server = http.createServer(async (req, res) => {
     jsonResponse(res, 404, { error: 'Not Found', path });
   } catch (error: any) {
     logger.error(`Request handler error: ${error.message}`, error.stack);
-    jsonResponse(res, 500, { error: 'Internal Server Error' });
+    const isDev = process.env['NODE_ENV'] === 'development';
+    jsonResponse(res, 500, {
+      error: 'Internal Server Error',
+      ...(isDev ? { message: error.message } : {}),
+    });
   }
 });
 

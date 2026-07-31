@@ -155,11 +155,14 @@ export class RepoIndexer {
   }
 
   /**
-   * Get all files that import from a specific file.
+   * Get all files that import FROM the given file (its dependents).
    */
   public getDependents(filePath: string): FileIndex[] {
-    return Array.from(this.files.values())
-      .filter(f => f.exportedBy.includes(filePath));
+    const target = this.files.get(filePath);
+    if (!target) return [];
+    return target.exportedBy
+      .map(p => this.files.get(p))
+      .filter((f): f is FileIndex => f !== undefined);
   }
 
   /**

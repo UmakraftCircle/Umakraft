@@ -2,6 +2,25 @@ import { ToolDefinition, ToolResult, createLogger } from '@ai-agent-platform/sha
 
 const logger = createLogger('ToolRegistry');
 
+// ── Secret redaction ──
+
+const SENSITIVE_KEY_PATTERNS = [
+  /key/i, /secret/i, /token/i, /password/i, /auth/i, /credential/i,
+  /api[_-]?key/i, /access[_-]?token/i,
+];
+
+function redactArgs(args: Record<string, any>): Record<string, any> {
+  const safe: Record<string, any> = {};
+  for (const [k, v] of Object.entries(args)) {
+    if (SENSITIVE_KEY_PATTERNS.some(p => p.test(k))) {
+      safe[k] = '[REDACTED]';
+    } else {
+      safe[k] = v;
+    }
+  }
+  return safe;
+}
+
 export class ToolRegistry {
   private static instance: ToolRegistry;
   private tools: Map<string, ToolDefinition> = new Map();
@@ -48,7 +67,7 @@ export class ToolRegistry {
 
     try {
       this.validateArguments(tool, args);
-      logger.info(`Executing tool ${slug} with arguments`, args);
+      logger.info(`Executing tool ${slug} with arguments`, redactArgs(args));
       const data = await tool.handler(args);
       return { success: true, data };
     } catch (error: any) {
@@ -65,8 +84,18 @@ export class ToolRegistry {
       if (param.required && (args[key] === undefined || args[key] === null)) {
         throw new Error(`Validation Error: Parameter '${key}' is required for tool '${tool.slug}'`);
       }
-      if (args[key] !== undefined && typeof args[key] !== param.type && param.type !== 'array' && param.type !== 'object') {
-        throw new Error(`Validation Error: Parameter '${key}' must be of type '${param.type}'`);
+      if (args[key] !== undefined) {
+        if (param.type === 'array') {
+          if (!Array.isArray(args[key])) {
+            throw new Error(`Validation Error: Parameter '${key}' must be an array for tool '${tool.slug}'`);
+          }
+        } else if (param.type === 'object') {
+          if (typeof args[key] !== 'object' || args[key] === null || Array.isArray(args[key])) {
+            throw new Error(`Validation Error: Parameter '${key}' must be an object for tool '${tool.slug}'`);
+          }
+        } else if (typeof args[key] !== param.type) {
+          throw new Error(`Validation Error: Parameter '${key}' must be of type '${param.type}'`);
+        }
       }
     }
   }

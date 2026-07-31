@@ -12,6 +12,8 @@ const RETRYABLE_ERROR_PATTERNS = [
   /429/,
   /503/,
   /temporarily/i,
+  /transient/i,
+  /temporary/i,
   /ECONNRESET/i,
   /ECONNREFUSED/i,
   /ETIMEDOUT/i,
@@ -99,6 +101,11 @@ export class TaskManager {
     }
 
     if (hasFailed) {
+      // Await all still-running tasks to prevent leaking side effects
+      if (activePromises.size > 0) {
+        logger.warn(`Awaiting ${activePromises.size} in-flight task(s) before returning failed plan.`);
+        await Promise.allSettled(activePromises.values());
+      }
       logger.error(`Plan execution failed for plan ${plan.id}`);
     } else {
       logger.info(`Plan execution succeeded for plan ${plan.id}!`);

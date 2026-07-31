@@ -79,7 +79,7 @@ describe('ToolRegistry', () => {
     it('should return failure for unknown tool slug', async () => {
       const result = await registry.execute(`nonexistent-${Date.now()}`, {});
       assert.equal(result.success, false);
-      assert.ok(result.error!.includes('Unknown'));
+      assert.ok(result.error!.includes('not found'));
     });
 
     it('should return failure when handler throws', async () => {
