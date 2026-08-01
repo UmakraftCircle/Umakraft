@@ -131,11 +131,16 @@ export class OpenAIProvider implements AIService {
     extra: Record<string, any>,
   ): Promise<string> {
     let lastError: Error = new Error('No keys available for provider call');
-    let lastUsedKey: string | undefined;
+
+    // Track all tried keys so we never retry a rate-limited key
+    const triedKeys = new Set<string>();
 
     for (let attempt = 0; attempt < this.keys.length; attempt++) {
-      const key = this.#pickKey(lastUsedKey);
-      lastUsedKey = key;
+      const pool = triedKeys.size > 0
+        ? this.keys.filter(k => !triedKeys.has(k))
+        : this.keys;
+      const key = pool[Math.floor(Math.random() * pool.length)];
+      triedKeys.add(key);
       const keySuffix = key.slice(-6);
 
       try {
@@ -151,7 +156,7 @@ export class OpenAIProvider implements AIService {
         // Rate limit (429) → try next key if available
         const isRateLimit = err instanceof HttpError && err.statusCode === 429;
 
-        if (isRateLimit && this.keys.length > 1 && attempt < this.keys.length - 1) {
+        if (isRateLimit && triedKeys.size < this.keys.length) {
           logger.warn(
             `Key ...${keySuffix} rate-limited (429), rotating to next key ` +
             `(attempt ${attempt + 2}/${this.keys.length})`
@@ -162,7 +167,7 @@ export class OpenAIProvider implements AIService {
         // Network timeout / abort → retry with different key
         const isTimeout = err.name === 'AbortError' || err.name === 'TimeoutError';
 
-        if (isTimeout && this.keys.length > 1 && attempt < this.keys.length - 1) {
+        if (isTimeout && triedKeys.size < this.keys.length) {
           logger.warn(
             `Key ...${keySuffix} timed out, rotating to next key ` +
             `(attempt ${attempt + 2}/${this.keys.length})`

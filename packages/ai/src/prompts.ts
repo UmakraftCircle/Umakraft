@@ -195,7 +195,7 @@ Your personality traits:
 - Supportive and inclusive — makes everyone feel seen and appreciated
 - Never overly formal, robotic, or scripted — always natural and spontaneous
 
-You are generating a ${'${timeOfDay}'} message based on the time of day:
+You are generating a ${"'"}${timeOfDay}${"'"} message based on the time of day:
 
 ☀️ MORNING (6AM-11AM): Energetic & motivational. "Rise and shine! New day, new adventures!"
 🕐 NOON (11AM-5PM): Midday check-in. "How's everyone doing? Don't forget to take breaks!"
@@ -210,10 +210,10 @@ CRITICAL RULES:
 5. Include a small encouraging thought or question to spark conversation.
 6. Do NOT output JSON or any formatting — plain text message only.
 7. Do NOT reference specific usernames — this is a broadcast to everyone.`,
-      userTemplate: (vars) => `It is currently ${'${timeOfDay}'} time on the server "${'${serverName}'}".
-The server has ${'${memberCount}'} members.
+      userTemplate: (vars) => `It is currently ${"'"}${timeOfDay}${"'"} time on the server "${vars['serverName']}".
+The server has ${"'"}${memberCount}${"'"} members.
 
-Write a warm, cute ${'${timeOfDay}'} message to the community. Start with @everyone. Match the ${'${timeOfDay}'} theme exactly — ${'${timeGuidance}'}. Keep it 100-150 words, be encouraging, sprinkle in emojis, and end with a small conversation-starter question. Be spontaneous and heartfelt.`
+Write a warm, cute ${"'"}${timeOfDay}${"'"} message to the community. Start with @everyone. Match the ${"'"}${timeOfDay}${"'"} theme exactly — ${"'"}${timeGuidance}${"'"}. Keep it 100-150 words, be encouraging, sprinkle in emojis, and end with a small conversation-starter question. Be spontaneous and heartfelt.`
     });
 
     // ── Milestone Message Prompt (Umamusume fan-count tiers) ──
@@ -247,9 +247,9 @@ CRITICAL RULES:
 6. Be unique every time — vary your metaphors and racing references.
 7. End with an energetic cheer or racing chant that hypes up the whole server.
 8. Do NOT output JSON or any formatting — plain text message only.`,
-      userTemplate: (vars) => `A trainer named "${'${trainerName}'}" just reached the "${'${tierTitle}'}" milestone with ${'${fanCount}'} total fans on the server "${'${serverName}'}"!
+      userTemplate: (vars) => `A trainer named "${"'"}${trainerName}${"'"}" just reached the "${"'"}${tierTitle}${"'"}" milestone with ${"'"}${fanCount}${"'"} total fans on the server "${"'"}${serverName}${"'"}"!
 
-This is the ${'${tierTitle}'} tier — ${'${tierDescription}'}.
+This is the ${"'"}${tierTitle}${"'"} tier — ${"'"}${tierDescription}${"'"}.
 
 Write an Umamusume-themed congratulatory message. Start with @everyone. Use racing and horse-girl imagery (tracks, gallops, victory laps, training grounds, turf, grandstands). Mention the trainer by name, celebrate their achievement with the exact fan count, and match the energy level of this tier. Keep it 100-150 words. End with an exciting racing cheer. Be spontaneous — make it feel like a trackside victory announcement!`
     });
@@ -286,9 +286,9 @@ CRITICAL RULES:
 7. Recognize that this is a MONTH-LONG grind, not a single race — the dedication, the consistency, the relentless pace.
 8. End with an energetic cheer that celebrates the completed month and looks forward to the next.
 9. Do NOT output JSON or any formatting — plain text message only.`,
-      userTemplate: (vars) => `A trainer named "${'${trainerName}'}" earned the "${'${tierTitle}'}" monthly achievement with ${'${monthlyGain}'} fans gained in a single month on the server "${'${serverName}'}"!
+      userTemplate: (vars) => `A trainer named "${"'"}${trainerName}${"'"}" earned the "${"'"}${tierTitle}${"'"}" monthly achievement with ${"'"}${monthlyGain}${"'"} fans gained in a single month on the server "${"'"}${serverName}${"'"}"!
 
-This is the ${'${tierTitle}'} tier — ${'${tierDescription}'}.
+This is the ${"'"}${tierTitle}${"'"} tier — ${"'"}${tierDescription}${"'"}.
 
 Write an Umamusume-themed congratulatory message celebrating their MONTH-LONG campaign. Start with @everyone. Use racing imagery (training montages, seasonal arcs, paddock rankings, monthly leaderboards, consistency over time). Mention the trainer by name, celebrate the monthly fan gain number, and match the energy level of this tier. Keep it 100-150 words. End with a cheer that honors the completed month and hypes the next. Be spontaneous — celebrate the grind!`
     });
@@ -315,16 +315,18 @@ CRITICAL RULES:
 1. Start your message with "@everyone" to notify the whole server.
 2. Write between 100 and 150 words. Stay within this range.
 3. The message MUST be Umamusume-themed — use racing imagery (strides, gallops, training grounds, turf, paddock, finish line) throughout.
-4. Address each trainer by name personally — make them feel seen and supported.
+4. Address each trainer using the exact <@ID> format shown in the data — copy it
+      verbatim. Do NOT invent @mentions or use plain text names. <@ID> is the only
+      format Discord uses to actually ping a real user.
 5. Mention their specific deficit number as part of the encouragement — "just 2.3M more!"
 6. Be warm and encouraging, never pushy or judgmental — "you're getting closer every day!" not "you're falling behind!".
 7. Vary your phrasing and metaphors — never repeat the same structure.
 8. End with an uplifting rallying cry that unites all trainers.
 9. Do NOT output JSON or any formatting — plain text message only.`,
-      userTemplate: (vars) => `It's morning check-in time on the server "${'${serverName}'}"!
+      userTemplate: (vars) => `It's morning check-in time on the server "${"'"}${serverName}${"'"}"!
 
 Here are the linked trainers working toward their 50M monthly fan goal this month:
-${'${trainerData}'}
+${"'"}${trainerData}${"'"}
 
 Write a warm, encouraging daily gap reminder. Start with @everyone. Personally mention each trainer by name, reference their current monthly count and how many fans they still need to reach 50M. Use Umamusume racing imagery (training grounds, gallops, turf, paddock, finish line). Be supportive and motivating — never pushy. Keep it 100-150 words. End with a unifying rallying cheer. Be spontaneous and heartfelt!`
     });

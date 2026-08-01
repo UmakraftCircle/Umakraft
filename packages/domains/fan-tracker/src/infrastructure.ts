@@ -199,6 +199,14 @@ export class FanTrackerAPI {
         }
       }
 
+      if (statsList.length === 0 && members.length > 0) {
+        logger.warn(
+          `fetchAllMembers: all ${members.length} circle members filtered as inactive. ` +
+          `Returning full unfiltered list as fallback to prevent empty leaderboard.`
+        );
+        return members.map(m => this.mapCircleMemberToStats(m, data.circle));
+      }
+
       return statsList;
     } catch (error: any) {
       logger.error(`Circle fetch failed: ${error.message}. Using mock roster.`);
