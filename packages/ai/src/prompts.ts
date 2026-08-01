@@ -168,7 +168,7 @@ Your personality traits:
 - Supportive and inclusive — makes everyone feel seen and appreciated
 - Never overly formal, robotic, or scripted — always natural and spontaneous
 
-You are generating a ${'{timeOfDay}'} message based on the time of day:
+You are generating a ${'${timeOfDay}'} message based on the time of day:
 
 ☀️ MORNING (6AM-11AM): Energetic & motivational. "Rise and shine! New day, new adventures!"
 🕐 NOON (11AM-5PM): Midday check-in. "How's everyone doing? Don't forget to take breaks!"
@@ -183,10 +183,10 @@ CRITICAL RULES:
 5. Include a small encouraging thought or question to spark conversation.
 6. Do NOT output JSON or any formatting — plain text message only.
 7. Do NOT reference specific usernames — this is a broadcast to everyone.`,
-      userTemplate: (vars) => `It is currently ${'{timeOfDay}'} time on the server "${'{serverName}'}".
-The server has ${'{memberCount}'} members.
+      userTemplate: (vars) => `It is currently ${'${timeOfDay}'} time on the server "${'${serverName}'}".
+The server has ${'${memberCount}'} members.
 
-Write a warm, cute ${'{timeOfDay}'} message to the community. Start with @everyone. Match the ${'{timeOfDay}'} theme exactly — ${'{timeGuidance}'}. Keep it 100-150 words, be encouraging, sprinkle in emojis, and end with a small conversation-starter question. Be spontaneous and heartfelt.`
+Write a warm, cute ${'${timeOfDay}'} message to the community. Start with @everyone. Match the ${'${timeOfDay}'} theme exactly — ${'${timeGuidance}'}. Keep it 100-150 words, be encouraging, sprinkle in emojis, and end with a small conversation-starter question. Be spontaneous and heartfelt.`
     });
 
     // ── Milestone Message Prompt (Umamusume fan-count tiers) ──
@@ -220,9 +220,9 @@ CRITICAL RULES:
 6. Be unique every time — vary your metaphors and racing references.
 7. End with an energetic cheer or racing chant that hypes up the whole server.
 8. Do NOT output JSON or any formatting — plain text message only.`,
-      userTemplate: (vars) => `A trainer named "${'{trainerName}'}" just reached the "${'{tierTitle}'}" milestone with ${'{fanCount}'} total fans on the server "${'{serverName}'}"!
+      userTemplate: (vars) => `A trainer named "${'${trainerName}'}" just reached the "${'${tierTitle}'}" milestone with ${'${fanCount}'} total fans on the server "${'${serverName}'}"!
 
-This is the ${'{tierTitle}'} tier — ${'{tierDescription}'}.
+This is the ${'${tierTitle}'} tier — ${'${tierDescription}'}.
 
 Write an Umamusume-themed congratulatory message. Start with @everyone. Use racing and horse-girl imagery (tracks, gallops, victory laps, training grounds, turf, grandstands). Mention the trainer by name, celebrate their achievement with the exact fan count, and match the energy level of this tier. Keep it 100-150 words. End with an exciting racing cheer. Be spontaneous — make it feel like a trackside victory announcement!`
     });
@@ -259,9 +259,9 @@ CRITICAL RULES:
 7. Recognize that this is a MONTH-LONG grind, not a single race — the dedication, the consistency, the relentless pace.
 8. End with an energetic cheer that celebrates the completed month and looks forward to the next.
 9. Do NOT output JSON or any formatting — plain text message only.`,
-      userTemplate: (vars) => `A trainer named "${'{trainerName}'}" earned the "${'{tierTitle}'}" monthly achievement with ${'{monthlyGain}'} fans gained in a single month on the server "${'{serverName}'}"!
+      userTemplate: (vars) => `A trainer named "${'${trainerName}'}" earned the "${'${tierTitle}'}" monthly achievement with ${'${monthlyGain}'} fans gained in a single month on the server "${'${serverName}'}"!
 
-This is the ${'{tierTitle}'} tier — ${'{tierDescription}'}.
+This is the ${'${tierTitle}'} tier — ${'${tierDescription}'}.
 
 Write an Umamusume-themed congratulatory message celebrating their MONTH-LONG campaign. Start with @everyone. Use racing imagery (training montages, seasonal arcs, paddock rankings, monthly leaderboards, consistency over time). Mention the trainer by name, celebrate the monthly fan gain number, and match the energy level of this tier. Keep it 100-150 words. End with a cheer that honors the completed month and hypes the next. Be spontaneous — celebrate the grind!`
     });
@@ -294,10 +294,10 @@ CRITICAL RULES:
 7. Vary your phrasing and metaphors — never repeat the same structure.
 8. End with an uplifting rallying cry that unites all trainers.
 9. Do NOT output JSON or any formatting — plain text message only.`,
-      userTemplate: (vars) => `It's morning check-in time on the server "${'{serverName}'}"!
+      userTemplate: (vars) => `It's morning check-in time on the server "${'${serverName}'}"!
 
 Here are the linked trainers working toward their 50M monthly fan goal this month:
-${'{trainerData}'}
+${'${trainerData}'}
 
 Write a warm, encouraging daily gap reminder. Start with @everyone. Personally mention each trainer by name, reference their current monthly count and how many fans they still need to reach 50M. Use Umamusume racing imagery (training grounds, gallops, turf, paddock, finish line). Be supportive and motivating — never pushy. Keep it 100-150 words. End with a unifying rallying cheer. Be spontaneous and heartfelt!`
     });
@@ -333,11 +333,11 @@ CRITICAL RULES:
 11. Close with a dramatic sign-off: remind how many days remain, hype tomorrow's broadcast.
 12. Never use markdown formatting — plain text only.
 13. Vary your commentary style daily — never repeat the same broadcast structure.`,
-      userTemplate: (vars) => `UMATRACK 3000m — DAY ${'{day}'} OF ${'{totalDays}'} — LIVE BROADCAST
+      userTemplate: (vars) => `UMATRACK 3000m — DAY ${vars.day} OF ${vars.totalDays} — LIVE BROADCAST
 
-${'{racerPositions}'}
+${vars.racerPositions}
 
-${'{dynamicEvents}'}
+${vars.dynamicEvents}
 
 Write a dramatic, full-length race commentary as the UMATRACK announcer. Start with @everyone. Set the scene — track conditions, weather, grandstand atmosphere. Call every racer's position with energy. Narrate any overtakes, new entries, retirements, or finishers with theatrical flair. Build tension as if this is a live broadcast. Close with a dramatic sign-off hyping tomorrow's race. 100-500 words. Make it feel like an unmissable sports broadcast!`
     });
