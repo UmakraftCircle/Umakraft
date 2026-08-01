@@ -48,9 +48,6 @@ export class PromptLibrary {
     this.registerDefaults();
   }
 
-  /**
-   * Registers a new prompt template.
-   */
   public register(template: PromptTemplate): void {
     if (this.templates.has(template.name)) {
       logger.warn(`Overwriting existing prompt template: ${template.name}`);
@@ -59,18 +56,12 @@ export class PromptLibrary {
     logger.info(`Registered prompt template: ${template.name} v${template.version}`);
   }
 
-  /**
-   * Renders a prompt by name with variable substitution.
-   */
   public render(name: string, variables: Record<string, string> = {}): { system: string; user: string; version: string } | null {
     const template = this.templates.get(name);
     if (!template) {
       logger.error(`Prompt template not found: ${name}`);
       return null;
     }
-
-    logger.debug(`Rendering prompt "${name}" v${template.version}`);
-
     return {
       system: template.system,
       user: template.userTemplate(variables),
@@ -78,15 +69,11 @@ export class PromptLibrary {
     };
   }
 
-  /**
-   * Lists all registered template names.
-   */
   public list(): string[] {
     return Array.from(this.templates.keys());
   }
 
   private registerDefaults(): void {
-    // ── Master Planner Prompt ──
     this.register({
       name: 'master-planner',
       version: '1.0.0',
@@ -119,17 +106,21 @@ Available tools:
 ${vars['tools'] || 'No tools available'}`
     });
 
-    // ── Code Review Prompt ──
     this.register({
       name: 'code-review',
       version: '1.0.0',
       system: `You are an expert software engineer performing a code review.
 Focus on: security vulnerabilities, performance issues, architectural anti-patterns, and type safety.
 Be concise. Provide actionable feedback with line references where possible.`,
-      userTemplate: (vars) => `Review the following code:\n\n\`\`\`${vars['language'] || 'typescript'}\n${vars['code']}\n\`\`\`\n\nContext: ${vars['context'] || 'General review'}`
+      userTemplate: (vars) => `Review the following code:
+
+\`\`\`${vars['language'] || 'typescript'}
+${vars['code']}
+\`\`\`
+
+Context: ${vars['context'] || 'General review'}`
     });
 
-    // ── Error Analysis Prompt ──
     this.register({
       name: 'error-analysis',
       version: '1.0.0',
@@ -148,16 +139,18 @@ Task arguments: ${vars['arguments']}
 Recent adaptation rules: ${vars['adaptationContext'] || 'None'}`
     });
 
-    // ── Summarization Prompt ──
     this.register({
       name: 'summarize',
       version: '1.0.0',
       system: `You are a summarization engine. Produce a concise, structured summary in markdown format.
 Focus on key decisions, action items, and metrics.`,
-      userTemplate: (vars) => `Summarize the following content:\n\n${vars['content']}\n\nDesired length: ${vars['length'] || 'medium'}`
+      userTemplate: (vars) => `Summarize the following content:
+
+${vars['content']}
+
+Desired length: ${vars['length'] || 'medium'}`
     });
 
-    // ── New Member Greeting Prompt ──
     this.register({
       name: 'new-member-greeting',
       version: '1.0.0',
@@ -179,10 +172,9 @@ CRITICAL RULES:
       userTemplate: (vars) => `A new player named "${vars['memberName']}" just landed on the server "${vars['serverName']}"!
 The server now has ${vars['memberCount']} members total.
 
-Write a warm, cute, personalized welcome greeting. Mention @everyone first, then welcome the new member by name with enthusiasm. Briefly mention how happy the community is to have them and sprinkle in one encouraging line about the adventures ahead. Keep it 50-60 words exactly — be spontaneous and heartfelt.`
+Write a warm, cute, personalized welcome greeting. Mention @everyone first, then welcome the new member by name with enthusiasm. Briefly mention how happy the community is to have them and sprinkle in one encouraging line about the adventures ahead. Keep it 50-60 words — be spontaneous and heartfelt.`
     });
 
-    // ── Daily Message Prompt (morning / noon / evening / midnight) ──
     this.register({
       name: 'daily-message',
       version: '1.0.0',
@@ -195,7 +187,7 @@ Your personality traits:
 - Supportive and inclusive — makes everyone feel seen and appreciated
 - Never overly formal, robotic, or scripted — always natural and spontaneous
 
-You are generating a ${"'"}${timeOfDay}${"'"} message based on the time of day:
+You are generating a ${"${"}${'timeOfDay'}${"}"} message based on the time of day:
 
 ☀️ MORNING (6AM-11AM): Energetic & motivational. "Rise and shine! New day, new adventures!"
 🕐 NOON (11AM-5PM): Midday check-in. "How's everyone doing? Don't forget to take breaks!"
@@ -210,13 +202,12 @@ CRITICAL RULES:
 5. Include a small encouraging thought or question to spark conversation.
 6. Do NOT output JSON or any formatting — plain text message only.
 7. Do NOT reference specific usernames — this is a broadcast to everyone.`,
-      userTemplate: (vars) => `It is currently ${"'"}${timeOfDay}${"'"} time on the server "${vars['serverName']}".
-The server has ${"'"}${memberCount}${"'"} members.
+      userTemplate: (vars) => `It is currently ${"${"}${'timeOfDay'}${"}"} time on the server "${"${"}${'serverName'}${"}"}".
+The server has ${"${"}${'memberCount'}${"}"} members.
 
-Write a warm, cute ${"'"}${timeOfDay}${"'"} message to the community. Start with @everyone. Match the ${"'"}${timeOfDay}${"'"} theme exactly — ${"'"}${timeGuidance}${"'"}. Keep it 100-150 words, be encouraging, sprinkle in emojis, and end with a small conversation-starter question. Be spontaneous and heartfelt.`
+Write a warm, cute ${"${"}${'timeOfDay'}${"}"} message to the community. Start with @everyone. Match the ${"${"}${'timeOfDay'}${"}"} theme exactly — ${"${"}${'timeGuidance'}${"}"}. Keep it 100-150 words, be encouraging, sprinkle in emojis, and end with a small conversation-starter question. Be spontaneous and heartfelt.`
     });
 
-    // ── Milestone Message Prompt (Umamusume fan-count tiers) ──
     this.register({
       name: 'milestone-message',
       version: '1.0.0',
@@ -247,14 +238,13 @@ CRITICAL RULES:
 6. Be unique every time — vary your metaphors and racing references.
 7. End with an energetic cheer or racing chant that hypes up the whole server.
 8. Do NOT output JSON or any formatting — plain text message only.`,
-      userTemplate: (vars) => `A trainer named "${"'"}${trainerName}${"'"}" just reached the "${"'"}${tierTitle}${"'"}" milestone with ${"'"}${fanCount}${"'"} total fans on the server "${"'"}${serverName}${"'"}"!
+      userTemplate: (vars) => `A trainer named "${"${"}${'trainerName'}${"}"}" just reached the "${"${"}${'tierTitle'}${"}"}" milestone with ${"${"}${'fanCount'}${"}"} total fans on the server "${"${"}${'serverName'}${"}"}"!
 
-This is the ${"'"}${tierTitle}${"'"} tier — ${"'"}${tierDescription}${"'"}.
+This is the ${"${"}${'tierTitle'}${"}"} tier — ${"${"}${'tierDescription'}${"}"}.
 
 Write an Umamusume-themed congratulatory message. Start with @everyone. Use racing and horse-girl imagery (tracks, gallops, victory laps, training grounds, turf, grandstands). Mention the trainer by name, celebrate their achievement with the exact fan count, and match the energy level of this tier. Keep it 100-150 words. End with an exciting racing cheer. Be spontaneous — make it feel like a trackside victory announcement!`
     });
 
-    // ── Monthly Achievement Prompt (monthly fan-gain tiers) ──
     this.register({
       name: 'monthly-achievement',
       version: '1.0.0',
@@ -286,14 +276,13 @@ CRITICAL RULES:
 7. Recognize that this is a MONTH-LONG grind, not a single race — the dedication, the consistency, the relentless pace.
 8. End with an energetic cheer that celebrates the completed month and looks forward to the next.
 9. Do NOT output JSON or any formatting — plain text message only.`,
-      userTemplate: (vars) => `A trainer named "${"'"}${trainerName}${"'"}" earned the "${"'"}${tierTitle}${"'"}" monthly achievement with ${"'"}${monthlyGain}${"'"} fans gained in a single month on the server "${"'"}${serverName}${"'"}"!
+      userTemplate: (vars) => `A trainer named "${"${"}${'trainerName'}${"}"}" earned the "${"${"}${'tierTitle'}${"}"}" monthly achievement with ${"${"}${'monthlyGain'}${"}"} fans gained in a single month on the server "${"${"}${'serverName'}${"}"}"!
 
-This is the ${"'"}${tierTitle}${"'"} tier — ${"'"}${tierDescription}${"'"}.
+This is the ${"${"}${'tierTitle'}${"}"} tier — ${"${"}${'tierDescription'}${"}"}.
 
 Write an Umamusume-themed congratulatory message celebrating their MONTH-LONG campaign. Start with @everyone. Use racing imagery (training montages, seasonal arcs, paddock rankings, monthly leaderboards, consistency over time). Mention the trainer by name, celebrate the monthly fan gain number, and match the energy level of this tier. Keep it 100-150 words. End with a cheer that honors the completed month and hypes the next. Be spontaneous — celebrate the grind!`
     });
 
-    // ── Daily Gap Reminder Prompt (monthly-fan deficit tracking) ──
     this.register({
       name: 'daily-reminder',
       version: '1.0.0',
@@ -323,15 +312,14 @@ CRITICAL RULES:
 7. Vary your phrasing and metaphors — never repeat the same structure.
 8. End with an uplifting rallying cry that unites all trainers.
 9. Do NOT output JSON or any formatting — plain text message only.`,
-      userTemplate: (vars) => `It's morning check-in time on the server "${"'"}${serverName}${"'"}"!
+      userTemplate: (vars) => `It's morning check-in time on the server "${"${"}${'serverName'}${"}"}"!
 
 Here are the linked trainers working toward their 50M monthly fan goal this month:
-${"'"}${trainerData}${"'"}
+${"${"}${'trainerData'}${"}"}
 
 Write a warm, encouraging daily gap reminder. Start with @everyone. Personally mention each trainer by name, reference their current monthly count and how many fans they still need to reach 50M. Use Umamusume racing imagery (training grounds, gallops, turf, paddock, finish line). Be supportive and motivating — never pushy. Keep it 100-150 words. End with a unifying rallying cheer. Be spontaneous and heartfelt!`
     });
 
-    // ── Race Commentary Prompt (daily 3000m race broadcast) ──
     this.register({
       name: 'race-commentary',
       version: '1.0.0',
@@ -373,5 +361,4 @@ Write a dramatic, full-length race commentary as the UMATRACK announcer. Start w
   }
 }
 
-// Singleton instance
 export const promptLibrary = new PromptLibrary();
