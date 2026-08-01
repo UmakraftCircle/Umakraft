@@ -1,5 +1,9 @@
+import { createLogger } from './logger.js';
+
+const logger = createLogger('Config');
+
 export interface PlatformConfig {
-  env: string;
+  env: 'development' | 'production' | 'test';
   openaiApiKey?: string;
   anthropicApiKey?: string;
   redisUrl?: string;
@@ -15,7 +19,7 @@ export const loadConfig = (): PlatformConfig => {
     missing.push('OPENAI_API_KEY or ANTHROPIC_API_KEY');
   }
   if (missing.length > 0 && env !== 'test') {
-    console.warn(`[Config] Missing env vars (some features disabled): ${missing.join(', ')}`);
+    logger.warn(`Missing env vars (some features disabled): ${missing.join(', ')}`);
   }
 
   return {

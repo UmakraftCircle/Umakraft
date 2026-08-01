@@ -182,68 +182,86 @@ export class OpenAIProvider implements AIService {
 
 export class AnthropicProvider implements AIService {
   private model: string;
+  private baseUrl: string;
 
   constructor(
     private apiKey: string,
-    model: string = 'claude-3-5-haiku'
+    model: string = 'claude-3-5-haiku',
   ) {
     this.model = model;
+    this.baseUrl = 'https://api.anthropic.com/v1/messages';
   }
 
   public getCurrentModel(): string {
     return this.model;
   }
 
+  // ── generate ────────────────────────────────────────────
+
   public async generate(options: GenerateOptions): Promise<string> {
-    logger.info(`Calling Anthropic ${this.model} for text generation...`);
-
-    const result = await apiPost(
-      'https://api.anthropic.com/v1/messages',
-      {
-        'x-api-key': this.apiKey,
-        'anthropic-version': '2023-06-01'
-      },
-      {
-        model: this.model,
-        max_tokens: 4096,
-        system: options.system || undefined,
-        messages: [{ role: 'user', content: options.prompt }]
-      }
-    );
-
-    return result.content[0].text;
+    return this.#callWithRetry({
+      model: this.model,
+      max_tokens: 4096,
+      system: options.system || undefined,
+      messages: [{ role: 'user', content: options.prompt }],
+    });
   }
 
+  // ── generateStructuredOutput ─────────────────────────────
+
   public async generateStructuredOutput(options: GenerateOptions): Promise<any> {
-    logger.info(`Calling Anthropic ${this.model} for structured output...`);
+    const systemPrompt = (options.system || '') +
+      '\n\nYou MUST respond with valid JSON only. No markdown, no commentary.';
 
-    const systemPrompt = (options.system || '') + '\n\nYou MUST respond with valid JSON only. No markdown, no commentary.';
+    const raw = await this.#callWithRetry({
+      model: this.model,
+      max_tokens: 4096,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: options.prompt }],
+    });
 
-    const result = await apiPost(
-      'https://api.anthropic.com/v1/messages',
-      {
-        'x-api-key': this.apiKey,
-        'anthropic-version': '2023-06-01'
-      },
-      {
-        model: this.model,
-        max_tokens: 4096,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: options.prompt }]
-      }
-    );
-
-    const raw = result.content[0].text;
     try {
       return JSON.parse(raw);
     } catch {
-      // Anthropic sometimes wraps JSON in markdown code blocks
       const jsonMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
       if (jsonMatch) {
         return JSON.parse(jsonMatch[1].trim());
       }
       logger.warn(`Failed to parse Anthropic structured output as JSON. Raw: ${raw.slice(0, 200)}`);
       throw new Error('Anthropic structured output was not valid JSON.');
+    }
+  }
+
+  // ── Internal: call with retry on 429/timeout ────────────
+
+  async #callWithRetry(body: any, attempt: number = 0): Promise<string> {
+    const maxAttempts = 3;
+    try {
+      const result = await apiPost(
+        this.baseUrl,
+        {
+          'x-api-key': this.apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body,
+      );
+      return result.content[0].text;
+    } catch (err: any) {
+      const isRetryable =
+        (err instanceof HttpError && err.statusCode === 429) ||
+        err.name === 'AbortError' ||
+        err.name === 'TimeoutError';
+
+      if (isRetryable && attempt < maxAttempts - 1) {
+        const wait = 200 * Math.pow(2, attempt) + Math.random() * 100;
+        logger.warn(
+          `Anthropic ${this.model}: ${err.message}. Retrying (${attempt + 2}/${maxAttempts}) in ${Math.round(wait)}ms...`,
+        );
+        await new Promise(r => setTimeout(r, wait));
+        return this.#callWithRetry(body, attempt + 1);
+      }
+
+      throw err;
     }
   }
 }

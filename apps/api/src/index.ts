@@ -42,16 +42,54 @@ const aiService = (() => {
 const planner = new Planner(aiService, toolRegistry);
 const taskManager = new TaskManager(toolRegistry);
 
-// In-memory plan store with owner tracking (API key hash → plan ownership)
+// Plan store with owner tracking + file-based persistence for restart survival (audit #10)
+const PLAN_STORE_FILE = process.env['PLAN_STORE_FILE'] || '.cache/plan-store.json';
 const planStore = new Map<string, ExecutionPlan>();
 const planOwners = new Map<string, string>();
+
+async function loadPlanStore(): Promise<void> {
+  try {
+    const fs = await import('node:fs/promises');
+    const raw = await fs.readFile(PLAN_STORE_FILE, 'utf-8');
+    const entries: Array<[string, any]> = JSON.parse(raw);
+    for (const [id, planData] of entries) {
+      const tasks = new Map(planData.tasks as Array<[string, any]>);
+      planStore.set(id, { ...planData, tasks });
+    }
+    logger.info(`Loaded ${planStore.size} plans from ${PLAN_STORE_FILE}`);
+  } catch {
+    // First run or file missing
+  }
+}
+
+async function savePlanStore(): Promise<void> {
+  try {
+    const fs = await import('node:fs/promises');
+    const pathMod = await import('node:path');
+    await fs.mkdir(pathMod.dirname(PLAN_STORE_FILE), { recursive: true });
+    const entries = [...planStore.entries()].map(([id, plan]) => [
+      id,
+      { ...plan, tasks: [...plan.tasks.entries()] },
+    ]);
+    await fs.writeFile(PLAN_STORE_FILE, JSON.stringify(entries, null, 2), 'utf-8');
+  } catch (err: any) {
+    logger.warn(`Failed to persist plan store: ${err.message}`);
+  }
+}
+
+// ── CORS helper ──
+function corsOrigin(): string {
+  const env = process.env['CORS_ORIGIN'];
+  if (env !== undefined) return env;
+  return process.env['NODE_ENV'] === 'development' ? '*' : '';
+}
 
 // ── JSON helpers ──
 
 function jsonResponse(res: http.ServerResponse, status: number, data: any): void {
   res.writeHead(status, {
     'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': process.env['CORS_ORIGIN'] || '*',
+    'Access-Control-Allow-Origin': corsOrigin(),
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization'
   });
@@ -162,6 +200,7 @@ const server = http.createServer(async (req, res) => {
       if (authCtx.apiKey) {
         planOwners.set(plan.id, crypto.createHash('sha256').update(authCtx.apiKey).digest('hex'));
       }
+      savePlanStore().catch(() => {});
 
       const planSummary = {
         id: plan.id,
@@ -292,7 +331,8 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
+  await loadPlanStore();
   logger.info(`==================================================`);
   logger.info(`${PLATFORM_NAME} API Server listening on http://localhost:${PORT}`);
   logger.info(`Auth:    ${auth.getKeyCount()} key(s) configured`);

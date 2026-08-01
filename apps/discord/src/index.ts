@@ -210,8 +210,49 @@ async function startGatewayBot() {
   logger.info(`Daily cron jobs scheduled (${tz}): ☀️ 8AM  🌤️ 12PM  🌅 6PM  🌙 12AM`);
 
   // ── Milestone Tracker (fan-count milestone detection) ──
+  // Persisted to file so milestones aren't lost across restarts (audit #11)
+  const MILESTONE_STATE_FILE = process.env['MILESTONE_STATE_FILE'] || '.cache/milestone-state.json';
 
   const previousFanCounts = new Map<string, number>(); // trainerId → last known fan count
+  const previousMonthlyGains = new Map<string, number>(); // trainerId → last month's gain
+
+  async function loadMilestoneState(): Promise<void> {
+    try {
+      const fs = await import('node:fs/promises');
+      const raw = await fs.readFile(MILESTONE_STATE_FILE, 'utf-8');
+      const state = JSON.parse(raw);
+      if (state.fanCounts) {
+        for (const [k, v] of Object.entries(state.fanCounts)) {
+          previousFanCounts.set(k, v as number);
+        }
+      }
+      if (state.monthlyGains) {
+        for (const [k, v] of Object.entries(state.monthlyGains)) {
+          previousMonthlyGains.set(k, v as number);
+        }
+      }
+      logger.info(`Loaded milestone state: ${previousFanCounts.size} fan counts, ${previousMonthlyGains.size} monthly gains`);
+    } catch {
+      // First run
+    }
+  }
+
+  async function saveMilestoneState(): Promise<void> {
+    try {
+      const fs = await import('node:fs/promises');
+      const pathMod = await import('node:path');
+      await fs.mkdir(pathMod.dirname(MILESTONE_STATE_FILE), { recursive: true });
+      await fs.writeFile(MILESTONE_STATE_FILE, JSON.stringify({
+        fanCounts: Object.fromEntries(previousFanCounts),
+        monthlyGains: Object.fromEntries(previousMonthlyGains),
+      }, null, 2), 'utf-8');
+    } catch (err: any) {
+      logger.warn(`Failed to persist milestone state: ${err.message}`);
+    }
+  }
+
+  // Load persisted state at startup so restarts don't miss milestones (audit #11)
+  await loadMilestoneState();
 
   const checkAndSendMilestones = async () => {
     try {
@@ -267,6 +308,7 @@ async function startGatewayBot() {
       }
 
       logger.info('Milestone check complete.');
+      saveMilestoneState().catch(() => {});
     } catch (err: any) {
       logger.error(`Milestone check failed: ${err.message}`);
     }
@@ -277,8 +319,6 @@ async function startGatewayBot() {
   logger.info(`Milestone check scheduled (${tz}): daily at 9AM`);
 
   // ── Monthly Achievement Check (1st of month at 10AM) ──
-
-  const previousMonthlyGains = new Map<string, number>(); // trainerId → last month's gain
 
   const checkMonthlyAchievements = async () => {
     try {
@@ -324,6 +364,7 @@ async function startGatewayBot() {
       }
 
       logger.info('Monthly achievement check complete.');
+      saveMilestoneState().catch(() => {});
     } catch (err: any) {
       logger.error(`Monthly achievement check failed: ${err.message}`);
     }

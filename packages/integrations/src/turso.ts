@@ -6,11 +6,12 @@ const logger = createLogger('Turso');
 // ── Singleton client ──────────────────────────────────────
 
 let client: Client | null = null;
-let connectAttempts = 0;
 const MAX_CONNECT_ATTEMPTS = 3;
 
 /**
  * Returns the shared Turso client instance with retry logic.
+ * Retries are per-invocation, not global — each call to this function
+ * can attempt up to MAX_CONNECT_ATTEMPTS if previous ones fail. (audit #20)
  */
 export function getTursoClient(): Client {
   if (client) return client;
@@ -25,21 +26,21 @@ export function getTursoClient(): Client {
     );
   }
 
-  try {
-    client = createClient({ url, authToken });
-    connectAttempts = 0;
-    logger.info(`Turso client connected to ${url}`);
-    return client;
-  } catch (err: any) {
-    connectAttempts++;
-    if (connectAttempts < MAX_CONNECT_ATTEMPTS) {
-      logger.warn(`Turso connection attempt ${connectAttempts}/${MAX_CONNECT_ATTEMPTS} failed: ${err.message}`);
-    } else {
-      logger.error(`Turso connection failed after ${MAX_CONNECT_ATTEMPTS} attempts: ${err.message}`);
-      throw err;
+  let lastError: Error | undefined;
+
+  for (let attempt = 0; attempt < MAX_CONNECT_ATTEMPTS; attempt++) {
+    try {
+      client = createClient({ url, authToken });
+      logger.info(`Turso client connected to ${url}`);
+      return client;
+    } catch (err: any) {
+      lastError = err;
+      logger.warn(`Turso connection attempt ${attempt + 1}/${MAX_CONNECT_ATTEMPTS} failed: ${err.message}`);
     }
   }
-  throw new Error('Turso connection failed');
+
+  logger.error(`Turso connection failed after ${MAX_CONNECT_ATTEMPTS} attempts: ${lastError?.message}`);
+  throw lastError ?? new Error('Turso connection failed');
 }
 
 /**

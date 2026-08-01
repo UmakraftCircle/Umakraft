@@ -97,6 +97,15 @@ export function validateExecutionPlan(plan: unknown): ValidationResult {
     }
   }
 
+  // Check for dependency cycles using Kahn's algorithm (audit #17)
+  const cycles = detectCycles(data.tasks.map(t => ({ id: t.id, dependencies: t.dependencies })));
+  if (cycles !== null) {
+    return {
+      valid: false,
+      errors: [`Plan contains a dependency cycle involving tasks: ${cycles.join(', ')}`]
+    };
+  }
+
   logger.info(`Plan "${data.id}" passed validation with ${data.tasks.length} tasks.`);
   return { valid: true, errors: [] };
 }

@@ -275,6 +275,23 @@ export class RepoIndexer {
     const symbols: SymbolEntry[] = [];
     const lines = content.split('\n');
 
+    // Precompute line offsets for O(log n) line-number lookup (audit #22)
+    const lineOffsets: number[] = [0]; // start of line 0
+    for (let i = 0; i < lines.length; i++) {
+      lineOffsets.push(lineOffsets[i] + lines[i].length + 1); // +1 for newline
+    }
+
+    /** Binary search to find which line contains a given character offset. */
+    const offsetToLine = (offset: number): number => {
+      let lo = 0, hi = lineOffsets.length - 1;
+      while (lo < hi) {
+        const mid = Math.floor((lo + hi + 1) / 2);
+        if (lineOffsets[mid] <= offset) lo = mid;
+        else hi = mid - 1;
+      }
+      return lo + 1; // 1-based line number
+    };
+
     for (const { regex, kind, nameGroup } of PATTERNS) {
       // Create a fresh copy per file — avoids global regex lastIndex corruption
       const regexCopy = new RegExp(regex.source, regex.flags);
@@ -292,17 +309,8 @@ export class RepoIndexer {
           // Strip type annotations like "as Type" from exports
           const cleanName = name.split(/\s+as\s+/)[0].trim();
 
-          // Find line number
-          const matchIndex = match.index;
-          let line = 1;
-          let pos = 0;
-          for (let i = 0; i < lines.length; i++) {
-            if (pos + lines[i].length + 1 > matchIndex) {
-              line = i + 1;
-              break;
-            }
-            pos += lines[i].length + 1;
-          }
+          // Find line number via binary search
+          const line = offsetToLine(match.index);
 
           const isExported = kind === 'export' || content.substring(match.index, match.index + 7) === 'export ';
 

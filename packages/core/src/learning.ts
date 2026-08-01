@@ -1,4 +1,5 @@
 import { createLogger } from '@ai-agent-platform/shared';
+import * as crypto from 'crypto';
 
 const logger = createLogger('Learning');
 
@@ -16,6 +17,7 @@ export interface AdaptationRule {
   pattern: string;            // regex to match error messages
   suggestion: string;        // human-readable correction advice
   autoFix?: (args: Record<string, any>) => Record<string, any>;
+  tools?: string[];           // restrict this rule to specific tool slugs (audit #8)
   occurrences: number;
   lastSeen: string;
 }
@@ -112,13 +114,17 @@ export class LearningEngine {
 
   /**
    * Attempts to auto-correct task arguments based on learned patterns.
-   * Applies all autoFix functions from matching adaptation rules.
-   * Each autoFix function is responsible for checking whether its fix is needed.
+   * Applies only matching autoFix functions whose tools[] allowlist includes
+   * the given toolSlug. If a rule has no tools[] filter, it applies universally.
    */
   public applyFixes(toolSlug: string, args: Record<string, any>): Record<string, any> {
     let fixed = { ...args };
 
     for (const rule of this.rules.values()) {
+      // Filter: skip if rule has a tools allowlist and this tool is not in it
+      if (rule.tools && rule.tools.length > 0 && !rule.tools.includes(toolSlug)) {
+        continue;
+      }
       if (rule.autoFix) {
         try {
           fixed = rule.autoFix(fixed);
@@ -180,7 +186,8 @@ export class LearningEngine {
 
     for (const p of patterns) {
       if (p.pattern.test(msg)) {
-        const ruleId = `rule-${Buffer.from(p.suggestion).toString('base64').slice(0, 12)}`;
+        const ruleId = `rule-${crypto.createHash('sha256').update(p.suggestion).digest('hex').slice(0, 16)}`;
+        const ruleTools = p.autoFix ? (p as any).tools as string[] | undefined : undefined;
         const existing = this.rules.get(ruleId);
         let rule: AdaptationRule;
         if (existing) {
@@ -193,6 +200,7 @@ export class LearningEngine {
             pattern: p.pattern.source,
             suggestion: p.suggestion,
             autoFix: p.autoFix,
+            tools: ruleTools,
             occurrences: 1,
             lastSeen: obs.timestamp
           };

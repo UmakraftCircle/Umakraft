@@ -2,6 +2,7 @@ import { ExecutionPlan, AgentTask, PlanValidationError, createLogger } from '@ai
 import { ToolRegistry } from './tool-registry.js';
 import { AIService } from '@ai-agent-platform/ai';
 import { z } from 'zod';
+import { validateExecutionPlan } from './validator.js';
 
 const logger = createLogger('Planner');
 
@@ -70,13 +71,42 @@ export class Planner {
       });
     }
 
-    // Cycle detection
-    this.detectCircularDependencies(tasksMap);
+    // Validate task map — checks unknown deps, self-deps, and cycles (audit #17, #18)
+    const tasksArray = Array.from(tasksMap.values());
+
+    // Check phantom dependencies (deps not in the task map)
+    const taskIds = new Set(tasksMap.keys());
+    for (const task of tasksArray) {
+      for (const depId of task.dependencies) {
+        if (!taskIds.has(depId)) {
+          logger.error(`AI planner hallucinated unknown dependency: task "${task.id}" depends on nonexistent "${depId}"`);
+          throw new PlanValidationError(
+            `Plan validation failure: task "${task.id}" references unknown dependency "${depId}"`
+          );
+        }
+      }
+    }
+
+    // Run full validation (includes cycle detection via Kahn's algorithm)
+    const planId = `plan-${Date.now()}`;
+    const validation = validateExecutionPlan({
+      id: planId,
+      intent,
+      tasks: tasksMap,
+      metadata: {
+        modelUsed: this.aiService.getCurrentModel(),
+        createdAt: new Date().toISOString(),
+        estimatedSteps: tasksMap.size,
+      },
+    });
+    if (!validation.valid) {
+      throw new PlanValidationError(`AI generated an invalid plan: ${validation.errors.join('; ')}`);
+    }
 
     logger.info(`Planning complete. Generated ${tasksMap.size} tasks.`);
 
     return {
-      id: `plan-${Date.now()}`,
+      id: planId,
       intent,
       tasks: tasksMap,
       metadata: {
@@ -85,40 +115,5 @@ export class Planner {
         estimatedSteps: tasksMap.size
       }
     };
-  }
-
-  private detectCircularDependencies(tasks: Map<string, AgentTask>): void {
-    const visited: Record<string, boolean> = {};
-    const recStack: Record<string, boolean> = {};
-
-    const hasCycle = (id: string): boolean => {
-      if (!visited[id]) {
-        visited[id] = true;
-        recStack[id] = true;
-
-        const task = tasks.get(id);
-        if (task) {
-          for (const depId of task.dependencies) {
-            // Self-dependency check
-            if (depId === id) {
-              return true;
-            }
-            if (!visited[depId] && hasCycle(depId)) {
-              return true;
-            } else if (recStack[depId]) {
-              return true;
-            }
-          }
-        }
-      }
-      recStack[id] = false;
-      return false;
-    };
-
-    for (const id of tasks.keys()) {
-      if (hasCycle(id)) {
-        throw new PlanValidationError(`Plan Validation Failure: Cycle detected in generated AI plan dependencies.`);
-      }
-    }
   }
 }

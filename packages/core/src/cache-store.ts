@@ -62,6 +62,10 @@ export class CacheStore<T = any> {
 
   /**
    * Retrieve a cached value. Returns null on miss or expiry.
+   *
+   * NOTE: null is the sentinel for "cache miss." If you need to cache the
+   * value null itself, use a wrapper object (e.g. { value: null }) or
+   * getOrCompute() which distinguishes miss from cached-null.
    */
   public get<U = T>(key: string): U | null {
     const fullKey = this.nsKey(key);

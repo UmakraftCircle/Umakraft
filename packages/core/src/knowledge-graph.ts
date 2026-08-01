@@ -168,12 +168,11 @@ export class KnowledgeGraph {
   }
 
   /**
-   * Delete a node and all its edges.
+   * Delete a node. CASCADE takes care of edges. No manual edge delete needed.
    */
   public async deleteNode(id: string): Promise<void> {
     await this.init();
     const db = await getDatabase();
-    db.prepare(`DELETE FROM knowledge_edges WHERE source_id = ? OR target_id = ?`).run(id, id);
     db.prepare(`DELETE FROM knowledge_nodes WHERE id = ?`).run(id);
     logger.debug(`Deleted knowledge node: ${id}`);
   }
@@ -181,7 +180,8 @@ export class KnowledgeGraph {
   // ── Edge operations ──
 
   /**
-   * Create an edge between two nodes.
+   * Upsert an edge between two nodes. A second call with the same
+   * (sourceId, targetId, relationship) updates weight and metadata.
    */
   public async addEdge(edge: Omit<KnowledgeEdge, 'id' | 'createdAt'>): Promise<KnowledgeEdge> {
     await this.init();
@@ -192,8 +192,12 @@ export class KnowledgeGraph {
     const result: KnowledgeEdge = { ...edge, id, createdAt: now };
 
     db.prepare(`
-      INSERT OR IGNORE INTO knowledge_edges (id, source_id, target_id, relationship, weight, metadata, created_at)
+      INSERT INTO knowledge_edges (id, source_id, target_id, relationship, weight, metadata, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(source_id, target_id, relationship) DO UPDATE SET
+        weight = excluded.weight,
+        metadata = excluded.metadata,
+        id = excluded.id
     `).run(
       result.id, result.sourceId, result.targetId, result.relationship,
       result.weight ?? 1.0,

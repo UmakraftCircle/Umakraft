@@ -2,7 +2,9 @@ export class BaseError extends Error {
   constructor(public override message: string, public code: string, public details?: any) {
     super(message);
     this.name = this.constructor.name;
-    Error.captureStackTrace(this, this.constructor);
+    if (typeof Error.captureStackTrace === 'function') {
+      Error.captureStackTrace(this, this.constructor);
+    }
   }
 }
 
