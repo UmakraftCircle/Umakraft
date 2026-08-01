@@ -13,6 +13,33 @@ export interface PromptTemplate {
  * Central prompt registry.
  * All system-level prompt templates live here so they can be versioned,
  * audited, and A/B tested without touching application code.
+ *
+ * ── TEMPLATE VARIABLE SYNTAX ────────────────────────────────
+ *
+ * Two valid patterns exist for injecting dynamic data:
+ *
+ * PATTERN A — vars.varname (preferred for new templates)
+ *   userTemplate: (vars) => `Hello ${vars.memberName}!`
+ *   // Reads vars directly.  Clean, simple, no replaceAll needed.
+ *   // Used by: new-member-greeting, race-commentary
+ *
+ * PATTERN B — dollar-brace-varname placeholder + replaceAll (legacy)
+ *   userTemplate: (vars) => `... dollar-brace-trainerName ...`
+ *   // Produces literal ${trainerName} in the output string.
+ *   // Implementation: use the JS expression String('${trainerName}')
+ *   // inside the template literal so the $ is preserved.
+ *   // The service then calls .replaceAll('${trainerName}', realValue)
+ *   // Used by: daily-message, milestone-message, monthly-achievement,
+ *   //          daily-reminder
+ *
+ * BROKEN — DO NOT USE
+ *   // Writing a bare-brace string like '{trainerName}' inside a
+ *   // template literal ${...} expression silently drops the $ sign.
+ *   // The JS expression evaluates the string '{trainerName}' which
+ *   // produces {trainerName} (no leading $).
+ *   // replaceAll('${trainerName}', ...) will NEVER match.
+ *   // Guarded by: `pnpm lint` (scripts/lint-templates.sh)
+ *   // Tested by:  tests/ai/prompts.test.ts
  */
 export class PromptLibrary {
   private templates: Map<string, PromptTemplate> = new Map();
