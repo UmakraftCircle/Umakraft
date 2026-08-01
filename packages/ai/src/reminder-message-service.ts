@@ -14,6 +14,7 @@ const MAX_WORDS = 150;
 export interface TrainerGap {
   trainerName: string;
   discordUserId: string;
+  trainerId: string;
   monthlyFans: number;
   deficit: number; // 50M - monthlyFans
 }
@@ -111,7 +112,7 @@ export class ReminderMessageService {
     // Tier 1: Primary
     if (this.primaryAI) {
       try {
-        const msg = await this.#generateViaAI(this.primaryAI, trainerData, serverName);
+        const msg = await this.#generateViaAI(this.primaryAI, trainerData, gaps, serverName);
         this.cache.set(`reminder-${Date.now()}`, msg);
         logger.info(`Gap reminder generated via primary (${gaps.length} trainers)`);
         return msg;
@@ -123,7 +124,7 @@ export class ReminderMessageService {
     // Tier 2: Fallback
     if (this.fallbackAI) {
       try {
-        const msg = await this.#generateViaAI(this.fallbackAI, trainerData, serverName);
+        const msg = await this.#generateViaAI(this.fallbackAI, trainerData, gaps, serverName);
         this.cache.set(`reminder-${Date.now()}`, msg);
         logger.info(`Gap reminder generated via fallback (${gaps.length} trainers)`);
         return msg;
@@ -144,6 +145,7 @@ export class ReminderMessageService {
   async #generateViaAI(
     ai: AIService,
     trainerData: string,
+    gaps: TrainerGap[],
     serverName: string,
   ): Promise<string> {
     const rendered = this.prompts.render('daily-reminder', {
@@ -160,7 +162,9 @@ export class ReminderMessageService {
         .replaceAll('${serverName}', serverName),
     });
 
-    return this.#sanitize(raw);
+    const sanitized = this.#sanitize(raw);
+    this.#validateMentions(sanitized, gaps);
+    return sanitized;
   }
 
   #fallbackReminder(): string {
@@ -193,9 +197,24 @@ export class ReminderMessageService {
         const d = g.deficit >= 1_000_000
           ? `${(g.deficit / 1_000_000).toFixed(1)}M`
           : `${(g.deficit / 1_000).toFixed(1)}K`;
-        return `  ${i + 1}. ${g.trainerName} — ${m} monthly fans so far, needs ${d} more to reach 50M Minimum`;
+        return `  ${i + 1}. <@${g.discordUserId}> (${g.trainerName}) — ${m} monthly fans so far, needs ${d} more to reach 50M Minimum`;
       })
       .join('\n');
+  }
+
+  #validateMentions(msg: string, gaps: TrainerGap[]): void {
+    const realIds = new Set(gaps.map(g => g.discordUserId));
+    // Reject plain @word mentions (not real Discord snowflakes)
+    const plain = [...msg.matchAll(/@(?!\d{17,19}>)(\w+)/g)];
+    if (plain.length > 0) {
+      throw new Error(`Invented @mentions: ${plain.map(m => m[0]).join(', ')} — retrying`);
+    }
+    // Reject <@ID> mentions for IDs not in the gaps list
+    const ids = [...msg.matchAll(/<@(\d{17,19})>/g)].map(m => m[1]);
+    const hallucinated = ids.filter(id => !realIds.has(id));
+    if (hallucinated.length > 0) {
+      throw new Error(`Unknown user IDs mentioned: ${hallucinated.join(', ')} — retrying`);
+    }
   }
 
   #sanitize(raw: string): string {

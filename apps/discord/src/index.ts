@@ -413,13 +413,29 @@ async function startGatewayBot() {
         gaps.push({
           trainerName: link.trainerName,
           discordUserId: link.discordUserId,
+          trainerId: link.trainerId,
           monthlyFans: monthly,
           deficit: 50_000_000 - monthly,
         });
       }
 
+      // Refresh stale names from live API before generating the message
+      for (const gap of gaps) {
+        const live = members.find(m => m.trainerId === gap.trainerId);
+        if (live?.trainerName && !live.trainerName.startsWith('[MOCK]')) {
+          gap.trainerName = live.trainerName;
+        }
+      }
+
       if (gaps.length === 0) {
         logger.info('Gap reminder: all linked trainers have 50M+ monthly — skipping.');
+        return;
+      }
+
+      // Skip if all monthly counts are zero — API may be down
+      const allZero = gaps.every(g => g.monthlyFans === 0);
+      if (allZero) {
+        logger.warn('Gap reminder: all monthly counts are 0 — API may be down, skipping.');
         return;
       }
 

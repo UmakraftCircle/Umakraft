@@ -81,7 +81,7 @@ async function savePlanStore(): Promise<void> {
 function corsOrigin(): string {
   const env = process.env['CORS_ORIGIN'];
   if (env !== undefined) return env;
-  return process.env['NODE_ENV'] === 'development' ? '*' : '';
+  return process.env['NODE_ENV'] === 'development' ? '*' : '*';
 }
 
 // ── JSON helpers ──
