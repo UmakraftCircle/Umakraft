@@ -57,24 +57,18 @@ describe('PromptLibrary template rendering', () => {
       assert.ok(r!.system.includes('${timeOfDay}'), 'system missing ${timeOfDay}');
     });
 
-    it('user prompt has all 4 replaceable placeholders', () => {
+    it('user prompt injects all 4 variables directly (Pattern A)', () => {
       const r = lib.render('daily-message', vars);
       const u = r!.user;
-      assert.ok(u.includes('${timeOfDay}'), 'missing ${timeOfDay}');
-      assert.ok(u.includes('${serverName}'), 'missing ${serverName}');
-      assert.ok(u.includes('${memberCount}'), 'missing ${memberCount}');
-      assert.ok(u.includes('${timeGuidance}'), 'missing ${timeGuidance}');
+      assert.ok(u.includes('morning'), 'missing timeOfDay value');
+      assert.ok(u.includes('TestServer'), 'missing serverName value');
+      assert.ok(u.includes('42'), 'missing memberCount value');
+      assert.ok(u.includes('be warm'), 'missing timeGuidance value');
     });
 
-    it('replaceAll removes every placeholder', () => {
+    it('user prompt has no placeholder patterns (vars-direct)', () => {
       const r = lib.render('daily-message', vars);
-      let replaced = r!.system.replaceAll('${timeOfDay}', vars.timeOfDay);
-      replaced = r!.user
-        .replaceAll('${timeOfDay}', vars.timeOfDay)
-        .replaceAll('${serverName}', vars.serverName)
-        .replaceAll('${memberCount}', vars.memberCount)
-        .replaceAll('${timeGuidance}', vars.timeGuidance);
-      assert.ok(!DOLLARBRACE_RE.test(replaced), `remaining placeholders: ${replaced.match(DOLLARBRACE_RE)}`);
+      assert.ok(!DOLLARBRACE_RE.test(r!.user), `found placeholder: ${r!.user.match(DOLLARBRACE_RE)}`);
     });
 
     it('has no bare-brace {word} patterns', () => {
@@ -101,24 +95,18 @@ describe('PromptLibrary template rendering', () => {
       assert.ok(lib.render('milestone-message', vars));
     });
 
-    it('user prompt has all 5 replaceable placeholders', () => {
+    it('user prompt injects all 5 variables directly (Pattern A)', () => {
       const u = lib.render('milestone-message', vars)!.user;
-      assert.ok(u.includes('${trainerName}'), 'missing ${trainerName}');
-      assert.ok(u.includes('${fanCount}'), 'missing ${fanCount}');
-      assert.ok(u.includes('${tierTitle}'), 'missing ${tierTitle}');
-      assert.ok(u.includes('${tierDescription}'), 'missing ${tierDescription}');
-      assert.ok(u.includes('${serverName}'), 'missing ${serverName}');
+      assert.ok(u.includes('TestTrainer'), 'missing trainerName value');
+      assert.ok(u.includes('1.5M'), 'missing fanCount value');
+      assert.ok(u.includes('Gold'), 'missing tierTitle value');
+      assert.ok(u.includes('Top tier'), 'missing tierDescription value');
+      assert.ok(u.includes('TestServer'), 'missing serverName value');
     });
 
-    it('replaceAll removes every placeholder', () => {
+    it('user prompt has no placeholder patterns (vars-direct)', () => {
       const u = lib.render('milestone-message', vars)!.user;
-      const replaced = u
-        .replaceAll('${trainerName}', vars.trainerName)
-        .replaceAll('${fanCount}', vars.fanCount)
-        .replaceAll('${tierTitle}', vars.tierTitle)
-        .replaceAll('${tierDescription}', vars.tierDescription)
-        .replaceAll('${serverName}', vars.serverName);
-      assert.ok(!DOLLARBRACE_RE.test(replaced), `remaining: ${replaced.match(DOLLARBRACE_RE)}`);
+      assert.ok(!DOLLARBRACE_RE.test(u), `found placeholder: ${u.match(DOLLARBRACE_RE)}`);
     });
 
     it('has no bare-brace {word} patterns', () => {
@@ -144,24 +132,18 @@ describe('PromptLibrary template rendering', () => {
       assert.ok(lib.render('monthly-achievement', vars));
     });
 
-    it('user prompt has all 5 replaceable placeholders', () => {
+    it('user prompt injects all 5 variables directly (Pattern A)', () => {
       const u = lib.render('monthly-achievement', vars)!.user;
-      assert.ok(u.includes('${trainerName}'));
-      assert.ok(u.includes('${monthlyGain}'));
-      assert.ok(u.includes('${tierTitle}'));
-      assert.ok(u.includes('${tierDescription}'));
-      assert.ok(u.includes('${serverName}'));
+      assert.ok(u.includes('TestTrainer'));
+      assert.ok(u.includes('12.3M'));
+      assert.ok(u.includes('Diamond'));
+      assert.ok(u.includes('Monthly champion'));
+      assert.ok(u.includes('TestServer'));
     });
 
-    it('replaceAll removes every placeholder', () => {
+    it('user prompt has no placeholder patterns (vars-direct)', () => {
       const u = lib.render('monthly-achievement', vars)!.user;
-      const replaced = u
-        .replaceAll('${trainerName}', vars.trainerName)
-        .replaceAll('${monthlyGain}', vars.monthlyGain)
-        .replaceAll('${tierTitle}', vars.tierTitle)
-        .replaceAll('${tierDescription}', vars.tierDescription)
-        .replaceAll('${serverName}', vars.serverName);
-      assert.ok(!DOLLARBRACE_RE.test(replaced));
+      assert.ok(!DOLLARBRACE_RE.test(u));
     });
 
     it('has no bare-brace {word} patterns', () => {
@@ -184,18 +166,15 @@ describe('PromptLibrary template rendering', () => {
       assert.ok(lib.render('daily-reminder', vars));
     });
 
-    it('user prompt has both replaceable placeholders', () => {
+    it('user prompt injects both variables directly (Pattern A)', () => {
       const u = lib.render('daily-reminder', vars)!.user;
-      assert.ok(u.includes('${trainerData}'), 'missing ${trainerData}');
-      assert.ok(u.includes('${serverName}'), 'missing ${serverName}');
+      assert.ok(u.includes('TrainerA'), 'missing trainerData value');
+      assert.ok(u.includes('TestServer'), 'missing serverName value');
     });
 
-    it('replaceAll removes every placeholder', () => {
+    it('user prompt has no placeholder patterns (vars-direct)', () => {
       const u = lib.render('daily-reminder', vars)!.user;
-      const replaced = u
-        .replaceAll('${trainerData}', vars.trainerData)
-        .replaceAll('${serverName}', vars.serverName);
-      assert.ok(!DOLLARBRACE_RE.test(replaced));
+      assert.ok(!DOLLARBRACE_RE.test(u));
     });
 
     it('has no bare-brace {word} patterns', () => {
@@ -205,13 +184,10 @@ describe('PromptLibrary template rendering', () => {
 
     it('injects real trainer data so AI cannot hallucinate names', () => {
       const u = lib.render('daily-reminder', vars)!.user;
-      const replaced = u
-        .replaceAll('${trainerData}', vars.trainerData)
-        .replaceAll('${serverName}', vars.serverName);
-      assert.ok(replaced.includes('TrainerA'), 'trainer data not injected');
-      assert.ok(replaced.includes('TrainerB'), 'trainer data not injected');
-      assert.ok(replaced.includes('40M'), 'deficit not injected');
-      assert.ok(replaced.includes('TestServer'), 'server name not injected');
+      assert.ok(u.includes('TrainerA'), 'trainer data not injected');
+      assert.ok(u.includes('TrainerB'), 'trainer data not injected');
+      assert.ok(u.includes('40M'), 'deficit not injected');
+      assert.ok(u.includes('TestServer'), 'server name not injected');
     });
   });
 
@@ -331,17 +307,14 @@ describe('PromptLibrary template rendering', () => {
         serverName: 'Umakraft',
       });
 
-      // Run the same replaceAll chain the service uses
-      const final = r!.user
-        .replaceAll('${trainerData}', realData)
-        .replaceAll('${serverName}', 'Umakraft');
+      // Pattern A: vars injected directly — no replaceAll needed
+      const final = r!.user;
 
       // The AI must see the real trainer name
       assert.ok(final.includes('Phil0s'), 'AI does not see real trainer name — will hallucinate');
 
-      // The literal placeholder string must be gone
-      assert.ok(!final.includes('${trainerData}'), 'placeholder not replaced');
-      assert.ok(!final.includes('{trainerData}'), 'bare-brace placeholder leaked');
+      // Must not have any unreplaced placeholder patterns
+      assert.ok(!DOLLARBRACE_RE.test(final), `placeholder leak: ${final.match(DOLLARBRACE_RE)}`);
     });
   });
 });
