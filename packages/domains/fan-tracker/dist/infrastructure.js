@@ -104,6 +104,12 @@ export class FanTrackerAPI {
         try {
             const data = await this.apiGet(`/api/v4/circles?circle_id=${this.circleId}`, cacheKey, 10 * 60 * 1000);
             const members = data.members || [];
+            // Diagnostic: log raw member fields to discover API response shape
+            // (e.g., is there a 'status' or 'is_member' field we're not using?)
+            if (members.length > 0) {
+                logger.info(`fetchAllMembers: got ${members.length} circle members. ` +
+                    `First member fields: ${Object.keys(members[0]).sort().join(', ')}`);
+            }
             const statsList = [];
             for (const m of members) {
                 const stats = this.mapCircleMemberToStats(m, data.circle);
@@ -251,8 +257,26 @@ export class FanTrackerAPI {
         let lastIdx = dailyFans.length - 1;
         while (lastIdx >= 0 && dailyFans[lastIdx] === 0)
             lastIdx--;
-        const isActive = lastIdx >= 0 && dailyFans[lastIdx] > 0;
-        const totalFans = isActive ? dailyFans[lastIdx] : (dailyFans.find((f) => f > 0) || 0);
+        const hasFanData = lastIdx >= 0 && dailyFans[lastIdx] > 0;
+        // ── Ex-member detection ──
+        // The uma.moe API returns kicked ex-members alongside active members
+        // (34 members for a 30-cap circle; the 4 extras are ex-members).
+        // Their data is NOT cleaned up, so we detect them via staleness signals:
+        //   1. Fan count flatlined: same value for 3+ consecutive recent days
+        //   2. last_updated timestamp > 2 days old (active members update daily)
+        const fanFlatlined = lastIdx >= 2 &&
+            dailyFans[lastIdx] === dailyFans[lastIdx - 1] &&
+            dailyFans[lastIdx] === dailyFans[lastIdx - 2];
+        const lastUpdatedMs = m.last_updated ? new Date(m.last_updated).getTime() : 0;
+        const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000;
+        const dataIsStale = lastUpdatedMs > 0 && (Date.now() - lastUpdatedMs > TWO_DAYS_MS);
+        const isExMember = hasFanData && (fanFlatlined || dataIsStale);
+        if (isExMember) {
+            logger.debug(`Ex-member filtered: ${m.trainer_name || trainerId} ` +
+                `(flatlined=${fanFlatlined}, stale=${dataIsStale})`);
+        }
+        const isActive = hasFanData && !isExMember;
+        const totalFans = hasFanData ? dailyFans[lastIdx] : (dailyFans.find((f) => f > 0) || 0);
         // Find starting baseline: first positive value, or zero after negative transfers
         let startIdx = 0;
         for (let i = 0; i <= lastIdx; i++) {
