@@ -29,7 +29,6 @@ class RateLimiter {
         this.tokens -= 1;
         return;
       }
-      // Wait before retrying
       await new Promise(r => setTimeout(r, 100));
     }
   }
@@ -44,30 +43,23 @@ const cache = new CacheStore({ namespace: 'fan-tracker', defaultTTL: 5 * 60 * 10
 export interface TrainerStats {
   trainerId: string;
   trainerName: string;
-  // Fan counts
-  totalFans: number;       // lifetime cumulative fans at latest update
-  monthlyFans: number;     // fans earned this month (total - starting baseline)
-  dailyGain: number;       // approximate gain in last 24h (from daily_fans)
-  weeklyGain: number;      // approximate gain in last 7 days
-  // Pre-computed gains from profile API (null when using circles fallback)
+  totalFans: number;
+  monthlyFans: number;
+  dailyGain: number;
+  weeklyGain: number;
   gain3d: number | null;
   gain7d: number | null;
   gain30d: number | null;
-  // Ranks  
   monthlyRank: number | null;
   rank3d: number | null;
   rank7d: number | null;
   rank30d: number | null;
-  // Activity
   activeDays: number;
   avgDaily: number | null;
   avg3d: number | null;
   avg7d: number | null;
-  // Tier (from rank thresholds)
   clubRankTier: string;
-  // Previous club info
   previousCircleName: string | null;
-  // Metadata
   updatedAt: string;
   isActive: boolean;
 }
@@ -108,10 +100,6 @@ export class FanTrackerAPI {
     this.limiter = new RateLimiter(1);
   }
 
-  // ────────────────────────────────────────────────────────────────
-  // Core: fetch circle with all members
-  // ────────────────────────────────────────────────────────────────
-
   private async apiGet<T>(path: string, cacheKey?: string, ttl?: number): Promise<T> {
     if (cacheKey) {
       const cached = cache.get<T>(cacheKey);
@@ -141,10 +129,6 @@ export class FanTrackerAPI {
     return data;
   }
 
-  // ────────────────────────────────────────────────────────────────
-  // fetchTrainerStats: uses profile endpoint for rich data
-  // ────────────────────────────────────────────────────────────────
-
   public async fetchTrainerStats(trainerId: string): Promise<TrainerStats> {
     const cacheKey = `trainer-profile:${trainerId}`;
 
@@ -152,7 +136,7 @@ export class FanTrackerAPI {
       const profile = await this.apiGet<any>(
         `/api/v4/user/profile/${trainerId}`,
         cacheKey,
-        5 * 60 * 1000, // 5 min TTL
+        5 * 60 * 1000,
       );
       return this.mapProfileToStats(trainerId, profile);
     } catch (error: any) {
@@ -161,23 +145,15 @@ export class FanTrackerAPI {
     }
   }
 
-  /**
-   * Fallback: extract trainer stats from the circles endpoint when profile API fails.
-   */
   private async fetchTrainerStatsFromCircle(trainerId: string): Promise<TrainerStats> {
     const members = await this.fetchAllMembers();
     const member = members.find(m => m.trainerId === trainerId);
 
     if (member) return member;
 
-    // Last resort: mock
     logger.warn(`Trainer ${trainerId} not found in circle. Using mock.`);
     return this.generateMockStats(trainerId);
   }
-
-  // ────────────────────────────────────────────────────────────────
-  // fetchAllMembers: get all members with computed stats (leaderboard)
-  // ────────────────────────────────────────────────────────────────
 
   public async fetchAllMembers(): Promise<TrainerStats[]> {
     const cacheKey = `circle-members:${this.circleId}`;
@@ -186,7 +162,7 @@ export class FanTrackerAPI {
       const data = await this.apiGet<any>(
         `/api/v4/circles?circle_id=${this.circleId}`,
         cacheKey,
-        10 * 60 * 1000, // 10 min TTL
+        10 * 60 * 1000,
       );
 
       const members = data.members || [];
@@ -214,10 +190,6 @@ export class FanTrackerAPI {
     }
   }
 
-  // ────────────────────────────────────────────────────────────────
-  // listAllTrainers: lightweight name+ID list (autocomplete)
-  // ────────────────────────────────────────────────────────────────
-
   public async listAllTrainers(): Promise<Array<{ trainerId: string; trainerName: string; tier: string }>> {
     const members = await this.fetchAllMembers();
     return members.map(m => ({
@@ -226,10 +198,6 @@ export class FanTrackerAPI {
       tier: m.clubRankTier,
     }));
   }
-
-  // ────────────────────────────────────────────────────────────────
-  // analyzeTrends: uses profile fan_history for gain computation
-  // ────────────────────────────────────────────────────────────────
 
   public async analyzeTrends(trainerId: string, period: string = 'weekly'): Promise<TrendAnalysis> {
     const cacheKey = `trend:${trainerId}:${period}`;
@@ -271,16 +239,12 @@ export class FanTrackerAPI {
     }
   }
 
-  // ────────────────────────────────────────────────────────────────
-  // fetchRankThresholds: D through SS tier boundaries
-  // ────────────────────────────────────────────────────────────────
-
   public async fetchRankThresholds(): Promise<RankThreshold[]> {
     try {
       const data = await this.apiGet<any>(
         '/api/v4/circles/rank-thresholds',
         'rank-thresholds',
-        30 * 60 * 1000, // 30 min TTL
+        30 * 60 * 1000,
       );
       return data.thresholds || [];
     } catch (error: any) {
@@ -301,10 +265,6 @@ export class FanTrackerAPI {
     return '?';
   }
 
-  // ────────────────────────────────────────────────────────────────
-  // Cache management
-  // ────────────────────────────────────────────────────────────────
-
   public clearCache(): void {
     cache.clear();
     logger.info('Fan tracker cache cleared.');
@@ -313,10 +273,6 @@ export class FanTrackerAPI {
   public getCacheStats() {
     return cache.getStats();
   }
-
-  // ────────────────────────────────────────────────────────────────
-  // Mappers: API response → TrainerStats
-  // ────────────────────────────────────────────────────────────────
 
   private async mapProfileToStats(trainerId: string, profile: any): Promise<TrainerStats> {
     const trainer = profile.trainer || {};
@@ -355,7 +311,6 @@ export class FanTrackerAPI {
   }
 
   private mapCircleMemberToStats(m: any, circle: any): TrainerStats {
-    // Helper: crude tier from total fan count (circles endpoint lacks club_rank_name)
     const circleTierFromFans = (fans: number): string => {
       if (fans >= 2_000_000) return 'S-Class';
       if (fans >= 1_000_000) return 'A-Class';
@@ -366,44 +321,48 @@ export class FanTrackerAPI {
     const trainerId = String(m.viewer_id);
     const dailyFans: number[] = m.daily_fans || [];
 
-    // Find last non-zero index (real data ends, zeros indicate future/no-data days)
     let lastIdx = dailyFans.length - 1;
     while (lastIdx >= 0 && dailyFans[lastIdx] === 0) lastIdx--;
 
     const isActive = lastIdx >= 0 && dailyFans[lastIdx] > 0;
     const totalFans = isActive ? dailyFans[lastIdx] : (dailyFans.find((f: number) => f > 0) || 0);
 
-    // Find starting baseline: first positive value, or zero after negative transfers
-    let startIdx = 0;
-    for (let i = 0; i <= lastIdx; i++) {
-      if (dailyFans[i] > 0) {
-        startIdx = i;
-        break;
-      }
-    }
-    const baselineFans = dailyFans[startIdx] > 0 ? dailyFans[startIdx] : 0;
+    // Month-aware baseline: anchor to current month's first day
+    // daily_fans is cumulative across all months, so we must find
+    // where the current month starts to avoid inflating gains.
+    const now = new Date();
+    const dayOfMonth = now.getDate();
+    const monthStartIdx = Math.max(0, lastIdx - dayOfMonth + 1);
+
+    const baselineFans = dailyFans[monthStartIdx] > 0
+      ? dailyFans[monthStartIdx]
+      : (() => {
+          for (let i = monthStartIdx; i <= lastIdx; i++) {
+            if (dailyFans[i] > 0) return dailyFans[i];
+          }
+          return totalFans;
+        })();
     const monthlyFans = totalFans > 0 ? totalFans - baselineFans : 0;
 
-    // Compute gains from daily array
+    // Compute gains from daily array — never cross month boundary
     const dailyGain = lastIdx >= 1 && dailyFans[lastIdx - 1] > 0
       ? dailyFans[lastIdx] - dailyFans[lastIdx - 1] : 0;
-    const weeklyStartIdx = Math.max(0, lastIdx - 7);
-    const weeklyGain = lastIdx >= 7 && dailyFans[weeklyStartIdx] > 0
-      ? dailyFans[lastIdx] - dailyFans[weeklyStartIdx] : monthlyFans;
+    const weeklyStartIdx = Math.max(monthStartIdx, lastIdx - 6);
+    const weeklyGain = weeklyStartIdx < lastIdx && dailyFans[weeklyStartIdx] > 0
+      ? dailyFans[lastIdx] - dailyFans[weeklyStartIdx] : 0;
 
-    const activeDays = lastIdx >= 0 ? lastIdx + 1 : 0;
+    const activeDays = Math.max(0, lastIdx - monthStartIdx + 1);
 
-    // Previous circle info (transfer detection)
     const previousCircleName = m.previous_circle_name || null;
 
     return {
       trainerId,
       trainerName: m.trainer_name || trainerId,
       totalFans,
-      monthlyFans: Math.max(0, monthlyFans),
-      dailyGain: Math.max(0, dailyGain),
-      weeklyGain: Math.max(0, weeklyGain),
-      gain3d: null,   // not available from circles endpoint
+      monthlyFans,
+      dailyGain,
+      weeklyGain,
+      gain3d: null,
       gain7d: null,
       gain30d: null,
       monthlyRank: circle?.monthly_rank ?? null,
@@ -420,10 +379,6 @@ export class FanTrackerAPI {
       isActive,
     };
   }
-
-  // ────────────────────────────────────────────────────────────────
-  // Mock fallbacks (used when API is completely unavailable)
-  // ────────────────────────────────────────────────────────────────
 
   private generateMockStats(trainerId: string): TrainerStats {
     const roster = this.getMockRoster();
