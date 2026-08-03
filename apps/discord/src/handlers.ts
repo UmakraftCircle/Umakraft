@@ -101,31 +101,32 @@ export async function handleFansGain(interaction: ChatInputCommandInteraction) {
 
   const stats = await fanTrackerAPI.fetchTrainerStats(link.trainerId);
 
-  const gainMap: Record<string, { label: string; value: number; rank: number | null }> = {
-    daily: { label: 'today', value: stats.gain3d != null ? Math.round(stats.gain3d / 3) : stats.dailyGain, rank: stats.rank3d },
-    weekly: { label: 'this week', value: stats.gain7d ?? stats.weeklyGain, rank: stats.rank7d },
-    monthly: { label: 'this month', value: stats.monthlyFans, rank: stats.monthlyRank },
-  };
+  const total = formatFans(stats.totalFans);
+  const monthly = stats.monthlyFans > 0 ? `+${formatFans(stats.monthlyFans)}` : '-';
+  const weekly = formatGain(stats.weeklyGain);
+  const daily = formatGain(stats.dailyGain);
+  const avgDay = stats.avgDaily ? formatFans(stats.avgDaily) : '-';
+  const active = `${stats.activeDays}d`;
+  const rank3d = stats.rank3d ? `#${stats.rank3d}` : '-';
+  const rank7d = stats.rank7d ? `#${stats.rank7d}` : '-';
 
-  const gain = gainMap[period];
-  const gainLabel = gain.label;
-  const gainDisplay = gain.value > 0 ? formatGain(gain.value) : '-';
-  const rankDisplay = gain.rank ? `#${gain.rank}` : '-';
+  const table = [
+    '```',
+    `  Total        Monthly      7-Day        Daily        Avg/Day      Active`,
+    `  ${total.padEnd(12)} ${monthly.padEnd(12)} ${weekly.padEnd(11)} ${daily.padEnd(11)} ${avgDay.padEnd(11)} ${active.padEnd(8)}`,
+    '',
+    `  3d Rank              7d Rank`,
+    `  ${rank3d.padEnd(21)} ${rank7d}`,
+    '```',
+  ].join('\n');
+
+  const description = table +
+    (stats.previousCircleName ? `\n🔄 Transferred from **${stats.previousCircleName}**` : '');
 
   const embed = new EmbedBuilder()
     .setTitle(`📊 ${stats.trainerName}  ·  ${stats.clubRankTier}  ·  ${stats.monthlyRank ? '#' + stats.monthlyRank : '-'}`)
     .setColor(0x57F287)
-    .setDescription(
-      `**${formatFans(stats.totalFans)}** total  ·  **${gainDisplay}** ${gainLabel}` +
-      (stats.previousCircleName ? `\n🔄 Transferred from **${stats.previousCircleName}**` : '')
-    )
-    .addFields(
-      { name: '7d', value: formatGain(stats.weeklyGain), inline: true },
-      { name: 'Per Day', value: stats.avgDaily ? formatFans(stats.avgDaily) : '-', inline: true },
-      { name: 'Active Days', value: `${stats.activeDays}`, inline: true },
-      { name: '3d Rank', value: stats.rank3d ? `#${stats.rank3d}` : '-', inline: true },
-      { name: '7d Rank', value: stats.rank7d ? `#${stats.rank7d}` : '-', inline: true },
-    )
+    .setDescription(description)
     .setFooter({ text: `UmaKraft · ${new Date(stats.updatedAt).toLocaleDateString()}` });
 
   await interaction.editReply({ embeds: [embed] });
@@ -166,29 +167,37 @@ export async function handleFansLeaderboard(interaction: ChatInputCommandInterac
   }
 
   const periodLabel = PERIOD_LABELS[period] || 'this month';
+  const gainCol = period === 'daily' ? 'Day' : period === 'weekly' ? 'Week' : 'Month';
 
+  const header = `  #   Trainer              Tier      ${gainCol.padEnd(11)}  Daily`;
   const lines = topN.map((s, i) => {
-    const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
-    const transfer = s.previousCircleName ? ' 🔄' : '';
+    const rank = String(i + 1).padStart(2);
+    const name = s.trainerName.slice(0, 18).padEnd(18);
+    const tier = s.clubRankTier.padEnd(7);
 
     let gainDisplay: string;
     switch (period) {
       case 'daily': gainDisplay = formatGain(s.dailyGain); break;
       case 'weekly': gainDisplay = formatGain(s.gain7d ?? s.weeklyGain); break;
-      case 'monthly': gainDisplay = s.monthlyFans > 0 ? formatFans(s.monthlyFans) : '-'; break;
+      case 'monthly': gainDisplay = s.monthlyFans > 0 ? `+${formatFans(s.monthlyFans)}` : '-'; break;
       default: gainDisplay = '-';
     }
+    gainDisplay = gainDisplay.padEnd(11);
+    const daily = s.dailyGain > 0 ? `+${formatFans(s.dailyGain)}` : '-';
+    const dailyPadded = daily.padEnd(12);
 
-    return `${medal} **${s.trainerName}**${transfer} — ${gainDisplay} ${periodLabel} · ${formatFans(s.totalFans)}`;
+    return `  ${rank}  ${name} ${tier} ${gainDisplay} ${dailyPadded}`;
   });
 
-  const description = lines.join('\n') || null;
+  const table = [header, ...lines].join('\n');
+  const description = '```\n' + table + '\n```' +
+    `\n*${members.length} members · ${periodLabel}*`;
 
   const embed = new EmbedBuilder()
-    .setTitle(`🏆 Leaderboard — Top ${topN.length} (${periodLabel})`)
+    .setTitle(`🏆 Leaderboard — Top ${topN.length}`)
     .setDescription(description)
     .setColor(0xF1C40F)
-    .setFooter({ text: `UmaKraft · ${members.length} active members` });
+    .setFooter({ text: 'UmaKraft' });
 
   await interaction.editReply({ embeds: [embed] });
 }
