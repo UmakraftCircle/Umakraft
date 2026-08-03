@@ -170,9 +170,7 @@ export class FanTrackerAPI {
 
     if (member) return member;
 
-    // Last resort: mock
-    logger.warn(`Trainer ${trainerId} not found in circle. Using mock.`);
-    return this.generateMockStats(trainerId);
+    throw new Error(`Trainer ${trainerId} not found in circle`);
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -190,14 +188,6 @@ export class FanTrackerAPI {
       );
 
       const members = data.members || [];
-
-      // Diagnostic: log raw member fields to discover API response shape
-      // (e.g., is there a 'status' or 'is_member' field we're not using?)
-      if (members.length > 0) {
-        logger.info(`fetchAllMembers: got ${members.length} circle members. ` +
-          `First member fields: ${Object.keys(members[0]).sort().join(', ')}`);
-      }
-
       const statsList: TrainerStats[] = [];
 
       for (const m of members) {
@@ -217,8 +207,8 @@ export class FanTrackerAPI {
 
       return statsList;
     } catch (error: any) {
-      logger.error(`Circle fetch failed: ${error.message}. Using mock roster.`);
-      return this.getMockRoster().map(t => this.generateMockStats(t.trainerId));
+      logger.error(`Circle fetch failed: ${error.message}`);
+      throw error;
     }
   }
 
@@ -274,8 +264,8 @@ export class FanTrackerAPI {
         historicalFans: [],
       };
     } catch (error: any) {
-      logger.warn(`Trend analysis failed for ${trainerId}: ${error.message}`);
-      return this.generateMockTrends(trainerId, period);
+      logger.error(`Trend analysis failed for ${trainerId}: ${error.message}`);
+      throw error;
     }
   }
 
@@ -415,24 +405,11 @@ export class FanTrackerAPI {
 
     const hasFanData = lastIdx >= 0 && dailyFans[lastIdx] > 0;
 
-    // ── Ex-member detection ──
-    // The uma.moe API returns kicked ex-members alongside active members
-    // (34 members for a 30-cap circle; the 4 extras are ex-members).
-    // Their data is NOT cleaned up, so we detect them via staleness signals:
-    //   1. Fan count flatlined: same value for 3+ consecutive recent days
-    //   2. last_updated timestamp > 2 days old (active members update daily)
-    const fanFlatlined = lastIdx >= 2 &&
-      dailyFans[lastIdx] === dailyFans[lastIdx - 1] &&
-      dailyFans[lastIdx] === dailyFans[lastIdx - 2];
+    // Ex-member detection: kicked members' last_updated stops updating.
+    // The API returns 34 members for a 30-cap circle; the 4 extras are ex-members.
     const lastUpdatedMs = m.last_updated ? new Date(m.last_updated).getTime() : 0;
-    const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000;
-    const dataIsStale = lastUpdatedMs > 0 && (Date.now() - lastUpdatedMs > TWO_DAYS_MS);
-    const isExMember = hasFanData && (fanFlatlined || dataIsStale);
-
-    if (isExMember) {
-      logger.debug(`Ex-member filtered: ${m.trainer_name || trainerId} ` +
-        `(flatlined=${fanFlatlined}, stale=${dataIsStale})`);
-    }
+    const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+    const isExMember = hasFanData && lastUpdatedMs > 0 && (Date.now() - lastUpdatedMs > THREE_DAYS_MS);
 
     const isActive = hasFanData && !isExMember;
     const totalFans = hasFanData ? dailyFans[lastIdx] : (dailyFans.find((f: number) => f > 0) || 0);
@@ -491,85 +468,6 @@ export class FanTrackerAPI {
     };
   }
 
-  // ────────────────────────────────────────────────────────────────
-  // Mock fallbacks (used when API is completely unavailable)
-  // ────────────────────────────────────────────────────────────────
-
-  private generateMockStats(trainerId: string): TrainerStats {
-    const roster = this.getMockRoster();
-    const entry = roster.find(t => t.trainerId === trainerId);
-    const name = entry?.trainerName ? `[MOCK] ${entry.trainerName}` : `[MOCK] Trainer #${trainerId}`;
-    const tier = entry?.tier || 'B-Class';
-    const seed = trainerId.split('').reduce((s, c) => s + c.charCodeAt(0), 0);
-    const baseFans = 500_000 + (seed % 1_500_000);
-    const gainPerDay = 500 + (seed % 8_000);
-
-    return {
-      trainerId,
-      trainerName: name,
-      totalFans: baseFans,
-      monthlyFans: gainPerDay * 29,
-      dailyGain: gainPerDay,
-      weeklyGain: gainPerDay * 7,
-      gain3d: gainPerDay * 3,
-      gain7d: gainPerDay * 7,
-      gain30d: gainPerDay * 30,
-      monthlyRank: null,
-      rank3d: null,
-      rank7d: null,
-      rank30d: null,
-      activeDays: 29,
-      avgDaily: gainPerDay,
-      avg3d: gainPerDay * 3,
-      avg7d: gainPerDay * 7,
-      clubRankTier: tier,
-      previousCircleName: null,
-      updatedAt: new Date().toISOString(),
-      isActive: true,
-    };
-  }
-
-  private generateMockTrends(trainerId: string, period: string): TrendAnalysis {
-    const stats = this.generateMockStats(trainerId);
-    const days = period === 'monthly' ? 30 : period === 'weekly' ? 7 : 1;
-    const gain = stats.dailyGain * days;
-
-    const historicalFans: Array<{ date: string; count: number }> = [];
-    const base = stats.totalFans - gain;
-    for (let d = 0; d <= days; d++) {
-      historicalFans.push({
-        date: new Date(Date.now() - (days - d) * 86400000).toISOString().slice(0, 10),
-        count: base + Math.round(gain * (d / days)),
-      });
-    }
-
-    return {
-      trainerId,
-      period,
-      gain,
-      rank: null,
-      avgFansPerDay: stats.dailyGain,
-      growthVelocity: `${((gain / stats.totalFans) * 100).toFixed(1)}% ${period === 'monthly' ? 'monthly' : period === 'weekly' ? 'weekly' : 'daily'}`,
-      historicalFans,
-    };
-  }
-
-  private getMockRoster(): Array<{ trainerId: string; trainerName: string; tier: string }> {
-    return [
-      { trainerId: 'trainer-01', trainerName: 'Silence Suzuka', tier: 'SS-Class' },
-      { trainerId: 'trainer-02', trainerName: 'Tokai Teio', tier: 'SS-Class' },
-      { trainerId: 'trainer-03', trainerName: 'Special Week', tier: 'S-Class' },
-      { trainerId: 'trainer-04', trainerName: 'El Condor Pasa', tier: 'S-Class' },
-      { trainerId: 'trainer-05', trainerName: 'Grass Wonder', tier: 'A-Class' },
-      { trainerId: 'trainer-06', trainerName: 'Mejiro McQueen', tier: 'A-Class' },
-      { trainerId: 'trainer-07', trainerName: 'Oguri Cap', tier: 'A-Class' },
-      { trainerId: 'trainer-08', trainerName: 'Symboli Rudolf', tier: 'B-Class' },
-      { trainerId: 'trainer-09', trainerName: 'Narita Brian', tier: 'B-Class' },
-      { trainerId: 'trainer-10', trainerName: 'T M Opera O', tier: 'B-Class' },
-      { trainerId: 'trainer-11', trainerName: 'Maruzensky', tier: 'C-Class' },
-      { trainerId: 'trainer-12', trainerName: 'Fuji Kiseki', tier: 'C-Class' },
-    ];
-  }
 }
 
 // Singleton
