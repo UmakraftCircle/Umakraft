@@ -285,6 +285,19 @@ export class FanTrackerAPI {
     const monthlyRank = circle.monthly_rank ?? null;
     const tier = await this.getTierForRank(monthlyRank);
 
+    // Detect stale data at month boundaries: if the API reports more
+    // active days than days elapsed in the current month, the cached
+    // response is from the previous month. Trigger circles fallback.
+    const now = new Date();
+    const dayOfMonth = now.getDate();
+    const apiActiveDays = monthly.active_days || 0;
+    if (apiActiveDays > dayOfMonth + 2) {
+      throw new Error(
+        `Profile data appears stale (${apiActiveDays}d active vs day ${dayOfMonth}). ` +
+        `Falling back to circles data with month-aware baseline.`
+      );
+    }
+
     return {
       trainerId: String(trainerId),
       trainerName: trainer.name || trainerId,
