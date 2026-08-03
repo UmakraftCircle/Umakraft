@@ -46,8 +46,8 @@ function formatFans(n: number): string {
 }
 
 function formatGain(n: number): string {
-  const sign = n >= 0 ? '+' : '';
-  return `${sign}${formatFans(Math.abs(n))}`;
+  if (n <= 0) return '-';
+  return `+${formatFans(n)}`;
 }
 
 function rankEmoji(rank: number | null): string {
@@ -91,7 +91,6 @@ export async function handleFansGain(interaction: ChatInputCommandInteraction) {
   const period = sanitizePeriod(interaction.options.getString('period') || 'monthly');
   await interaction.deferReply();
 
-  // Find linked trainer
   const link = await trainerLinkStore.getByDiscordUser(interaction.user.id);
   if (!link) {
     await interaction.editReply(
@@ -102,42 +101,32 @@ export async function handleFansGain(interaction: ChatInputCommandInteraction) {
 
   const stats = await fanTrackerAPI.fetchTrainerStats(link.trainerId);
 
-  // Pick gain based on period
   const gainMap: Record<string, { label: string; value: number; rank: number | null }> = {
-    daily: { label: 'Daily gain (3d avg ÷ 3)', value: stats.gain3d != null ? Math.round(stats.gain3d / 3) : stats.dailyGain, rank: stats.rank3d },
-    weekly: { label: 'Weekly gain (7d)', value: stats.gain7d ?? stats.weeklyGain, rank: stats.rank7d },
-    monthly: { label: 'Monthly gain', value: stats.monthlyFans, rank: stats.monthlyRank },
+    daily: { label: 'today', value: stats.gain3d != null ? Math.round(stats.gain3d / 3) : stats.dailyGain, rank: stats.rank3d },
+    weekly: { label: 'this week', value: stats.gain7d ?? stats.weeklyGain, rank: stats.rank7d },
+    monthly: { label: 'this month', value: stats.monthlyFans, rank: stats.monthlyRank },
   };
 
   const gain = gainMap[period];
-  const periodLabel = PERIOD_LABELS[period] || period;
-  const gainSign = gain.value >= 0 ? '+' : '';
+  const gainLabel = gain.label;
+  const gainDisplay = gain.value > 0 ? formatGain(gain.value) : '-';
 
   const embed = new EmbedBuilder()
-    .setTitle(`📊 Fan Stats — ${stats.trainerName}`)
-    .setColor(gain.value >= 0 ? 0x57F287 : 0xED4245)
-    .addFields(
-      { name: 'Trainer', value: stats.trainerName, inline: true },
-      { name: 'Club Tier', value: stats.clubRankTier, inline: true },
-      { name: 'Monthly Rank', value: stats.monthlyRank ? `#${stats.monthlyRank}` : 'N/A', inline: true },
-      { name: '\u200B', value: '\u200B', inline: false },
-      { name: 'Total Fans', value: formatFans(stats.totalFans), inline: true },
-      { name: `Gain (${periodLabel})`, value: `${gainSign}${formatFans(gain.value)}`, inline: true },
-      { name: 'Avg/Day', value: stats.avgDaily ? formatFans(stats.avgDaily) : 'N/A', inline: true },
-      { name: '\u200B', value: '\u200B', inline: false },
-      { name: 'Active Days', value: `${stats.activeDays}`, inline: true },
-      { name: '7d Gain', value: formatGain(stats.gain7d ?? stats.weeklyGain), inline: true },
-      { name: '30d Gain', value: stats.gain30d ? formatGain(stats.gain30d) : 'N/A', inline: true },
+    .setTitle(`📊 ${stats.trainerName}  ·  ${stats.clubRankTier}  ·  ${stats.monthlyRank ? '#' + stats.monthlyRank : '-'}`)
+    .setColor(0x57F287)
+    .setDescription(
+      `**${formatFans(stats.totalFans)}** total  ·  **${gainDisplay}** ${gainLabel}` +
+      (stats.previousCircleName ? `\n🔄 Transferred from **${stats.previousCircleName}**` : '')
     )
-    .setFooter({ text: `UmaKraft · Updated ${new Date(stats.updatedAt).toLocaleDateString()}` });
-
-  if (stats.previousCircleName) {
-    embed.addFields({
-      name: '⚠️ Transferred from',
-      value: stats.previousCircleName,
-      inline: true,
-    });
-  }
+    .addFields(
+      { name: '30d', value: stats.gain30d ? formatGain(stats.gain30d) : '-', inline: true },
+      { name: '7d', value: formatGain(stats.gain7d ?? stats.weeklyGain), inline: true },
+      { name: 'Per Day', value: stats.avgDaily ? formatFans(stats.avgDaily) : '-', inline: true },
+      { name: 'Active Days', value: `${stats.activeDays}`, inline: true },
+      { name: '3d Rank', value: stats.rank3d ? `#${stats.rank3d}` : '-', inline: true },
+      { name: '7d Rank', value: stats.rank7d ? `#${stats.rank7d}` : '-', inline: true },
+    )
+    .setFooter({ text: `UmaKraft · ${new Date(stats.updatedAt).toLocaleDateString()}` });
 
   await interaction.editReply({ embeds: [embed] });
 }
@@ -159,7 +148,6 @@ export async function handleFansLeaderboard(interaction: ChatInputCommandInterac
     return;
   }
 
-  // Sort by the appropriate metric
   const sortFn = (a: TrainerStats, b: TrainerStats) => {
     switch (period) {
       case 'daily': return b.dailyGain - a.dailyGain;
@@ -177,28 +165,27 @@ export async function handleFansLeaderboard(interaction: ChatInputCommandInterac
     return;
   }
 
-  const periodLabel = PERIOD_LABELS[period] || period;
+  const periodLabel = PERIOD_LABELS[period] || 'this month';
 
   const lines = topN.map((s, i) => {
     const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+    const transfer = s.previousCircleName ? ' 🔄' : '';
 
-    let gainDisplay = '';
+    let gainDisplay: string;
     switch (period) {
       case 'daily': gainDisplay = formatGain(s.dailyGain); break;
       case 'weekly': gainDisplay = formatGain(s.gain7d ?? s.weeklyGain); break;
-      case 'monthly': gainDisplay = formatFans(s.monthlyFans); break;
+      case 'monthly': gainDisplay = s.monthlyFans > 0 ? formatFans(s.monthlyFans) : '-'; break;
+      default: gainDisplay = '-';
     }
 
-    const transfer = s.previousCircleName ? ' 🔄' : '';
-
-    return `${medal} **${s.trainerName}**${transfer} — ${gainDisplay}\n` +
-      `　└ ${formatFans(s.totalFans)} total · ${s.activeDays}d active · Day +${formatFans(s.avgDaily || 0)} avg`;
+    return `${medal} **${s.trainerName}**${transfer} — ${gainDisplay} ${periodLabel} · ${formatFans(s.totalFans)}`;
   });
 
-  const description = lines.join('\n\n') || null;
+  const description = lines.join('\n') || null;
 
   const embed = new EmbedBuilder()
-    .setTitle(`🏆 UmaKraft Leaderboard — Top ${topN.length} (${periodLabel})`)
+    .setTitle(`🏆 Leaderboard — Top ${topN.length} (${periodLabel})`)
     .setDescription(description)
     .setColor(0xF1C40F)
     .setFooter({ text: `UmaKraft · ${members.length} active members` });
