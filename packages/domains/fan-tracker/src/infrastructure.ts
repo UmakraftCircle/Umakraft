@@ -286,25 +286,58 @@ export class FanTrackerAPI {
     const tier = await this.getTierForRank(monthlyRank);
 
     // Detect stale data at month boundaries: if the API reports more
-    // active days than days elapsed in the current month, the cached
-    // response is from the previous month. Trigger circles fallback.
+    // active days than days elapsed in the current month, the profile
+    // response carries last month's data. Merge circles data for
+    // month-aware monthlyFans/activeDays/avgDaily while keeping profile
+    // ranks and rolling gains (which are always correct).
+    //
+    // No throw — if circles merge fails, profile data is used as-is.
     const now = new Date();
     const dayOfMonth = now.getDate();
     const apiActiveDays = monthly.active_days || 0;
-    if (apiActiveDays > dayOfMonth + 2) {
-      throw new Error(
-        `Profile data appears stale (${apiActiveDays}d active vs day ${dayOfMonth}). ` +
-        `Falling back to circles data with month-aware baseline.`
+    const dataIsStale = apiActiveDays > dayOfMonth + 2;
+
+    // Start with profile API fields
+    let monthlyFans = monthly.monthly_gain || 0;
+    let activeDays = apiActiveDays;
+    let avgDaily: number | null = monthly.avg_daily ?? null;
+    let dailyGain = rolling.gain_3d ? Math.round(rolling.gain_3d / 3) : 0;
+    let weeklyGain = rolling.gain_7d || 0;
+    let totalFans = alltime.total_fans || monthly.total_fans || 0;
+    let previousCircleName: string | null = null;
+
+    if (dataIsStale) {
+      logger.warn(
+        `Profile data appears stale for ${trainerId} ` +
+        `(${apiActiveDays}d active vs day ${dayOfMonth}). Merging circles data.`
       );
+      try {
+        const members = await this.fetchAllMembers();
+        const circleMember = members.find(m => m.trainerId === String(trainerId));
+        if (circleMember) {
+          monthlyFans = circleMember.monthlyFans;
+          activeDays = circleMember.activeDays;
+          avgDaily = circleMember.avgDaily;
+          dailyGain = circleMember.dailyGain || dailyGain;
+          weeklyGain = circleMember.weeklyGain || weeklyGain;
+          totalFans = circleMember.totalFans || totalFans;
+          previousCircleName = circleMember.previousCircleName;
+        }
+      } catch (circlesError: any) {
+        logger.warn(
+          `Failed to merge circles data for ${trainerId}: ${circlesError.message}. ` +
+          `Using profile data as-is.`
+        );
+      }
     }
 
     return {
       trainerId: String(trainerId),
       trainerName: trainer.name || trainerId,
-      totalFans: alltime.total_fans || monthly.total_fans || 0,
-      monthlyFans: monthly.monthly_gain || 0,
-      dailyGain: rolling.gain_3d ? Math.round(rolling.gain_3d / 3) : 0,
-      weeklyGain: rolling.gain_7d || 0,
+      totalFans,
+      monthlyFans,
+      dailyGain,
+      weeklyGain,
       gain3d: rolling.gain_3d ?? null,
       gain7d: rolling.gain_7d ?? null,
       gain30d: rolling.gain_30d ?? null,
@@ -312,12 +345,12 @@ export class FanTrackerAPI {
       rank3d: rolling.rank_3d ?? null,
       rank7d: rolling.rank_7d ?? null,
       rank30d: rolling.rank_30d ?? null,
-      activeDays: monthly.active_days || 0,
-      avgDaily: monthly.avg_daily ?? null,
+      activeDays,
+      avgDaily,
       avg3d: monthly.avg_3d ?? null,
       avg7d: monthly.avg_7d ?? null,
       clubRankTier: tier,
-      previousCircleName: null,
+      previousCircleName,
       updatedAt: new Date().toISOString(),
       isActive: true,
     };
