@@ -8,14 +8,12 @@ class RateLimiter {
   private lastRefill: number;
   private readonly maxTokens: number;
   private readonly refillRate: number;
-
   constructor(maxReqsPerSec = 1) {
     this.maxTokens = maxReqsPerSec;
     this.tokens = maxReqsPerSec;
     this.lastRefill = Date.now();
     this.refillRate = maxReqsPerSec / 1000;
   }
-
   async acquire(): Promise<void> {
     while (true) {
       const now = Date.now();
@@ -138,7 +136,7 @@ export class FanTrackerAPI {
         if (stats.isActive) statsList.push(stats);
       }
       if (statsList.length === 0 && members.length > 0) {
-        logger.warn(`fetchAllMembers: all ${members.length} circle members filtered as inactive. Returning full unfiltered list as fallback.`);
+        logger.warn(`fetchAllMembers: all ${members.length} circle members filtered as inactive. Returning full unfiltered list.`);
         return members.map(m => this.mapCircleMemberToStats(m, data.circle));
       }
       return statsList;
@@ -178,19 +176,14 @@ export class FanTrackerAPI {
     try {
       const data = await this.apiGet<any>('/api/v4/circles/rank-thresholds', 'rank-thresholds', 30 * 60 * 1000);
       return data.thresholds || [];
-    } catch (error: any) {
-      logger.warn(`Rank thresholds fetch failed: ${error.message}`);
-      return [];
-    }
+    } catch (error: any) { logger.warn(`Rank thresholds fetch failed: ${error.message}`); return []; }
   }
 
   public async getTierForRank(rank: number | null): Promise<string> {
     if (rank === null || rank === undefined) return '?';
     const thresholds = await this.fetchRankThresholds();
     for (const t of thresholds) {
-      if (t.ranking_from !== null && t.ranking_to !== null && rank >= t.ranking_from && rank <= t.ranking_to) {
-        return t.name;
-      }
+      if (t.ranking_from !== null && t.ranking_to !== null && rank >= t.ranking_from && rank <= t.ranking_to) return t.name;
     }
     return '?';
   }
@@ -205,13 +198,9 @@ export class FanTrackerAPI {
     const rolling = fanHistory.rolling || {};
     const monthly = (fanHistory.monthly || [])[0] || {};
     const alltime = fanHistory.alltime || {};
-
     const monthlyRank = circle.monthly_rank ?? null;
     const tier = await this.getTierForRank(monthlyRank);
 
-    // Always merge circles data for month-aware monthly fields.
-    // Profile API monthly_gain/active_days can be stale at month
-    // boundaries; mapCircleMemberToStats computes correct values.
     let monthlyFans = monthly.monthly_gain || 0;
     let activeDays = monthly.active_days || 0;
     let avgDaily: number | null = monthly.avg_daily ?? null;
@@ -232,32 +221,16 @@ export class FanTrackerAPI {
         totalFans = circleMember.totalFans || totalFans;
         previousCircleName = circleMember.previousCircleName;
       }
-    } catch {
-      // Circles unavailable — keep profile API values
-    }
+    } catch {}
 
     return {
-      trainerId: String(trainerId),
-      trainerName: trainer.name || trainerId,
-      totalFans,
-      monthlyFans,
-      dailyGain,
-      weeklyGain,
-      gain3d: rolling.gain_3d ?? null,
-      gain7d: rolling.gain_7d ?? null,
-      gain30d: rolling.gain_30d ?? null,
-      monthlyRank,
-      rank3d: rolling.rank_3d ?? null,
-      rank7d: rolling.rank_7d ?? null,
-      rank30d: rolling.rank_30d ?? null,
-      activeDays,
-      avgDaily,
-      avg3d: monthly.avg_3d ?? null,
-      avg7d: monthly.avg_7d ?? null,
-      clubRankTier: tier,
-      previousCircleName,
-      updatedAt: new Date().toISOString(),
-      isActive: true,
+      trainerId: String(trainerId), trainerName: trainer.name || trainerId,
+      totalFans, monthlyFans, dailyGain, weeklyGain,
+      gain3d: rolling.gain_3d ?? null, gain7d: rolling.gain_7d ?? null, gain30d: rolling.gain_30d ?? null,
+      monthlyRank, rank3d: rolling.rank_3d ?? null, rank7d: rolling.rank_7d ?? null, rank30d: rolling.rank_30d ?? null,
+      activeDays, avgDaily, avg3d: monthly.avg_3d ?? null, avg7d: monthly.avg_7d ?? null,
+      clubRankTier: tier, previousCircleName,
+      updatedAt: new Date().toISOString(), isActive: true,
     };
   }
 
@@ -274,9 +247,14 @@ export class FanTrackerAPI {
     while (lastIdx >= 0 && dailyFans[lastIdx] === 0) lastIdx--;
     const isActive = lastIdx >= 0 && dailyFans[lastIdx] > 0;
     const totalFans = isActive ? dailyFans[lastIdx] : (dailyFans.find((f: number) => f > 0) || 0);
+
+    // Month-aware baseline: anchor to current month's first day.
+    // Use game timezone (JST = UTC+9), not server time.
     const now = new Date();
-    const dayOfMonth = now.getDate();
+    const jstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    const dayOfMonth = jstNow.getUTCDate();
     const monthStartIdx = Math.max(0, lastIdx - dayOfMonth + 1);
+
     const baselineFans = dailyFans[monthStartIdx] > 0 ? dailyFans[monthStartIdx]
       : (() => { for (let i = monthStartIdx; i <= lastIdx; i++) { if (dailyFans[i] > 0) return dailyFans[i]; } return totalFans; })();
     const monthlyFans = totalFans > 0 ? totalFans - baselineFans : 0;
@@ -285,6 +263,7 @@ export class FanTrackerAPI {
     const weeklyGain = weeklyStartIdx < lastIdx && dailyFans[weeklyStartIdx] > 0 ? dailyFans[lastIdx] - dailyFans[weeklyStartIdx] : 0;
     const activeDays = Math.max(0, lastIdx - monthStartIdx + 1);
     const previousCircleName = m.previous_circle_name || null;
+
     return {
       trainerId, trainerName: m.trainer_name || trainerId, totalFans, monthlyFans, dailyGain, weeklyGain,
       gain3d: null, gain7d: null, gain30d: null,
