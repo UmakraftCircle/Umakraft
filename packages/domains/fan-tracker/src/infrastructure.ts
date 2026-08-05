@@ -202,7 +202,7 @@ export class FanTrackerAPI {
           `fetchAllMembers: all ${members.length} circle members filtered as inactive. ` +
           `Returning full unfiltered list as fallback to prevent empty leaderboard.`
         );
-        return members.map(m => this.mapCircleMemberToStats(m, data.circle));
+        return members.map((m: any) => this.mapCircleMemberToStats(m, data.circle));
       }
 
       return statsList;

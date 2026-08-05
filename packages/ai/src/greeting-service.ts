@@ -9,6 +9,7 @@ const logger = createLogger('GreetingService');
 const GREETING_CACHE_TTL = 30 * 24 * 60 * 60 * 1000; // 30 days
 const GREETING_KEY_PREFIX = 'greeting-';
 const MAX_CACHE_SIZE = 500;
+const MIN_WORDS = 3;
 const MAX_WORDS = 60;
 
 // ── Bootstrap fallback pool (used when cache is completely empty) ──

@@ -151,7 +151,7 @@ export class TaskManager {
       }
 
       task.retryCount++;
-      taskErrors.set(task.id, result.error);
+      taskErrors.set(task.id, result.error ?? 'Unknown error');
 
       // Classify error — permanent errors should not be retried
       if (!isRetryable(taskErrors.get(task.id) || '')) {

@@ -349,9 +349,9 @@ export class LocalBrain {
 
       // Optional SHA256 checksum verification
       if (EXPECTED_MODEL_SHA256) {
-        const { default: fsReadFile } = await import('fs/promises');
+        const { readFile } = await import('node:fs/promises');
         try {
-          const fileBuffer = await fsReadFile(destPath);
+          const fileBuffer = await readFile(destPath);
           const actual = createHash('sha256').update(fileBuffer).digest('hex');
           if (actual !== EXPECTED_MODEL_SHA256) {
             unlinkSync(destPath);
