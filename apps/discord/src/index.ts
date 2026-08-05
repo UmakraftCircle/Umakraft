@@ -1,8 +1,8 @@
 import { Client, GatewayIntentBits, REST, Routes, Events, Interaction, TextChannel } from 'discord.js';
 import { createLogger, PLATFORM_NAME } from '@ai-agent-platform/shared';
 import { toolRegistry } from '@ai-agent-platform/core';
-import { GreetingService, DailyMessageService, MilestoneMessageService, MonthlyAchievementService, ReminderMessageService, DailyAchievementService, RaceCommentaryService, promptLibrary, createProvider, loadRaceState, saveRaceState, buildRaceState } from '@ai-agent-platform/ai';
-import type { TimeSlot, MilestoneInfo, MonthlyTier, TrainerGap, DailyAchiever, RacerData, RaceState } from '@ai-agent-platform/ai';
+import { GreetingService, DailyMessageService, MilestoneMessageService, MonthlyAchievementService, ReminderMessageService, DailyAchievementService, promptLibrary, createProvider } from '@ai-agent-platform/ai';
+import type { TimeSlot, MilestoneInfo, MonthlyTier, TrainerGap, DailyAchiever } from '@ai-agent-platform/ai';
 import { detectNewMilestone, detectMonthlyAchievement } from '@ai-agent-platform/ai';
 import cron from 'node-cron';
 import * as readline from 'readline';
@@ -109,7 +109,6 @@ async function startGatewayBot() {
   let monthlyService: MonthlyAchievementService;
   let reminderService: ReminderMessageService;
   let dailyAchievementService: DailyAchievementService;
-  let raceCommentaryService: RaceCommentaryService;
   const supervisor = new MessageSupervisor();
 
   if (groqKey) {
@@ -121,8 +120,7 @@ async function startGatewayBot() {
     monthlyService = new MonthlyAchievementService(primaryAI, promptLibrary, fallbackAI);
     reminderService = new ReminderMessageService(primaryAI, promptLibrary, fallbackAI);
     dailyAchievementService = new DailyAchievementService(primaryAI, promptLibrary, fallbackAI);
-    raceCommentaryService = new RaceCommentaryService(primaryAI, promptLibrary, fallbackAI);
-    logger.info('Services initialized: Greeting, Daily, Milestone, Monthly, Reminder, DailyAchievement, RaceCommentary');
+    logger.info('Services initialized: Greeting, Daily, Milestone, Monthly, Reminder, DailyAchievement');
   } else {
     logger.warn('No GROQ_API_KEY set — all services in cache-only fallback mode.');
     greetingService = new GreetingService(null, promptLibrary);
@@ -131,7 +129,6 @@ async function startGatewayBot() {
     monthlyService = new MonthlyAchievementService(null, promptLibrary);
     reminderService = new ReminderMessageService(null, promptLibrary);
     dailyAchievementService = new DailyAchievementService(null, promptLibrary);
-    raceCommentaryService = new RaceCommentaryService(null, promptLibrary);
   }
 
   logger.info(`MessageSupervisor initialized (60min retry, ${supervisor.pendingCount} pending)`);
@@ -549,77 +546,7 @@ async function startGatewayBot() {
   cron.schedule('0 20 * * *', sendDailyAchievement, { timezone: tz });
   logger.info(`Daily achievement scheduled (${tz}): daily at 8PM`);
 
-  // ── Daily Race Commentary (top 30 trainers, 3000m track) ──
 
-  const RACE_STATE_FILE = process.env['RACE_STATE_FILE'] || '.cache/race-state.json';
-
-  const sendRaceCommentary = async () => {
-    try {
-      const guild = client.guilds.cache.first();
-      if (!guild) { logger.warn('Race commentary: no guild available.'); return; }
-
-      const channel: TextChannel | undefined =
-        (guild.channels.cache.find(
-          (c): c is TextChannel => c.isTextBased() && !c.isDMBased() && c.name === 'bot-message',
-        ) as TextChannel | undefined) ??
-        guild.systemChannel ??
-        (guild.channels.cache.find(
-          (c): c is TextChannel => c.isTextBased() && !c.isDMBased(),
-        ) as TextChannel | undefined);
-
-      if (!channel) { logger.warn('Race commentary: no suitable channel.'); return; }
-
-      const now = new Date();
-      const currentMonth = now.getMonth() + 1;
-
-      // Load state — reset on month change
-      let state = await loadRaceState(RACE_STATE_FILE);
-      if (state && state.month !== currentMonth) {
-        logger.info(`Race commentary: month changed (${state.month} → ${currentMonth}) — resetting track.`);
-        state = null;
-      }
-
-      const members = await fanTrackerAPI.fetchAllMembers();
-      const allRacers: RacerData[] = members.map(m => ({
-        trainerId: m.trainerId,
-        trainerName: m.trainerName,
-        monthlyFans: m.monthlyFans ?? 0,
-      }));
-
-      const positions = RaceCommentaryService.calculatePositions(allRacers);
-      const events = RaceCommentaryService.detectEvents(positions, state);
-      const newState = buildRaceState(positions, positions.map(p => p.name));
-      newState.day = now.getDate();
-      newState.month = currentMonth;
-
-      if (state) {
-        newState.day = state.day + 1 > new Date(new Date().getFullYear(), newState.month, 0).getDate() ? 1 : state.day + 1;
-      }
-
-      const msg = await raceCommentaryService.generateCommentary(
-        positions,
-        events,
-        newState,
-        guild.name,
-      );
-
-      await supervisor.trySend(channel, msg, `race-commentary:day${newState.day}`);
-      await saveRaceState(RACE_STATE_FILE, newState);
-
-      const finishers = positions.filter(p => p.finished).length;
-      logger.info(
-        `🏇 Race commentary [Day ${newState.day}] sent to #${channel.name} ` +
-        `(${positions.length} racers, ${events.length} events, ${finishers} finished) ` +
-        `(cache: ${raceCommentaryService.getPoolSize()})`,
-      );
-    } catch (err: any) {
-      logger.error(`Race commentary failed: ${err.message}`);
-    }
-  };
-
-  // Daily at 9 PM — end-of-day race broadcast
-  cron.schedule('0 21 * * *', sendRaceCommentary, { timezone: tz });
-  logger.info(`Race commentary scheduled (${tz}): daily at 9PM`);
 
   await client.login(token);
 }
