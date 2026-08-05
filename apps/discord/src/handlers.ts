@@ -101,30 +101,24 @@ export async function handleFansGain(interaction: ChatInputCommandInteraction) {
 
   const stats = await fanTrackerAPI.fetchTrainerStats(link.trainerId);
 
-  const total = formatFans(stats.totalFans);
+  const total = stats.totalFans > 0 ? `${formatFans(stats.totalFans)} (${stats.totalFans.toLocaleString()})` : '0';
   const monthly = stats.monthlyFans > 0 ? `+${formatFans(stats.monthlyFans)}` : '-';
   const weekly = formatGain(stats.weeklyGain);
   const daily = formatGain(stats.dailyGain);
-  const avgDay = stats.avgDaily ? formatFans(stats.avgDaily) : '-';
-  const active = `${stats.activeDays}d`;
-  const rank3d = stats.rank3d ? `#${stats.rank3d}` : '-';
-  const rank7d = stats.rank7d ? `#${stats.rank7d}` : '-';
 
-  const table = [
-    '```',
-    `  Total        Monthly      7-Day        Daily        Avg/Day      Active`,
-    `  ${total.padEnd(12)} ${monthly.padEnd(12)} ${weekly.padEnd(11)} ${daily.padEnd(11)} ${avgDay.padEnd(11)} ${active.padEnd(8)}`,
-    '',
-    `  3d Rank              7d Rank`,
-    `  ${rank3d.padEnd(21)} ${rank7d}`,
-    '```',
-  ].join('\n');
-
-  const description = table +
-    (stats.previousCircleName ? `\n🔄 Transferred from **${stats.previousCircleName}**` : '');
+  const description = [
+    `👤 **Trainer Name:** ${stats.trainerName}`,
+    `🆔 **Trainer ID:** ${stats.trainerId}`,
+    ``,
+    `📈 **Fan Gain:**`,
+    `• **Daily:** ${daily}`,
+    `• **Weekly:** ${weekly}`,
+    `• **Monthly:** ${monthly}`,
+    `• **Total Fans:** ${total}`,
+  ].join('\n') + (stats.previousCircleName ? `\n\n🔄 Transferred from **${stats.previousCircleName}**` : '');
 
   const embed = new EmbedBuilder()
-    .setTitle(`📊 ${stats.trainerName}  ·  ${stats.clubRankTier}  ·  ${stats.monthlyRank ? '#' + stats.monthlyRank : '-'}`)
+    .setTitle(`📊 Fan Gain Statistics`)
     .setColor(0x57F287)
     .setDescription(description)
     .setFooter({ text: `UmaKraft · ${new Date(stats.updatedAt).toLocaleDateString()}` });
