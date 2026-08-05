@@ -2,7 +2,7 @@
   "name": "@ai-agent-platform/ai",
   "version": "1.0.0",
   "private": true,
-  "main": "./dist/index.js",
+  "main": "./src/index.ts",
   "types": "./dist/index.d.ts",
   "type": "module",
   "scripts": {

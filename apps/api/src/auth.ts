@@ -190,7 +190,7 @@ export class AuthMiddleware {
     this.config = {
       requireAuth: config.requireAuth ?? true,
       rateLimit: config.rateLimit || DEFAULT_RATE_LIMIT,
-      publicPaths: config.publicPaths ?? ['/health'],
+      publicPaths: config.publicPaths ?? ['/', '/health', '/tools', '/models'],
       trustProxy: config.trustProxy ?? false,
     };
 

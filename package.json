@@ -4,13 +4,13 @@
   "version": "1.0.0",
   "description": "An AI-first engineering platform for orchestrating intelligent workflows",
   "scripts": {
-    "build": "turbo run build",
-    "dev": "turbo run dev --parallel",
-    "test": "npm run build && node --import tsx --test tests/**/*.test.ts",
-    "test:core": "npm run build && node --import tsx --test tests/core/*.test.ts",
+    "build": "tsc -b",
+    "start": "tsx apps/api/src/index.ts",
+    "dev": "tsx apps/api/src/index.ts",
+    "test": "node --import tsx --test tests/**/*.test.ts",
+    "test:core": "node --import tsx --test tests/core/*.test.ts",
     "test:watch": "node --import tsx --test --watch tests/**/*.test.ts",
-    "lint": "bash scripts/lint-templates.sh && turbo run lint",
-    "lint:templates": "bash scripts/lint-templates.sh"
+    "lint": "bash scripts/lint-templates.sh"
   },
   "devDependencies": {
     "turbo": "^2.0.4",
@@ -19,7 +19,6 @@
     "tsx": "^4.7.2",
     "rimraf": "^5.0.5"
   },
-  "packageManager": "pnpm@10.26.1",
   "workspaces": [
     "apps/*",
     "packages/*",

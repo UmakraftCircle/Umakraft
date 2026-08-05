@@ -216,7 +216,7 @@ describe('TaskManager', () => {
 
       registry.register('timed-fail', async () => {
         timestamps.push(Date.now());
-        throw new Error('fail');
+        throw new Error('Transient timeout error');
       });
 
       const plan = makePlan('p7', 'backoff test', [

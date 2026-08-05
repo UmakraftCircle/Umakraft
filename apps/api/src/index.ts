@@ -12,7 +12,7 @@ import { allDomainTools as fanTrackerTools } from '@ai-agent-platform/fan-tracke
 import { allDomainTools as prMonitorTools } from '@ai-agent-platform/pr-monitor';
 
 const logger = createLogger('API-Server');
-const PORT = parseInt(process.env['PORT'] || '3000', 10);
+const PORT = 3000;
 
 // Bootstrap tool registry
 for (const tool of [...allTools, ...webTools, ...notificationTools]) {
@@ -170,6 +170,207 @@ const server = http.createServer(async (req, res) => {
   if (!authCtx) return; // response already sent by middleware
 
   try {
+    // ── GET / — Interactive Web Dashboard ──
+    if (path === '/' && req.method === 'GET') {
+      const schemas = toolRegistry.getDeclarativeSchemas();
+      const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UmaKraft Circle — AI Agent Platform & Bot Manager</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --text: #f8fafc;
+      --text-dim: #94a3b8;
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.15);
+      --border: #334155;
+      --success: #4ade80;
+      --warning: #fbbf24;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 2rem;
+      line-height: 1.5;
+    }
+    .container { max-width: 1100px; margin: 0 auto; }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 2rem;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: rgba(74, 222, 128, 0.1);
+      color: var(--success);
+      border: 1px solid rgba(74, 222, 128, 0.3);
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.875rem;
+      font-weight: 600;
+    }
+    .dot { width: 8px; height: 8px; background: var(--success); border-radius: 50%; display: inline-block; }
+    h1 { font-size: 1.75rem; font-weight: 700; color: #fff; }
+    p.subtitle { color: var(--text-dim); margin-top: 0.25rem; font-size: 0.95rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.25rem; margin-bottom: 2rem; }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      padding: 1.25rem;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+    .card h3 { font-size: 1.1rem; margin-bottom: 0.5rem; color: var(--accent); display: flex; align-items: center; gap: 0.5rem; }
+    .card p { color: var(--text-dim); font-size: 0.9rem; margin-bottom: 0.75rem; }
+    .stat { font-size: 1.75rem; font-weight: 700; color: #fff; margin: 0.5rem 0; }
+    .btn {
+      display: inline-block;
+      background: var(--accent);
+      color: #0f172a;
+      font-weight: 600;
+      padding: 0.5rem 1rem;
+      border-radius: 0.5rem;
+      text-decoration: none;
+      font-size: 0.875rem;
+      transition: opacity 0.2s;
+      border: none;
+      cursor: pointer;
+    }
+    .btn:hover { opacity: 0.9; }
+    .btn-secondary { background: #334155; color: #fff; }
+    pre {
+      background: #090d16;
+      padding: 1rem;
+      border-radius: 0.5rem;
+      font-family: monospace;
+      font-size: 0.85rem;
+      color: #e2e8f0;
+      overflow-x: auto;
+      max-height: 250px;
+      border: 1px solid var(--border);
+    }
+    form { display: flex; flex-direction: column; gap: 0.75rem; }
+    input[type="text"] {
+      background: #090d16;
+      border: 1px solid var(--border);
+      color: #fff;
+      padding: 0.6rem 0.8rem;
+      border-radius: 0.5rem;
+      font-size: 0.9rem;
+    }
+    input[type="text"]:focus { outline: none; border-color: var(--accent); }
+    .endpoint-tag {
+      display: inline-block;
+      font-family: monospace;
+      background: #090d16;
+      color: var(--accent);
+      padding: 0.2rem 0.4rem;
+      border-radius: 0.25rem;
+      font-size: 0.8rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>UmaKraft Circle — Bot Manager & AI Platform</h1>
+        <p class="subtitle">Orchestrator for Discord Automation, Groq AI Agents, Fan Telemetry & Workspace Utilities</p>
+      </div>
+      <div class="badge"><span class="dot"></span> Platform Active</div>
+    </header>
+
+    <div class="grid">
+      <div class="card">
+        <h3>⚡ API Server Status</h3>
+        <p>Core Node.js runtime listening on port ${PORT}</p>
+        <div class="stat">Online</div>
+        <p>Uptime: <span id="uptime">${Math.floor(process.uptime())}s</span></p>
+        <a href="/health" target="_blank" class="btn">View /health JSON</a>
+      </div>
+
+      <div class="card">
+        <h3>🤖 Registered Tools</h3>
+        <p>Discord, Web, File, Fan Telemetry & PR Tools</p>
+        <div class="stat">${schemas.length} Tools</div>
+        <p>Active modules: AI, Discord, FanTracker, PR-Monitor</p>
+        <a href="/tools" target="_blank" class="btn btn-secondary">Explore /tools</a>
+      </div>
+
+      <div class="card">
+        <h3>🧠 Groq AI & Models</h3>
+        <p>Groq Provider & Fallback Mock Service</p>
+        <div class="stat">Claude 3.5 / Groq</div>
+        <p>Provider: ${process.env['GROQ_API_KEY'] ? 'Groq Active ✅' : 'Mock/Dev Mode ⚡'}</p>
+        <a href="/models" target="_blank" class="btn btn-secondary">View /models</a>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom: 1.5rem;">
+      <h3>📋 Execute Agent Plan Intent</h3>
+      <p>Submit a prompt to test the AI Planner & Task Execution pipeline:</p>
+      <form id="planForm">
+        <input type="text" id="intentInput" placeholder="e.g. Fetch fan leaderboard and generate daily summary" required />
+        <button type="submit" class="btn">Generate Plan</button>
+      </form>
+      <div id="planResult" style="margin-top: 1rem; display: none;">
+        <p style="font-weight: 600; color: #fff; margin-bottom: 0.5rem;">Plan Result:</p>
+        <pre id="planOutput"></pre>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>🌐 Available REST Endpoints</h3>
+      <p style="margin-bottom: 1rem;">Directly access system endpoints:</p>
+      <ul style="list-style: none; display: flex; flex-direction: column; gap: 0.5rem;">
+        <li><span class="endpoint-tag">GET /health</span> — System health, uptime & version</li>
+        <li><span class="endpoint-tag">GET /tools</span> — List of all 13 registered platform tools</li>
+        <li><span class="endpoint-tag">GET /models</span> — Available AI models</li>
+        <li><span class="endpoint-tag">GET /plans</span> — Execution plans history</li>
+        <li><span class="endpoint-tag">POST /plans</span> — Submit intent & create execution plan</li>
+      </ul>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('planForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const intent = document.getElementById('intentInput').value;
+      const resContainer = document.getElementById('planResult');
+      const output = document.getElementById('planOutput');
+      resContainer.style.display = 'block';
+      output.textContent = 'Generating plan...';
+      try {
+        const res = await fetch('/plans', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ intent })
+        });
+        const data = await res.json();
+        output.textContent = JSON.stringify(data, null, 2);
+      } catch (err) {
+        output.textContent = 'Error: ' + err.message;
+      }
+    });
+  </script>
+</body>
+</html>`;
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(html);
+      return;
+    }
+
     // ── Health ──
     if (path === '/health' && req.method === 'GET') {
       jsonResponse(res, 200, {

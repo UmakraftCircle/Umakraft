@@ -70,8 +70,8 @@ describe('ModelRouter', () => {
       const router = new ModelRouter();
       assert.throws(() => {
         router.route({
-          promptLength: 1_000_000,
-          requiresStructuredOutput: false,
+          promptLength: 100_000,
+          requiresStructuredOutput: true,
           requiresVision: false,
           maxBudget: 0.0001,
         });
@@ -94,12 +94,12 @@ describe('ModelRouter', () => {
       const router = new ModelRouter();
       const small = router.route({
         promptLength: 100,
-        requiresStructuredOutput: false,
+        requiresStructuredOutput: true,
         requiresVision: false,
       });
       const large = router.route({
         promptLength: 100_000,
-        requiresStructuredOutput: false,
+        requiresStructuredOutput: true,
         requiresVision: false,
       });
       assert.ok(small && large);

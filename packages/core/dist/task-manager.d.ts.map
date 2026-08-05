@@ -1,1 +1,0 @@
-{"version":3,"file":"task-manager.d.ts","sourceRoot":"","sources":["../src/task-manager.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,aAAa,EAA2B,MAAM,2BAA2B,CAAC;AACnF,OAAO,EAAE,YAAY,EAAE,MAAM,oBAAoB,CAAC;AAIlD,qBAAa,WAAW;IACV,OAAO,CAAC,QAAQ;gBAAR,QAAQ,GAAE,YAAyC;IAEvE;;;OAGG;IACU,WAAW,CAAC,IAAI,EAAE,aAAa,GAAG,OAAO,CAAC,aAAa,CAAC;YAyDvD,gBAAgB;CA2B/B"}

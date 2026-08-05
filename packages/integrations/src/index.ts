@@ -49,6 +49,7 @@ export const databaseStoreResult: ToolDefinition = {
   handler: async (args) => {
     const planId = args['planId'];
     const planData = args['data'];
+    const tasksList = planData.tasks instanceof Map ? Array.from(planData.tasks.values()) : (planData.tasks || []);
 
     logger.info(`Persisting plan results for plan ${planId} into SQLite database...`);
 
@@ -56,14 +57,14 @@ export const databaseStoreResult: ToolDefinition = {
       const db = await getDatabase();
 
       // Wrap all writes in a single transaction
-      const persist = db.transaction(() => {
       let planStatus = 'completed';
-      const tasksList = planData.tasks instanceof Map ? Array.from(planData.tasks.values()) : (planData.tasks || []);
       if (tasksList.some((t: any) => t.status === 'failed')) {
         planStatus = 'failed';
       } else if (tasksList.some((t: any) => t.status === 'running' || t.status === 'pending')) {
         planStatus = 'running';
       }
+
+      const persist = db.transaction(() => {
 
       // 1. Insert or update the Execution Plan
       db.prepare(`

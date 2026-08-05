@@ -1,2 +1,7 @@
 node_modules/
+dist/
+*.tsbuildinfo
+*.db
+bun.lock
 *.zip
+

@@ -11,7 +11,7 @@ export interface PlatformConfig {
 }
 
 export const loadConfig = (): PlatformConfig => {
-  const env = process.env['NODE_ENV'] || 'development';
+  const env = (process.env['NODE_ENV'] as 'development' | 'production' | 'test') || 'development';
 
   // Core API keys — warn if missing in production
   const missing: string[] = [];
