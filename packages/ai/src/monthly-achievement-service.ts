@@ -9,7 +9,18 @@ const logger = createLogger('MonthlyAchievement');
 const CACHE_TTL = 30 * 24 * 60 * 60 * 1000;
 const MAX_CACHE_SIZE = 100;
 const MIN_WORDS = 100;
-const MAX_WORDS = 150;
+const MAX_WORDS = 200;
+
+// ── Monthly achiever data shape ───────────────────────────
+
+export interface MonthlyAchiever {
+  trainerName: string;
+  discordUserId: string;
+  trainerId: string;
+  monthlyGain: number;
+  tier: string;  // Tier title (e.g. "Legend", "Minimum", etc.)
+  rank: number; // 1-based
+}
 
 // ── Monthly Achievement Tiers ──
 
@@ -248,6 +259,35 @@ export class MonthlyAchievementService {
 
   // ── Public API ──────────────────────────────────────────
 
+  async generateMonthlyTop3(
+    achievers: MonthlyAchiever[],
+    serverName: string,
+  ): Promise<string> {
+    const achieverData = this.#formatAchieverData(achievers);
+
+    if (this.primaryAI) {
+      try {
+        const msg = await this.#generateTop3ViaAI(this.primaryAI, achieverData, achievers, serverName);
+        logger.info(`Monthly top 3 generated via primary (${achievers.length} trainers)`);
+        return msg;
+      } catch (err: any) {
+        logger.warn(`Monthly top 3 primary failed: ${err.message}. Trying fallback...`);
+      }
+    }
+
+    if (this.fallbackAI) {
+      try {
+        const msg = await this.#generateTop3ViaAI(this.fallbackAI, achieverData, achievers, serverName);
+        logger.info(`Monthly top 3 generated via fallback (${achievers.length} trainers)`);
+        return msg;
+      } catch (err: any) {
+        logger.warn(`Monthly top 3 fallback failed: ${err.message}. Using bootstrap...`);
+      }
+    }
+
+    return `@everyone 👑 The monthly tally period has officially concluded on ${serverName}, and the Umamusume turf belongs to our magnificent Top 3 monthly champions! What an incredible month-long campaign of relentless training, strategic pacing, and unwavering dedication. From the opening starting gates on the 1st to this glorious final stretch across the finish line, our podium stars (${achievers.map(a => `<@${a.discordUserId}> (${a.trainerName})`).join(', ')}) have left every competitor in awe. Your massive fan gains and tier achievements are a testament to true racing greatness. The grandstand is erupting in thunderous applause, the commentators are crowning your names in glory, and history's ink is written in your honor. Celebrate this monumental achievement together, champions — you earned every single fan! 🌟🏆🐎`;
+  }
+
   async generateAchievementMessage(
     tier: MonthlyTier,
     trainerName: string,
@@ -355,5 +395,54 @@ export class MonthlyAchievementService {
     if (words.length < MIN_WORDS) throw new Error('AI response too short');
     if (words.length > MAX_WORDS) msg = words.slice(0, MAX_WORDS).join(' ') + ' 👑';
     return msg;
+  }
+
+  async #generateTop3ViaAI(
+    ai: AIService,
+    achieverData: string,
+    achievers: MonthlyAchiever[],
+    serverName: string,
+  ): Promise<string> {
+    const rendered = this.prompts.render('monthly-achievement-top3', {
+      achieverData,
+      serverName,
+      count: String(achievers.length),
+    });
+
+    if (!rendered) throw new Error('Prompt template "monthly-achievement-top3" not found');
+
+    const raw = await ai.generate({
+      system: rendered.system,
+      prompt: rendered.user,
+    });
+
+    const sanitized = this.#sanitize(raw);
+    this.#validateMentions(sanitized, achievers);
+    return sanitized;
+  }
+
+  #formatAchieverData(achievers: MonthlyAchiever[]): string {
+    const medals = ['🥇', '🥈', '🥉'];
+    return achievers
+      .map((a) => {
+        const prefix = a.rank <= 3 ? medals[a.rank - 1] : `  ${a.rank}.`;
+        const gain = this.#format(a.monthlyGain);
+        const tierTag = a.tier && a.tier !== '-' ? ` [${a.tier}]` : '';
+        return `  ${prefix} <@${a.discordUserId}> (${a.trainerName})${tierTag} — +${gain} fans this month`;
+      })
+      .join('\n');
+  }
+
+  #validateMentions(msg: string, achievers: MonthlyAchiever[]): void {
+    const realIds = new Set(achievers.map(a => a.discordUserId));
+    const plain = [...msg.matchAll(/@(?!\d{17,19}>)(\w+)/g)];
+    if (plain.length > 0) {
+      throw new Error(`Invented @mentions: ${plain.map(m => m[0]).join(', ')} — retrying`);
+    }
+    const ids = [...msg.matchAll(/<@(\d{17,19})>/g)].map(m => m[1]);
+    const hallucinated = ids.filter(id => !realIds.has(id));
+    if (hallucinated.length > 0) {
+      throw new Error(`Unknown user IDs mentioned: ${hallucinated.join(', ')} — retrying`);
+    }
   }
 }

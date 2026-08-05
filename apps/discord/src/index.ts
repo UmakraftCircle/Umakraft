@@ -2,7 +2,7 @@ import { Client, GatewayIntentBits, REST, Routes, Events, Interaction, TextChann
 import { createLogger, PLATFORM_NAME } from '@ai-agent-platform/shared';
 import { toolRegistry } from '@ai-agent-platform/core';
 import { GreetingService, DailyMessageService, MilestoneMessageService, MonthlyAchievementService, ReminderMessageService, DailyAchievementService, promptLibrary, createProvider } from '@ai-agent-platform/ai';
-import type { TimeSlot, MilestoneInfo, MonthlyTier, TrainerGap, DailyAchiever } from '@ai-agent-platform/ai';
+import type { TimeSlot, MilestoneInfo, MonthlyTier, TrainerGap, DailyAchiever, MonthlyAchiever } from '@ai-agent-platform/ai';
 import { detectNewMilestone, detectMonthlyAchievement } from '@ai-agent-platform/ai';
 import cron from 'node-cron';
 import * as readline from 'readline';
@@ -318,7 +318,7 @@ async function startGatewayBot() {
   cron.schedule('0 9 * * *', checkAndSendMilestones, { timezone: tz });
   logger.info(`Milestone check scheduled (${tz}): daily at 9AM`);
 
-  // ── Monthly Achievement Check (1st of month at 10AM) ──
+  // ── Monthly Top 3 Achievement (after tally period on 1st of month at 10AM) ──
 
   const checkMonthlyAchievements = async () => {
     try {
@@ -336,34 +336,64 @@ async function startGatewayBot() {
 
       if (!channel) { logger.warn('Monthly check: no suitable channel.'); return; }
 
-      const members = await fanTrackerAPI.fetchAllMembers();
-      logger.info(`Monthly achievement check: fetched ${members.length} members.`);
+      const [links, members] = await Promise.all([
+        trainerLinkStore.getAll(),
+        fanTrackerAPI.fetchAllMembers(),
+      ]);
 
-      for (const member of members) {
-        const prev = previousMonthlyGains.get(member.trainerId);
-        const curr = member.monthlyFans ?? 0;
-
-        if (prev === undefined) {
-          previousMonthlyGains.set(member.trainerId, curr);
-          continue;
-        }
-
-        const achievement = detectMonthlyAchievement(prev, curr);
-        if (achievement) {
-          const msg = await monthlyService.generateAchievementMessage(
-            achievement.tier, member.trainerName, curr, guild.name,
-          );
-          await supervisor.trySend(channel, msg, `monthly:${achievement.title}:${member.trainerName}`);
-          logger.info(
-            `${achievement.emoji} Monthly [${achievement.title}] sent for ${member.trainerName} ` +
-            `(${prev.toLocaleString()} → ${curr.toLocaleString()} monthly gain)`,
-          );
-        }
-
-        if (curr > prev) previousMonthlyGains.set(member.trainerId, curr);
+      if (links.length === 0) {
+        logger.info('Monthly check: no linked members — skipping.');
+        return;
       }
 
-      logger.info('Monthly achievement check complete.');
+      const linkedIds = new Set(links.map(l => l.trainerId));
+      const monthlyMap = new Map<string, number>();
+      const tierMap = new Map<string, string>();
+      for (const m of members) {
+        if (linkedIds.has(m.trainerId)) {
+          monthlyMap.set(m.trainerId, m.monthlyFans ?? 0);
+          tierMap.set(m.trainerId, m.clubRankTier ?? '-');
+        }
+      }
+
+      // Build ranked top 3 monthly champions
+      const rankedMonthly: MonthlyAchiever[] = links
+        .map((link) => {
+          const monthlyGain = monthlyMap.get(link.trainerId) ?? 0;
+          return {
+            trainerName: link.trainerName,
+            discordUserId: link.discordUserId,
+            trainerId: link.trainerId,
+            monthlyGain,
+            tier: tierMap.get(link.trainerId) ?? 'Active',
+            rank: 0,
+          };
+        })
+        .sort((a, b) => b.monthlyGain - a.monthlyGain)
+        .slice(0, 3)
+        .map((a, i) => ({ ...a, rank: i + 1 }));
+
+      if (rankedMonthly.length === 0) {
+        logger.info('Monthly check: no ranked monthly champions — skipping.');
+        return;
+      }
+
+      // Refresh stale names from live API before generating the message
+      for (const achiever of rankedMonthly) {
+        const live = members.find(m => m.trainerId === achiever.trainerId);
+        if (live?.trainerName && !live.trainerName.startsWith('[MOCK]')) {
+          achiever.trainerName = live.trainerName;
+        }
+      }
+
+      const msg = await monthlyService.generateMonthlyTop3(rankedMonthly, guild.name);
+      await supervisor.trySend(channel, msg, `monthly-top3:${rankedMonthly.length}`);
+
+      logger.info(
+        `👑 Monthly Top 3 sent: top ${rankedMonthly.length} champions ` +
+        `(${rankedMonthly.map(a => `${a.trainerName}: +${(a.monthlyGain / 1_000_000).toFixed(1)}M`).join(', ')})`,
+      );
+
       saveMilestoneState().catch(() => {});
     } catch (err: any) {
       logger.error(`Monthly achievement check failed: ${err.message}`);
@@ -495,7 +525,7 @@ async function startGatewayBot() {
         }
       }
 
-      // Build ranked top 10 by daily gain
+      // Build ranked top 3 by daily gain
       const ranked: DailyAchiever[] = links
         .map((link) => ({
           trainerName: link.trainerName,
@@ -506,7 +536,7 @@ async function startGatewayBot() {
           rank: 0, // placeholder, assigned after sort
         }))
         .sort((a, b) => b.dailyGain - a.dailyGain)
-        .slice(0, 10)
+        .slice(0, 3)
         .map((a, i) => ({ ...a, rank: i + 1 }));
 
       if (ranked.length === 0) {
