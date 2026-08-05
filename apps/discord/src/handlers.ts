@@ -59,6 +59,35 @@ function rankEmoji(rank: number | null): string {
   return '⚪';
 }
 
+function getDailyMilestoneTitle(dailyGain: number): string {
+  if (dailyGain >= 10_000_000) return '👑 Legend Daily';
+  if (dailyGain >= 5_000_000)  return '⚡ Super Surge';
+  if (dailyGain >= 3_000_000)  return '🔥 High Surge';
+  if (dailyGain >= 2_000_000)  return '🏃 Speed Surge';
+  if (dailyGain >= 1_000_000)  return '🎯 Daily Achiever';
+  if (dailyGain >= 500_000)    return '🌱 Daily Sprinter';
+  return '-';
+}
+
+function getMonthlyMilestoneTitle(monthlyFans: number, existingTier?: string): string {
+  if (existingTier && existingTier !== '-') {
+    const iconMap: Record<string, string> = {
+      'Legend': '👑 Legend',
+      'Super-Competitive': '⚡ Super-Competitive',
+      'Competitive': '🔥 Competitive',
+      'Casual': '🌱 Casual',
+      'Minimum': '📏 Minimum',
+    };
+    if (iconMap[existingTier]) return iconMap[existingTier];
+  }
+  if (monthlyFans >= 200_000_000) return '👑 Legend';
+  if (monthlyFans >= 150_000_000) return '⚡ Super-Competitive';
+  if (monthlyFans >= 100_000_000) return '🔥 Competitive';
+  if (monthlyFans >= 75_000_000)  return '🌱 Casual';
+  if (monthlyFans >= 60_000_000 || monthlyFans >= 50_000_000)  return '📏 Minimum';
+  return '-';
+}
+
 // ── /sync ─────────────────────────────────────────────────
 
 export async function handleSync(interaction: ChatInputCommandInteraction) {
@@ -105,10 +134,16 @@ export async function handleFansGain(interaction: ChatInputCommandInteraction) {
   const monthly = stats.monthlyFans > 0 ? `+${formatFans(stats.monthlyFans)}` : '-';
   const weekly = formatGain(stats.weeklyGain);
   const daily = formatGain(stats.dailyGain);
+  const dailyMilestone = getDailyMilestoneTitle(stats.dailyGain);
+  const monthlyMilestone = getMonthlyMilestoneTitle(stats.monthlyFans, stats.clubRankTier);
 
   const description = [
     `👤 **Trainer Name:** ${stats.trainerName}`,
     `🆔 **Trainer ID:** ${stats.trainerId}`,
+    ``,
+    `🎖️ **Milestones:**`,
+    `• **Daily Milestone:** ${dailyMilestone}`,
+    `• **Monthly Title:** ${monthlyMilestone}`,
     ``,
     `📈 **Fan Gain:**`,
     `• **Daily:** ${daily}`,
@@ -161,34 +196,44 @@ export async function handleFansLeaderboard(interaction: ChatInputCommandInterac
   }
 
   const periodLabel = PERIOD_LABELS[period] || 'this month';
-  const gainCol = period === 'daily' ? 'Day' : period === 'weekly' ? 'Week' : 'Month';
 
-  const header = `  #   Trainer              Tier      ${gainCol.padEnd(11)}  Daily`;
-  const lines = topN.map((s, i) => {
-    const rank = String(i + 1).padStart(2);
-    const name = s.trainerName.slice(0, 18).padEnd(18);
-    const tier = s.clubRankTier.padEnd(7);
+  const items = topN.map((s, i) => {
+    const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `**${i + 1}.**`;
+    const dailyMilestone = getDailyMilestoneTitle(s.dailyGain);
+    const monthlyMilestone = getMonthlyMilestoneTitle(s.monthlyFans, s.clubRankTier);
 
-    let gainDisplay: string;
+    const dailyGainStr = formatGain(s.dailyGain);
+    const weeklyGainStr = formatGain(s.gain7d ?? s.weeklyGain);
+    const monthlyGainStr = s.monthlyFans > 0 ? `+${formatFans(s.monthlyFans)}` : '-';
+    const totalFansStr = s.totalFans > 0 ? `${formatFans(s.totalFans)}` : '0';
+
+    let mainStat: string;
     switch (period) {
-      case 'daily': gainDisplay = formatGain(s.dailyGain); break;
-      case 'weekly': gainDisplay = formatGain(s.gain7d ?? s.weeklyGain); break;
-      case 'monthly': gainDisplay = s.monthlyFans > 0 ? `+${formatFans(s.monthlyFans)}` : '-'; break;
-      default: gainDisplay = '-';
+      case 'daily':
+        mainStat = `• **Daily Gain:** ${dailyGainStr} | **Monthly:** ${monthlyGainStr}`;
+        break;
+      case 'weekly':
+        mainStat = `• **Weekly Gain:** ${weeklyGainStr} | **Daily:** ${dailyGainStr}`;
+        break;
+      case 'monthly':
+      default:
+        mainStat = `• **Monthly Gain:** ${monthlyGainStr} | **Daily:** ${dailyGainStr}`;
+        break;
     }
-    gainDisplay = gainDisplay.padEnd(11);
-    const daily = s.dailyGain > 0 ? `+${formatFans(s.dailyGain)}` : '-';
-    const dailyPadded = daily.padEnd(12);
 
-    return `  ${rank}  ${name} ${tier} ${gainDisplay} ${dailyPadded}`;
+    return [
+      `${medal} **${s.trainerName}** (\`${s.trainerId}\`)`,
+      `• **Daily Milestone:** ${dailyMilestone}`,
+      `• **Monthly Title:** ${monthlyMilestone}`,
+      `${mainStat} | **Total:** ${totalFansStr}`,
+    ].join('\n');
   });
 
-  const table = [header, ...lines].join('\n');
-  const description = '```\n' + table + '\n```' +
-    `\n*${members.length} members · ${periodLabel}*`;
+  const description = items.join('\n\n') +
+    `\n\n*${members.length} members · ${periodLabel}*`;
 
   const embed = new EmbedBuilder()
-    .setTitle(`🏆 Leaderboard — Top ${topN.length}`)
+    .setTitle(`🏆 Fan Leaderboard — Top ${topN.length} (${period.toUpperCase()})`)
     .setDescription(description)
     .setColor(0xF1C40F)
     .setFooter({ text: 'UmaKraft' });
