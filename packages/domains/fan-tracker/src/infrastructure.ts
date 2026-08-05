@@ -96,16 +96,42 @@ export interface RankThreshold {
 // ── API Client ──
 
 export class FanTrackerAPI {
-  private circleId: string;
+  private circleIds: string[];
   private apiKey: string;
   private baseUrl: string;
   private limiter: RateLimiter;
 
-  constructor(circleId?: string, apiKey?: string) {
-    this.circleId = circleId || process.env['UMAMOE_CIRCLE_ID'] || '974470619';
+  constructor(circleId?: string | string[], apiKey?: string) {
     this.apiKey = apiKey || process.env['UMAMOE_API_KEY'] || '';
     this.baseUrl = 'https://uma.moe';
     this.limiter = new RateLimiter(1);
+
+    let ids: string[] = [];
+    if (Array.isArray(circleId)) {
+      ids = circleId;
+    } else if (typeof circleId === 'string' && circleId.trim()) {
+      ids = circleId.split(',').map(s => s.trim());
+    }
+
+    const envIds = process.env['UMAMOE_CIRCLE_IDS'] || process.env['UMAMOE_CIRCLE_ID'];
+    if (envIds && ids.length === 0) {
+      ids = envIds.split(',').map(s => s.trim());
+    }
+
+    const defaultCircles = ['974470619', '325938032'];
+    if (ids.length === 0) {
+      ids = defaultCircles;
+    } else {
+      for (const defId of defaultCircles) {
+        if (!ids.includes(defId)) ids.push(defId);
+      }
+    }
+
+    this.circleIds = Array.from(new Set(ids.filter(Boolean)));
+  }
+
+  public get circleId(): string {
+    return this.circleIds[0] || '974470619';
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -178,38 +204,51 @@ export class FanTrackerAPI {
   // ────────────────────────────────────────────────────────────────
 
   public async fetchAllMembers(): Promise<TrainerStats[]> {
-    const cacheKey = `circle-members:${this.circleId}`;
+    const allStats: TrainerStats[] = [];
 
-    try {
-      const data = await this.apiGet<any>(
-        `/api/v4/circles?circle_id=${this.circleId}`,
-        cacheKey,
-        10 * 60 * 1000, // 10 min TTL
-      );
+    for (const cId of this.circleIds) {
+      const cacheKey = `circle-members:${cId}`;
 
-      const members = data.members || [];
-      const statsList: TrainerStats[] = [];
-
-      for (const m of members) {
-        const stats = this.mapCircleMemberToStats(m, data.circle);
-        if (stats.isActive) {
-          statsList.push(stats);
-        }
-      }
-
-      if (statsList.length === 0 && members.length > 0) {
-        logger.warn(
-          `fetchAllMembers: all ${members.length} circle members filtered as inactive. ` +
-          `Returning full unfiltered list as fallback to prevent empty leaderboard.`
+      try {
+        const data = await this.apiGet<any>(
+          `/api/v4/circles?circle_id=${cId}`,
+          cacheKey,
+          10 * 60 * 1000, // 10 min TTL
         );
-        return members.map((m: any) => this.mapCircleMemberToStats(m, data.circle));
-      }
 
-      return statsList;
-    } catch (error: any) {
-      logger.error(`Circle fetch failed: ${error.message}`);
-      throw error;
+        const members = data.members || [];
+        const statsList: TrainerStats[] = [];
+
+        for (const m of members) {
+          const stats = this.mapCircleMemberToStats(m, data.circle);
+          if (stats.isActive) {
+            statsList.push(stats);
+          }
+        }
+
+        if (statsList.length === 0 && members.length > 0) {
+          logger.warn(
+            `fetchAllMembers (${cId}): all ${members.length} circle members filtered as inactive. ` +
+            `Returning full unfiltered list as fallback to prevent empty leaderboard.`
+          );
+          allStats.push(...members.map((m: any) => this.mapCircleMemberToStats(m, data.circle)));
+        } else {
+          allStats.push(...statsList);
+        }
+      } catch (error: any) {
+        logger.error(`Circle fetch failed for ${cId}: ${error.message}`);
+      }
     }
+
+    const trainerMap = new Map<string, TrainerStats>();
+    for (const stats of allStats) {
+      const existing = trainerMap.get(stats.trainerId);
+      if (!existing || stats.totalFans > existing.totalFans) {
+        trainerMap.set(stats.trainerId, stats);
+      }
+    }
+
+    return Array.from(trainerMap.values());
   }
 
   // ────────────────────────────────────────────────────────────────
