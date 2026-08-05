@@ -60,12 +60,11 @@ function rankEmoji(rank: number | null): string {
 }
 
 function getDailyMilestoneTitle(dailyGain: number): string {
-  if (dailyGain >= 10_000_000) return '👑 Legend Daily';
-  if (dailyGain >= 5_000_000)  return '⚡ Super Surge';
-  if (dailyGain >= 3_000_000)  return '🔥 High Surge';
-  if (dailyGain >= 2_000_000)  return '🏃 Speed Surge';
-  if (dailyGain >= 1_000_000)  return '🎯 Daily Achiever';
-  if (dailyGain >= 500_000)    return '🌱 Daily Sprinter';
+  if (dailyGain >= 20_000_000) return '⭐ Superstar';
+  if (dailyGain >= 15_000_000) return '🌟 Star';
+  if (dailyGain >= 10_000_000) return '🏆 Famous';
+  if (dailyGain >= 7_500_000)  return '🌸 Well-known';
+  if (dailyGain >= 5_000_000)  return '🚀 First leap';
   return '-';
 }
 
