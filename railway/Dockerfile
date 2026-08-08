@@ -36,7 +36,7 @@ COPY packages/integrations/src/   packages/integrations/src/
 COPY packages/domains/fan-tracker/src/ packages/domains/fan-tracker/src/
 COPY packages/domains/pr-monitor/src/  packages/domains/pr-monitor/src/
 COPY apps/discord/src/            apps/discord/src/
-COPY railway/health.js            ./
+COPY railway/health.cjs            ./
 
 # ── Layer 3: patch "main" for tsx ─────────────────────────
 # All workspace packages export "./dist/index.js" (compiled JS).
@@ -47,5 +47,5 @@ RUN find packages apps -maxdepth 4 -name package.json \
 # ── Runtime ────────────────────────────────────────────────
 ENV NODE_ENV=production
 
-# health.js → dummy HTTP server on $PORT + spawns the bot
-CMD ["node", "health.js"]
+# health.cjs → dummy HTTP server on $PORT + spawns the bot
+CMD ["node", "health.cjs"]

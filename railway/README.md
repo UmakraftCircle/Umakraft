@@ -6,7 +6,7 @@
 |---|---|
 | `Dockerfile` | Single-stage build, tsx runs TS directly, no compile step |
 | `.dockerignore` | Excludes node_modules, dist, .git, tests, artifacts |
-| `health.js` | Dummy HTTP server on `$PORT` so Railway's TCP probe passes |
+| `health.cjs` | Dummy HTTP server on `$PORT` so Railway's TCP probe passes |
 
 ## Secrets (set in Railway Dashboard → Variables)
 
@@ -36,7 +36,7 @@
 ```
 Railway probes $PORT (TCP)
     ↓
-health.js → dummy HTTP server (200 OK)
+health.cjs → dummy HTTP server (200 OK)
     ↓
 spawns → node_modules/.bin/tsx apps/discord/src/index.ts
     ↓
@@ -47,4 +47,4 @@ Turso (trainer_links table) — persistent, survives redeploys
 
 The bot doesn't expose an HTTP port itself — it connects OUT to Discord's Gateway.
 Railway needs *something* listening on `$PORT` to consider the deployment healthy,
-so `health.js` provides that while forwarding logs from the bot child process.
+so `health.cjs` provides that while forwarding logs from the bot child process.
