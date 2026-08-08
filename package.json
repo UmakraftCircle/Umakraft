@@ -1,23 +1,38 @@
 {
-  "name": "ai-agent-platform",
+  "name": "umakraft-fan-tracker",
   "private": true,
   "version": "1.0.0",
-  "description": "An AI-first engineering platform for orchestrating intelligent workflows",
+  "type": "module",
   "scripts": {
-    "build": "tsc -b",
-    "start": "tsx apps/api/src/index.ts",
-    "dev": "tsx apps/api/src/index.ts",
+    "dev": "vite --port 3000 --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --port 3000 --host 0.0.0.0",
     "test": "node --import tsx --test tests/**/*.test.ts",
     "test:core": "node --import tsx --test tests/core/*.test.ts",
-    "test:watch": "node --import tsx --test --watch tests/**/*.test.ts",
-    "lint": "bash scripts/lint-templates.sh"
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@google/genai": "^2.4.0",
+    "@tailwindcss/vite": "^4.1.14",
+    "@vitejs/plugin-react": "^5.0.4",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
+    "lucide-react": "^0.546.0",
+    "motion": "^12.23.24",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1",
+    "vite": "^6.2.3"
   },
   "devDependencies": {
-    "turbo": "^2.0.4",
-    "typescript": "^5.4.5",
-    "@types/node": "^20.12.7",
-    "tsx": "^4.7.2",
-    "rimraf": "^5.0.5"
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.14.0",
+    "autoprefixer": "^10.4.21",
+    "esbuild": "^0.25.0",
+    "rimraf": "^5.0.5",
+    "tailwindcss": "^4.1.14",
+    "turbo": "^2.10.7",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.2"
   },
   "workspaces": [
     "apps/*",
