@@ -1,4 +1,7 @@
-node_modules
-dist
-.DS_Store
-.env
+node_modules/
+dist/
+*.tsbuildinfo
+*.db
+bun.lock
+*.zip
+
