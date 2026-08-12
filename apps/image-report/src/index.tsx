@@ -1,3 +1,13 @@
+/**
+ * @ai-agent-platform/image-report
+ *
+ * Server-side image report rendering for Fan Tracker.
+ * Uses Satori + @resvg/resvg-js — no browser required.
+ *
+ * Public API:
+ *   renderGainReport(data) → Buffer  — /fan gain stat card
+ *   renderLeaderboardReport(data) → Buffer — /fan leaderboard card
+ */
 import { renderToPNG } from './renderer.js';
 import { GainReport, type GainReportData } from './GainReport.js';
 import { LeaderboardReport, type LeaderboardReportData } from './LeaderboardReport.js';
@@ -6,6 +16,8 @@ import { leaderboardCanvasHeight } from './theme.js';
 import { createLogger } from '@ai-agent-platform/shared';
 
 const logger = createLogger('ImageReport');
+
+// ── Public API ──
 
 export async function renderGainReport(data: GainReportData): Promise<Buffer> {
   try {
@@ -18,6 +30,7 @@ export async function renderGainReport(data: GainReportData): Promise<Buffer> {
 
 export async function renderLeaderboardReport(data: LeaderboardReportData): Promise<Buffer> {
   try {
+    // Generate chart PNG if chart data is available
     let chartBuffer: Buffer | null = null;
     if (data.entries.length > 0) {
       try {
@@ -36,6 +49,7 @@ export async function renderLeaderboardReport(data: LeaderboardReportData): Prom
         logger.warn(`Chart generation failed, continuing without chart: ${chartErr.message}`);
       }
     }
+
     return await renderToPNG(
       <LeaderboardReport data={{ ...data, chartBuffer }} />,
       leaderboardCanvasHeight(data.entries.length),
@@ -46,6 +60,7 @@ export async function renderLeaderboardReport(data: LeaderboardReportData): Prom
   }
 }
 
+// Re-export types
 export type { GainReportData } from './GainReport.js';
 export type { LeaderboardReportData, LeaderboardEntry } from './LeaderboardReport.js';
 export type { BarChartData } from './charts.js';
