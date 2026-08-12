@@ -1,0 +1,24 @@
+{
+  "name": "@ai-agent-platform/image-report",
+  "version": "1.0.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc -w"
+  },
+  "dependencies": {
+    "@ai-agent-platform/fan-tracker": "workspace:*",
+    "@ai-agent-platform/shared": "workspace:*",
+    "@resvg/resvg-js": "^2.6.2",
+    "chart.js": "^4.4.8",
+    "chartjs-node-canvas": "^5.0.0",
+    "satori": "^0.12.1",
+    "react": "^19.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "typescript": "^5.5.0"
+  }
+}
