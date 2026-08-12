@@ -1,27 +1,11 @@
 import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
 
-/**
- * All slash command definitions for the Umamusume Fan Tracker bot.
- * 
- * Command tree:
- *   /sync                              [ADMIN]  — refresh cached data
- *   /fan gain [period]                 [ALL]    — fan count change (daily|weekly|monthly)
- *   /fan leaderboard [top] [period]    [ALL]    — ranked leaderboard
- *   /link add [user] [trainer]         [ADMIN]  — link Discord user to trainer (autocomplete)
- *   /link remove [user]                [ADMIN]  — unlink Discord user
- *   /link list                         [ALL]    — show all linked pairs
- */
-
-// ── /sync ──────────────────────────────────────────────────
-
 export const syncCommand = new SlashCommandBuilder()
   .setName('sync')
   .setDescription('Fetch fresh data from the Umamusume API and clear the cache (admin only)')
   .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
   .setDMPermission(false)
   .toJSON();
-
-// ── /fan ──────────────────────────────────────────────────
 
 export const fanCommand = new SlashCommandBuilder()
   .setName('fan')
@@ -56,6 +40,7 @@ export const fanCommand = new SlashCommandBuilder()
             { name: 'Top 15', value: 15 },
             { name: 'Top 20', value: 20 },
             { name: 'Top 30', value: 30 },
+            { name: 'Top 60', value: 60 },
           )
       )
       .addStringOption(opt =>
@@ -112,7 +97,5 @@ export const linkCommand = new SlashCommandBuilder()
   )
   .setDMPermission(false)
   .toJSON();
-
-// ── Aggregate export ──
 
 export const ALL_COMMANDS = [syncCommand, fanCommand, linkCommand];

@@ -2,18 +2,20 @@ import {
   ChatInputCommandInteraction,
   AutocompleteInteraction,
   EmbedBuilder,
+  AttachmentBuilder,
   PermissionFlagsBits,
 } from 'discord.js';
 import { fanTrackerAPI, TrainerStats } from '@ai-agent-platform/fan-tracker';
 import { createLogger } from '@ai-agent-platform/shared';
 import { trainerLinkStore, type TrainerLink } from '@ai-agent-platform/integrations';
+import { renderGainReport, renderLeaderboardReport } from '@ai-agent-platform/image-report';
 
 const logger = createLogger('Discord-Handlers');
 
 // ── Input sanitization ──
 
 const ALLOWED_PERIODS = new Set(['daily', 'weekly', 'monthly']);
-const ALLOWED_LEADERBOARD_TOPS = new Set([10, 15, 20, 30]);
+const ALLOWED_LEADERBOARD_TOPS = new Set([10, 15, 20, 30, 60]);
 
 function sanitizePeriod(input: string): 'daily' | 'weekly' | 'monthly' {
   return ALLOWED_PERIODS.has(input) ? (input as 'daily' | 'weekly' | 'monthly') : 'monthly';
@@ -24,7 +26,6 @@ function sanitizeTop(input: number): number {
 }
 
 function sanitizeTrainerInput(input: string): string {
-  // Strip any non-alphanumeric characters except spaces, hyphens, and parentheses
   return input.replace(/[^a-zA-Z0-9\s\-()]/g, '').slice(0, 100);
 }
 
@@ -83,7 +84,7 @@ function getMonthlyMilestoneTitle(monthlyFans: number, existingTier?: string): s
   if (monthlyFans >= 150_000_000) return '⚡ Super-Competitive';
   if (monthlyFans >= 100_000_000) return '🔥 Competitive';
   if (monthlyFans >= 75_000_000)  return '🌱 Casual';
-  if (monthlyFans >= 60_000_000 || monthlyFans >= 50_000_000)  return '📏 Minimum';
+  if (monthlyFans >= 60_000_000)  return '📏 Minimum';
   return '-';
 }
 
@@ -99,7 +100,6 @@ export async function handleSync(interaction: ChatInputCommandInteraction) {
 
   fanTrackerAPI.clearCache();
 
-  // Warm cache by fetching all members
   const members = await fanTrackerAPI.fetchAllMembers();
   const linkCount = await trainerLinkStore.count();
 
@@ -157,7 +157,27 @@ export async function handleFansGain(interaction: ChatInputCommandInteraction) {
     .setDescription(description)
     .setFooter({ text: `UmaKraft · ${new Date(stats.updatedAt).toLocaleDateString()}` });
 
-  await interaction.editReply({ embeds: [embed] });
+  const replyPayload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
+
+  // Attach rendered image report
+  try {
+    const pngBuffer = await renderGainReport({
+      trainerName: stats.trainerName,
+      trainerId: stats.trainerId,
+      dailyGain: stats.dailyGain,
+      weeklyGain: stats.weeklyGain,
+      monthlyFans: stats.monthlyFans,
+      totalFans: stats.totalFans,
+      clubRankTier: stats.clubRankTier,
+      updatedAt: stats.updatedAt,
+    });
+    const attachment = new AttachmentBuilder(pngBuffer, { name: 'fan-gain.png' });
+    replyPayload.files = [attachment];
+  } catch (renderErr: any) {
+    logger.warn(`Image render failed for /fan gain, falling back to text-only: ${renderErr.message}`);
+  }
+
+  await interaction.editReply(replyPayload);
 }
 
 // ── /fans leaderboard ─────────────────────────────────────
@@ -237,7 +257,31 @@ export async function handleFansLeaderboard(interaction: ChatInputCommandInterac
     .setColor(0xF1C40F)
     .setFooter({ text: 'UmaKraft' });
 
-  await interaction.editReply({ embeds: [embed] });
+  const replyPayload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
+
+  // Attach rendered image report
+  try {
+    const periodLabel = PERIOD_LABELS[period] || 'this month';
+    const pngBuffer = await renderLeaderboardReport({
+      entries: topN.map((s, i) => ({
+        rank: i + 1,
+        trainerName: s.trainerName,
+        dailyGain: s.dailyGain,
+        weeklyGain: s.weeklyGain,
+        monthlyFans: s.monthlyFans,
+        totalFans: s.totalFans,
+        clubRankTier: s.clubRankTier,
+      })),
+      period,
+      periodLabel,
+    });
+    const attachment = new AttachmentBuilder(pngBuffer, { name: 'fan-leaderboard.png' });
+    replyPayload.files = [attachment];
+  } catch (renderErr: any) {
+    logger.warn(`Image render failed for /fan leaderboard, falling back to text-only: ${renderErr.message}`);
+  }
+
+  await interaction.editReply(replyPayload);
 }
 
 // ── /link add ─────────────────────────────────────────────
@@ -251,12 +295,10 @@ export async function handleLinkAdd(interaction: ChatInputCommandInteraction) {
   const user = interaction.options.getUser('user', true);
   const trainerInput = interaction.options.getString('trainer', true);
 
-  // Parse "Name (trainer-XX)" format or "Name (viewer_id)" from autocomplete
   const match = trainerInput.match(/^(.+?)\s*\((\d+)\)$/);
   const trainerId = match ? match[2] : trainerInput;
   const trainerName = match ? match[1] : trainerInput;
 
-  // Validate: trainerId must be numeric
   if (!/^\d+$/.test(trainerId)) {
     await interaction.reply({ content: `⚠️ Invalid trainer. Use autocomplete to select a valid trainer. Got: \`${trainerInput}\``, ephemeral: true });
     return;
@@ -348,7 +390,6 @@ export async function handleTrainerAutocomplete(interaction: AutocompleteInterac
 
     await interaction.respond(filtered);
   } catch {
-    // Fallback: return empty if API fails
     await interaction.respond([]);
   }
 }

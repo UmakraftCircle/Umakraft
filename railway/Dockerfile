@@ -5,9 +5,10 @@
 
 FROM node:20-slim
 
-# Native modules (sqlite3) need build tools
+# Native modules (sqlite3, canvas) need build tools & runtime libs
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 make gcc g++ \
+    libcairo2-dev libpango1.0-dev libjpeg62-turbo-dev libgif-dev librsvg2-dev \
     && rm -rf /var/lib/apt/lists/*
 
 RUN npm install -g pnpm@9.0.5
@@ -15,7 +16,7 @@ RUN npm install -g pnpm@9.0.5
 WORKDIR /app
 
 # ── Layer 1: workspace config (install dependencies) ──────
-COPY pnpm-workspace.yaml pnpm-lock.yaml tsconfig.json turbo.json package.json ./
+COPY pnpm-workspace.yaml tsconfig.json turbo.json package.json ./
 COPY packages/shared/package.json packages/shared/tsconfig.json     packages/shared/
 COPY packages/ai/package.json packages/ai/tsconfig.json             packages/ai/
 COPY packages/core/package.json packages/core/tsconfig.json         packages/core/
@@ -24,6 +25,7 @@ COPY packages/integrations/package.json packages/integrations/tsconfig.json  pac
 COPY packages/domains/fan-tracker/package.json                      packages/domains/fan-tracker/
 COPY packages/domains/pr-monitor/package.json                       packages/domains/pr-monitor/
 COPY apps/discord/package.json apps/discord/tsconfig.json           apps/discord/
+COPY apps/image-report/package.json apps/image-report/tsconfig.json  apps/image-report/
 
 RUN pnpm install --no-frozen-lockfile
 
@@ -36,11 +38,11 @@ COPY packages/integrations/src/   packages/integrations/src/
 COPY packages/domains/fan-tracker/src/ packages/domains/fan-tracker/src/
 COPY packages/domains/pr-monitor/src/  packages/domains/pr-monitor/src/
 COPY apps/discord/src/            apps/discord/src/
+COPY apps/image-report/src/       apps/image-report/src/
+COPY apps/image-report/assets/    apps/image-report/assets/
 COPY railway/health.cjs            ./
 
 # ── Layer 3: patch "main" for tsx ─────────────────────────
-# All workspace packages export "./dist/index.js" (compiled JS).
-# We run TypeScript directly via tsx, so point "main" at src.
 RUN find packages apps -maxdepth 4 -name package.json \
     -exec sed -i 's|"main": "./dist/index.js"|"main": "./src/index.ts"|g' {} \;
 

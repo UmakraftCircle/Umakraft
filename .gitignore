@@ -1,7 +1,8 @@
-node_modules/
-dist/
-*.tsbuildinfo
+node_modules
+dist
+.turbo
 *.db
-bun.lock
-*.zip
-
+.env
+.env.local
+platform.db
+.test-output
