@@ -152,15 +152,18 @@ export class DailyMessageService {
   private caches: Record<TimeSlot, SlotCache>;
   private primaryAI: AIService | null;
   private fallbackAI: AIService | null;
+  private brainAI: AIService | null;
   private prompts: PromptLibrary;
 
   constructor(
     primaryAI: AIService | null,
     prompts: PromptLibrary,
     fallbackAI: AIService | null = null,
+    brainAI: AIService | null = null,
   ) {
     this.primaryAI = primaryAI;
     this.fallbackAI = fallbackAI;
+    this.brainAI = brainAI;
     this.prompts = prompts;
     this.caches = {
       morning:  new SlotCache('morning'),
@@ -214,7 +217,19 @@ export class DailyMessageService {
       }
     }
 
-    // Tiers 3-5: Cache → Sole → Bootstrap (time-slot-isolated)
+    // Tier 3: Local brain (supervisor) retries once before cache
+    if (this.brainAI) {
+      try {
+        const msg = await this.#generateViaAI(this.brainAI, timeSlot, serverName, memberCount);
+        cache.set(`${prefix}${Date.now()}`, msg);
+        logger.info(`Daily [${timeSlot}] recovered by local brain (${this.brainAI.getCurrentModel()})`);
+        return msg;
+      } catch (err: any) {
+        logger.warn(`Daily [${timeSlot}] brain recovery failed: ${err.message}. Going to cache...`);
+      }
+    }
+
+    // Tiers 4-5: Cache → Sole → Bootstrap (time-slot-isolated)
     return this.#fallbackDaily(timeSlot);
   }
 
