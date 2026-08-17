@@ -5,10 +5,11 @@
 
 FROM node:20-slim
 
-# Native modules (sqlite3, canvas) need build tools & runtime libs
+# Native modules (better-sqlite3, sqlite3, node-llama-cpp) need build tools.
+# (The image report uses satori + @resvg/resvg-js — prebuilt binaries, no
+# canvas/system libs needed.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 make gcc g++ \
-    libcairo2-dev libpango1.0-dev libjpeg62-turbo-dev libgif-dev librsvg2-dev \
     && rm -rf /var/lib/apt/lists/*
 
 RUN npm install -g pnpm@9.0.5

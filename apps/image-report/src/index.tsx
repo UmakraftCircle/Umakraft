@@ -1,8 +1,9 @@
+import React from 'react';
 /**
  * @ai-agent-platform/image-report
  *
  * Server-side image report rendering for Fan Tracker.
- * Uses Satori + @resvg/resvg-js — no browser required.
+ * Uses Satori + @resvg/resvg-js — no browser required, no native `canvas`.
  *
  * Public API:
  *   renderGainReport(data) → Buffer  — /fan gain stat card
@@ -11,7 +12,6 @@
 import { renderToPNG } from './renderer.js';
 import { GainReport, type GainReportData } from './GainReport.js';
 import { LeaderboardReport, type LeaderboardReportData } from './LeaderboardReport.js';
-import { generateBarChartPNG, type BarChartData } from './charts.js';
 import { leaderboardCanvasHeight } from './theme.js';
 import { createLogger } from '@ai-agent-platform/shared';
 
@@ -30,28 +30,8 @@ export async function renderGainReport(data: GainReportData): Promise<Buffer> {
 
 export async function renderLeaderboardReport(data: LeaderboardReportData): Promise<Buffer> {
   try {
-    // Generate chart PNG if chart data is available
-    let chartBuffer: Buffer | null = null;
-    if (data.entries.length > 0) {
-      try {
-        const chartData: BarChartData = {
-          labels: data.entries.map((e) => e.trainerName),
-          values: data.entries.map((e) => {
-            switch (data.period) {
-              case 'daily': return e.dailyGain;
-              case 'weekly': return e.weeklyGain;
-              default: return e.monthlyFans;
-            }
-          }),
-        };
-        chartBuffer = await generateBarChartPNG(chartData);
-      } catch (chartErr: any) {
-        logger.warn(`Chart generation failed, continuing without chart: ${chartErr.message}`);
-      }
-    }
-
     return await renderToPNG(
-      <LeaderboardReport data={{ ...data, chartBuffer }} />,
+      <LeaderboardReport data={data} />,
       leaderboardCanvasHeight(data.entries.length),
     );
   } catch (err: any) {
