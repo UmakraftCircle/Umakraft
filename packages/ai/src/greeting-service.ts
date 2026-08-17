@@ -109,10 +109,10 @@ export class GreetingService {
   private recentlySent = new Set<string>();
 
   /**
-   * @param primaryAI   Primary Groq model (e.g. llama-3.3-70b-versatile).
+   * @param primaryAI   Primary Groq model (e.g. openai/gpt-oss-120b).
    *                     Pass null to operate in cache-only fallback mode.
    * @param prompts     PromptLibrary with a registered 'new-member-greeting' template.
-   * @param fallbackAI  Optional fallback model (e.g. mixtral-8x7b-32768).
+   * @param fallbackAI  Optional fallback model (e.g. openai/gpt-oss-20b).
    *                     Used when the primary is rate-limited before falling back to cache.
    */
   constructor(
@@ -149,8 +149,8 @@ export class GreetingService {
    * Generate (or retrieve) a welcome greeting for a new server member.
    *
    * Strategy (5-tier fallback pyramid):
-   *   1. Try primary Groq model (e.g. llama-3.3-70b-versatile).
-   *   2. On primary rate-limit → try fallback model (e.g. mixtral-8x7b-32768).
+   *   1. Try primary Groq model (e.g. openai/gpt-oss-120b).
+   *   2. On primary rate-limit → try fallback model (e.g. openai/gpt-oss-20b).
    *   3. On success → cache it for future fallback, return it.
    *   4. On failure (rate-limit, network, etc.) → fall back to cached pool.
    *   5. Empty cache → bootstrap pre-written pool.
