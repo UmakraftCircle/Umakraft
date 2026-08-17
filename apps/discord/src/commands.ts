@@ -30,7 +30,7 @@ export const fanCommand = new SlashCommandBuilder()
         opt.setName('top').setDescription('Number of top trainers to show').setRequired(false)
           .addChoices({ name: 'Top 10', value: 10 }, { name: 'Top 15', value: 15 }, { name: 'Top 20', value: 20 }, { name: 'Top 30', value: 30 }, { name: 'Top 60', value: 60 })
       )
-      .addStringOption((opt) =>
+      .addStringOption(opt =>
         opt.setName('period').setDescription('Time period for ranking').setRequired(false)
           .addChoices({ name: 'Daily', value: 'daily' }, { name: 'Weekly', value: 'weekly' }, { name: 'Monthly', value: 'monthly' })
       )
@@ -40,7 +40,7 @@ export const fanCommand = new SlashCommandBuilder()
 
 export const linkCommand = new SlashCommandBuilder()
   .setName('link')
-  .setDescription('Manage Discord \u2194 Umamusume trainer links')
+  .setDescription('Manage Discord ↔ Umamusume trainer links')
   .addSubcommand((sub) =>
     sub.setName('add').setDescription('Link a Discord user to an Umamusume trainer (admin only)')
       .addUserOption((opt) => opt.setName('user').setDescription('Discord member to link').setRequired(true))
@@ -48,10 +48,26 @@ export const linkCommand = new SlashCommandBuilder()
   )
   .addSubcommand((sub) =>
     sub.setName('remove').setDescription('Unlink a Discord user from their trainer (admin only)')
-      .addUserOption((opt) => opt.setName('user').setDescription('Discord member to unlink').setRequired(true))
+      .addUserOption(opt => opt.setName('user').setDescription('Discord member to unlink').setRequired(true))
   )
-  .addSubcommand((sub) => sub.setName('list').setDescription('Show all linked Discord \u2194 trainer pairs'))
+  .addSubcommand((sub) => sub.setName('list').setDescription('Show all linked Discord ↔ trainer pairs'))
   .setDMPermission(false)
   .toJSON();
 
-export const ALL_COMMANDS = [syncCommand, fanCommand, linkCommand, askCommand, agentCommand, scheduleCommand, myTasksCommand, unscheduleCommand];
+export const compareCommand = new SlashCommandBuilder()
+  .setName('compare')
+  .setDescription('Compare fan gain between two trainers')
+  .addStringOption((opt) =>
+    opt.setName('period').setDescription('Time period for comparison').setRequired(true)
+      .addChoices({ name: 'Daily', value: 'daily' }, { name: 'Weekly', value: 'weekly' }, { name: 'Monthly', value: 'monthly' })
+  )
+  .addStringOption((opt) =>
+    opt.setName('trainer1').setDescription('First trainer to compare (defaults to you)').setRequired(false).setAutocomplete(true)
+  )
+  .addStringOption((opt) =>
+    opt.setName('trainer2').setDescription('Second trainer to compare (defaults to you)').setRequired(false).setAutocomplete(true)
+  )
+  .setDMPermission(false)
+  .toJSON();
+
+export const ALL_COMMANDS = [syncCommand, fanCommand, linkCommand, compareCommand, askCommand, agentCommand, scheduleCommand, myTasksCommand, unscheduleCommand];
