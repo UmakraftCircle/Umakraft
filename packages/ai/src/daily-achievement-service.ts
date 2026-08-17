@@ -79,15 +79,18 @@ export class DailyAchievementService {
   private cache: AchievementCache;
   private primaryAI: AIService | null;
   private fallbackAI: AIService | null;
+  private brainAI: AIService | null;
   private prompts: PromptLibrary;
 
   constructor(
     primaryAI: AIService | null,
     prompts: PromptLibrary,
     fallbackAI: AIService | null = null,
+    brainAI: AIService | null = null,
   ) {
     this.primaryAI = primaryAI;
     this.fallbackAI = fallbackAI;
+    this.brainAI = brainAI;
     this.prompts = prompts;
     this.cache = new AchievementCache();
 
@@ -134,7 +137,19 @@ export class DailyAchievementService {
       }
     }
 
-    // Tiers 3-5: Cache → Sole → Bootstrap
+    // Tier 3: Local brain (supervisor) retries once before cache
+    if (this.brainAI) {
+      try {
+        const msg = await this.#generateViaAI(this.brainAI, achieverData, achievers, serverName);
+        this.cache.set(`daily-achievement-${Date.now()}`, msg);
+        logger.info(`Daily achievement recovered by local brain (${achievers.length} trainers)`);
+        return msg;
+      } catch (err: any) {
+        logger.warn(`Daily achievement brain recovery failed: ${err.message}. Going to cache...`);
+      }
+    }
+
+    // Tiers 4-5: Cache → Sole → Bootstrap
     return this.#fallbackAchievement();
   }
 
