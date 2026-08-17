@@ -38,7 +38,8 @@ export async function handleAsk(interaction: ChatInputCommandInteraction): Promi
       ? history.map((t) => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.content}`).join('\n')
       : undefined;
 
-    // Build an AI service from env (fall back to a safe mock in dev).
+    // Build an AI service from env. createProvider throws a clear error if no
+    // key is set (the caller surfaces it) — there is no silent mock fallback.
     const aiService = createProvider(
       (process.env['AI_PROVIDER'] as any) || 'groq',
       process.env['GROQ_API_KEY'] || process.env['OPENAI_API_KEY'] || '',
