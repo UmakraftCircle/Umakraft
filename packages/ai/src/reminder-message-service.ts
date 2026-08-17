@@ -66,11 +66,13 @@ export class ReminderMessageService {
   private cache: ReminderCache;
   private primaryAI: AIService | null;
   private fallbackAI: AIService | null;
+  private brainAI: AIService | null;
   private prompts: PromptLibrary;
 
-  constructor(primaryAI: AIService | null, prompts: PromptLibrary, fallbackAI: AIService | null = null) {
+  constructor(primaryAI: AIService | null, prompts: PromptLibrary, fallbackAI: AIService | null = null, brainAI: AIService | null = null) {
     this.primaryAI = primaryAI;
     this.fallbackAI = fallbackAI;
+    this.brainAI = brainAI;
     this.prompts = prompts;
     this.cache = new ReminderCache();
     const parts: string[] = [];
@@ -102,6 +104,18 @@ export class ReminderMessageService {
         logger.warn(`Gap reminder fallback failed: ${err.message}. Going to cache...`);
       }
     }
+    // Tier 3: Local brain (supervisor) retries once before cache
+    if (this.brainAI) {
+      try {
+        const msg = await this.#generateViaAI(this.brainAI, trainerData, gaps, serverName);
+        this.cache.set(`reminder-${Date.now()}`, msg);
+        logger.info(`Gap reminder recovered by local brain (${gaps.length} trainers)`);
+        return msg;
+      } catch (err: any) {
+        logger.warn(`Gap reminder brain recovery failed: ${err.message}. Going to cache...`);
+      }
+    }
+
     return this.#fallbackReminder();
   }
 
