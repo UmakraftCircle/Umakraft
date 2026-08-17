@@ -126,54 +126,26 @@ export async function handleFansGain(interaction: ChatInputCommandInteraction) {
 
   const stats = await fanTrackerAPI.fetchTrainerStats(link.trainerId);
 
-  const total = stats.totalFans > 0 ? `${formatFans(stats.totalFans)} (${stats.totalFans.toLocaleString()})` : '0';
-  const monthly = stats.monthlyFans > 0 ? `+${formatFans(stats.monthlyFans)}` : '-';
-  const weekly = formatGain(stats.weeklyGain);
-  const daily = formatGain(stats.dailyGain);
-  const dailyMilestone = getDailyMilestoneTitle(stats.dailyGain);
-  const monthlyMilestone = getMonthlyMilestoneTitle(stats.monthlyFans, stats.clubRankTier);
-
-  const description = [
-    `\ud83d\udc64 **Trainer Name:** ${stats.trainerName}`,
-    `\ud83d\udcbd **Trainer ID:** ${stats.trainerId}`,
-    ``,
-    `\ud83c\udf1f **Milestones:**`,
-    `\u2022 **Daily Milestone:** ${dailyMilestone}`,
-    `\u2022 **Monthly Title:** ${monthlyMilestone}`,
-    ``,
-    `\ud83d\udcc8 **Fan Gain:**`,
-    `\u2022 **Daily:** ${daily}`,
-    `\u2022 **Weekly:** ${weekly}`,
-    `\u2022 **Monthly:** ${monthly}`,
-    `\u2022 **Total Fans:** ${total}`,
-  ].join('\n') + (stats.previousCircleName ? `\n\n\ud83e\udd14 Transferred from **${stats.previousCircleName}**` : '');
+  // The image report IS the reply — render it as a full embed image (truth),
+  // not an attached file. No text-embed fallback.
+  const fileName = 'fan-gain.png';
+  const attachment = new AttachmentBuilder(await renderGainReport({
+    trainerName: stats.trainerName,
+    trainerId: stats.trainerId,
+    dailyGain: stats.dailyGain,
+    weeklyGain: stats.weeklyGain,
+    monthlyFans: stats.monthlyFans,
+    totalFans: stats.totalFans,
+    clubRankTier: stats.clubRankTier,
+    updatedAt: stats.updatedAt,
+  }), { name: fileName });
 
   const embed = new EmbedBuilder()
-    .setTitle('\ud83d\udcc8 Fan Gain Statistics')
+    .setTitle('\ud83d\udcc8 Fan Gain Report')
     .setColor(0x57F287)
-    .setDescription(description)
-    .setFooter({ text: `Umakraft \u00b7 ${new Date(stats.updatedAt).toLocaleDateString()}` });
+    .setImage(`attachment://${fileName}`);
 
-  const replyPayload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
-
-  try {
-    const pngBuffer = await renderGainReport({
-      trainerName: stats.trainerName,
-      trainerId: stats.trainerId,
-      dailyGain: stats.dailyGain,
-      weeklyGain: stats.weeklyGain,
-      monthlyFans: stats.monthlyFans,
-      totalFans: stats.totalFans,
-      clubRankTier: stats.clubRankTier,
-      updatedAt: stats.updatedAt,
-    });
-    const attachment = new AttachmentBuilder(pngBuffer, { name: 'fan-gain.png' });
-    replyPayload.files = [attachment];
-  } catch (renderErr: any) {
-    logger.warn(`Image render failed for /fan gain, falling back to text-only: ${renderErr.message}`);
-  }
-
-  await interaction.editReply(replyPayload);
+  await interaction.editReply({ embeds: [embed], files: [attachment] });
 }
 
 export async function handleFansLeaderboard(interaction: ChatInputCommandInteraction) {
@@ -208,73 +180,29 @@ export async function handleFansLeaderboard(interaction: ChatInputCommandInterac
     return;
   }
 
-  const periodLabel = PERIOD_LABELS[period] || 'this month';
-
-  const items = topN.map((s, i) => {
-    const medal = i === 0 ? '\ud83e\udd47' : i === 1 ? '\ud83e\udd48' : i === 2 ? '\ud83e\udd49' : `**${i + 1}.**`;
-    const dailyMilestone = getDailyMilestoneTitle(s.dailyGain);
-    const monthlyMilestone = getMonthlyMilestoneTitle(s.monthlyFans, s.clubRankTier);
-
-    const dailyGainStr = formatGain(s.dailyGain);
-    const weeklyGainStr = formatGain(s.gain7d ?? s.weeklyGain);
-    const monthlyGainStr = s.monthlyFans > 0 ? `+${formatFans(s.monthlyFans)}` : '-';
-    const totalFansStr = s.totalFans > 0 ? `${formatFans(s.totalFans)}` : '0';
-
-    let mainStat: string;
-    switch (period) {
-      case 'daily':
-        mainStat = `\u2022 **Daily Gain:** ${dailyGainStr} | **Monthly:** ${monthlyGainStr}`;
-        break;
-      case 'weekly':
-        mainStat = `\u2022 **Weekly Gain:** ${weeklyGainStr} | **Daily:** ${dailyGainStr}`;
-        break;
-      case 'monthly':
-      default:
-        mainStat = `\u2022 **Monthly Gain:** ${monthlyGainStr} | **Daily:** ${dailyGainStr}`;
-        break;
-    }
-
-    return [
-      `${medal} **${s.trainerName}** (\`${s.trainerId}\`)`,
-      `\u2022 **Daily Milestone:** ${dailyMilestone}`,
-      `\u2022 **Monthly Title:** ${monthlyMilestone}`,
-      `${mainStat} | **Total:** ${totalFansStr}`,
-    ].join('\n');
-  });
-
-  const description = items.join('\n\n') +
-    `\n\n*${members.length} members \u00b7 ${periodLabel}*`;
+  // The image report IS the reply — render it as a full embed image (truth),
+  // not an attached file.
+  const fileName = 'fan-leaderboard.png';
+  const attachment = new AttachmentBuilder(await renderLeaderboardReport({
+    entries: topN.map((s, i) => ({
+      rank: i + 1,
+      trainerName: s.trainerName,
+      dailyGain: s.dailyGain,
+      weeklyGain: s.weeklyGain,
+      monthlyFans: s.monthlyFans,
+      totalFans: s.totalFans,
+      clubRankTier: s.clubRankTier,
+    })),
+    period,
+    periodLabel: PERIOD_LABELS[period] || 'this month',
+  }), { name: fileName });
 
   const embed = new EmbedBuilder()
     .setTitle(`\ud83c\udfae Fan Leaderboard \u2014 Top ${topN.length} (${period.toUpperCase()})`)
-    .setDescription(description)
     .setColor(0xF1C40F)
-    .setFooter({ text: 'Umakraft' });
+    .setImage(`attachment://${fileName}`);
 
-  const replyPayload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] } = { embeds: [embed] };
-
-  try {
-    const periodLabel = PERIOD_LABELS[period] || 'this month';
-    const pngBuffer = await renderLeaderboardReport({
-      entries: topN.map((s, i) => ({
-        rank: i + 1,
-        trainerName: s.trainerName,
-        dailyGain: s.dailyGain,
-        weeklyGain: s.weeklyGain,
-        monthlyFans: s.monthlyFans,
-        totalFans: s.totalFans,
-        clubRankTier: s.clubRankTier,
-      })),
-      period,
-      periodLabel,
-    });
-    const attachment = new AttachmentBuilder(pngBuffer, { name: 'fan-leaderboard.png' });
-    replyPayload.files = [attachment];
-  } catch (renderErr: any) {
-    logger.warn(`Image render failed for /fan leaderboard, falling back to text-only: ${renderErr.message}`);
-  }
-
-  await interaction.editReply(replyPayload);
+  await interaction.editReply({ embeds: [embed], files: [attachment] });
 }
 
 export async function handleLinkAdd(interaction: ChatInputCommandInteraction) {
