@@ -1,6 +1,6 @@
 import { Client, GatewayIntentBits, REST, Routes, Events, Interaction, TextChannel } from 'discord.js';
 import { GreetingService, DailyMessageService, MilestoneMessageService, MonthlyAchievementService, ReminderMessageService, DailyAchievementService, promptLibrary, createProvider } from '@ai-agent-platform/ai';
-import type { TimeSlot } from '@ai-agent-platform/ai';
+import type { TimeSlot, AIService } from '@ai-agent-platform/ai';
 import cron from 'node-cron';
 import { MessageSupervisor } from './supervisor.js';
 import { ALL_COMMANDS } from './commands.js';
@@ -87,24 +87,39 @@ export async function startGatewayBot() {
   let dailyAchievementService: DailyAchievementService;
   const supervisor = new MessageSupervisor();
 
+  // Local brain (supervisor) — the on-host Qwen brain via node-llama-cpp.
+  // It self-downloads its weights on first use and is used as a last-resort
+  // "brain" that retries a failed generation once before the cache fallback.
+  // Guard against a missing/undeployable native module so the bot never crashes.
+  let brainAI: AIService | null = null;
+  if (process.env['LOCAL_BRAIN_ENABLED'] === 'true') {
+    try {
+      brainAI = createProvider('local', '');
+      logger.info(`Local brain enabled as supervisor (${brainAI.getCurrentModel()})`);
+    } catch (err: any) {
+      logger.warn(`Local brain unavailable, supervisor disabled: ${err?.message ?? err}`);
+      brainAI = null;
+    }
+  }
+
   if (groqKey) {
     const primaryAI = createProvider('groq', groqKey, 'openai/gpt-oss-120b');
     const fallbackAI = createProvider('groq', groqKey, 'openai/gpt-oss-20b');
-    greetingService = new GreetingService(primaryAI, promptLibrary, fallbackAI);
-    dailyService = new DailyMessageService(primaryAI, promptLibrary, fallbackAI);
-    milestoneService = new MilestoneMessageService(primaryAI, promptLibrary, fallbackAI);
-    monthlyService = new MonthlyAchievementService(primaryAI, promptLibrary, fallbackAI);
-    reminderService = new ReminderMessageService(primaryAI, promptLibrary, fallbackAI);
-    dailyAchievementService = new DailyAchievementService(primaryAI, promptLibrary, fallbackAI);
+    greetingService = new GreetingService(primaryAI, promptLibrary, fallbackAI, brainAI);
+    dailyService = new DailyMessageService(primaryAI, promptLibrary, fallbackAI, brainAI);
+    milestoneService = new MilestoneMessageService(primaryAI, promptLibrary, fallbackAI, brainAI);
+    monthlyService = new MonthlyAchievementService(primaryAI, promptLibrary, fallbackAI, brainAI);
+    reminderService = new ReminderMessageService(primaryAI, promptLibrary, fallbackAI, brainAI);
+    dailyAchievementService = new DailyAchievementService(primaryAI, promptLibrary, fallbackAI, brainAI);
     logger.info('Services initialized: Greeting, Daily, Milestone, Monthly, Reminder, DailyAchievement');
   } else {
-    logger.warn('No GROQ_API_KEY set — all services in cache-only fallback mode.');
-    greetingService = new GreetingService(null, promptLibrary);
-    dailyService = new DailyMessageService(null, promptLibrary);
-    milestoneService = new MilestoneMessageService(null, promptLibrary);
-    monthlyService = new MonthlyAchievementService(null, promptLibrary);
-    reminderService = new ReminderMessageService(null, promptLibrary);
-    dailyAchievementService = new DailyAchievementService(null, promptLibrary);
+    logger.warn('No GROQ_API_KEY set — services in local-brain / cache-only fallback mode.');
+    greetingService = new GreetingService(null, promptLibrary, null, brainAI);
+    dailyService = new DailyMessageService(null, promptLibrary, null, brainAI);
+    milestoneService = new MilestoneMessageService(null, promptLibrary, null, brainAI);
+    monthlyService = new MonthlyAchievementService(null, promptLibrary, null, brainAI);
+    reminderService = new ReminderMessageService(null, promptLibrary, null, brainAI);
+    dailyAchievementService = new DailyAchievementService(null, promptLibrary, null, brainAI);
   }
 
   logger.info(`MessageSupervisor initialized (60min retry, ${supervisor.pendingCount} pending)`);
