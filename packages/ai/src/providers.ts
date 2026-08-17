@@ -1,5 +1,6 @@
 import { createLogger } from '@ai-agent-platform/shared';
 import type { GenerateOptions, AIService } from './index.js';
+import { LocalProvider } from './local-provider.js';
 
 const logger = createLogger('Providers');
 
@@ -273,7 +274,7 @@ export class AnthropicProvider implements AIService {
 
 // ── Factory ──
 
-export type ProviderType = 'openai' | 'anthropic' | 'groq';
+export type ProviderType = 'openai' | 'anthropic' | 'groq' | 'local';
 
 /**
  * Create an AI provider instance.
@@ -286,12 +287,15 @@ export function createProvider(type: ProviderType, apiKey: string, model?: strin
   // crash at call sites (e.g. /ask, /agent when GROQ/OPENAI key is unset), surface
   // a clear error. In production this is a hard failure; callers decide whether to
   // fall back to a mock (dev only).
-  const trimmed = Array.isArray(apiKey) ? apiKey : String(apiKey).trim();
-  // eslint-disable-next-line
-  if (!trimmed || (Array.isArray(trimmed) && trimmed.filter(Boolean).length === 0)) {
-    throw new Error(
-      `No API key configured for provider "${type}". Set GROQ_API_KEY or OPENAI_API_KEY.`
-    );
+  // The 'local' provider needs no key (runs the bundled Qwen brain), so skip the check.
+  if (type !== 'local') {
+    const trimmed = Array.isArray(apiKey) ? apiKey : String(apiKey).trim();
+    // eslint-disable-next-line
+    if (!trimmed || (Array.isArray(trimmed) && trimmed.filter(Boolean).length === 0)) {
+      throw new Error(
+        `No API key configured for provider "${type}". Set GROQ_API_KEY or OPENAI_API_KEY.`
+      );
+    }
   }
 
   switch (type) {
@@ -305,6 +309,12 @@ export function createProvider(type: ProviderType, apiKey: string, model?: strin
         model || 'openai/gpt-oss-120b',
         'https://api.groq.com/openai'
       );
+    case 'local': {
+      // Local Qwen brain via node-llama-cpp. No API key needed — it runs
+      // on the host's own model file (auto-downloaded on first use).
+      // apiKey/model are unused: the brain's weight file is fixed.
+      return new LocalProvider();
+    }
     default:
       throw new Error(`Unsupported provider type: ${type}`);
   }
