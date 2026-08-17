@@ -18,9 +18,66 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@ai-agent-platform/shared": [
+        "./packages/shared/src/index.ts"
+      ],
+      "@ai-agent-platform/ai": [
+        "./packages/ai/src/index.ts"
+      ],
+      "@ai-agent-platform/core": [
+        "./packages/core/src/index.ts"
+      ],
+      "@ai-agent-platform/tools": [
+        "./packages/tools/src/index.ts"
+      ],
+      "@ai-agent-platform/integrations": [
+        "./packages/integrations/src/index.ts"
+      ],
+      "@ai-agent-platform/fan-tracker": [
+        "./packages/domains/fan-tracker/src/index.ts"
+      ],
+      "@ai-agent-platform/pr-monitor": [
+        "./packages/domains/pr-monitor/src/index.ts"
+      ],
+      "@ai-agent-platform/image-report": [
+        "./apps/image-report/src/index.tsx"
       ]
     },
-    "allowImportingTsExtensions": true,
-    "noEmit": true
-  }
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "incremental": true,
+    "noEmit": false
+  },
+  "files": [],
+  "references": [
+    {
+      "path": "./packages/shared"
+    },
+    {
+      "path": "./packages/ai"
+    },
+    {
+      "path": "./packages/integrations"
+    },
+    {
+      "path": "./packages/core"
+    },
+    {
+      "path": "./packages/tools"
+    },
+    {
+      "path": "./packages/domains/fan-tracker"
+    },
+    {
+      "path": "./packages/domains/pr-monitor"
+    },
+    {
+      "path": "./apps/api"
+    },
+    {
+      "path": "./apps/cli"
+    }
+  ]
 }

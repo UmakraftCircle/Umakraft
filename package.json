@@ -13,6 +13,13 @@
     "lint": "bash scripts/lint-templates.sh"
   },
   "devDependencies": {
+    "@ai-agent-platform/ai": "workspace:*",
+    "@ai-agent-platform/core": "workspace:*",
+    "@ai-agent-platform/fan-tracker": "workspace:*",
+    "@ai-agent-platform/integrations": "workspace:*",
+    "@ai-agent-platform/pr-monitor": "workspace:*",
+    "@ai-agent-platform/shared": "workspace:*",
+    "@ai-agent-platform/tools": "workspace:*",
     "turbo": "^2.0.4",
     "typescript": "^5.4.5",
     "@types/node": "^20.12.7",
