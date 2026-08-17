@@ -1,5 +1,6 @@
-import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
+import { ChatInputCommandInteraction, SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
 import { askCommand } from './ask.js';
+import { agentCommand } from './agent.js';
 
 export const syncCommand = new SlashCommandBuilder()
   .setName('sync')
@@ -67,17 +68,10 @@ export const linkCommand = new SlashCommandBuilder()
       .setName('add')
       .setDescription('Link a Discord user to an Umamusume trainer (admin only)')
       .addUserOption((opt) =>
-        opt
-          .setName('user')
-          .setDescription('Discord member to link')
-          .setRequired(true)
+        opt.setName('user').setDescription('Discord member to link').setRequired(true)
       )
       .addStringOption((opt) =>
-        opt
-          .setName('trainer')
-          .setDescription('Umamusume trainer name (autocomplete)')
-          .setRequired(true)
-          .setAutocomplete(true)
+        opt.setName('trainer').setDescription('Umamusume trainer name (autocomplete)').setRequired(true).setAutocomplete(true)
       )
   )
   .addSubcommand((sub) =>
@@ -85,18 +79,13 @@ export const linkCommand = new SlashCommandBuilder()
       .setName('remove')
       .setDescription('Unlink a Discord user from their trainer (admin only)')
       .addUserOption((opt) =>
-        opt
-          .setName('user')
-          .setDescription('Discord member to unlink')
-          .setRequired(true)
+        opt.setName('user').setDescription('Discord member to unlink').setRequired(true)
       )
   )
   .addSubcommand((sub) =>
-    sub
-      .setName('list')
-      .setDescription('Show all linked Discord \u2194 trainer pairs')
+    sub.setName('list').setDescription('Show all linked Discord \u2194 trainer pairs')
   )
   .setDMPermission(false)
   .toJSON();
 
-export const ALL_COMMANDS = [syncCommand, fanCommand, linkCommand, askCommand];
+export const ALL_COMMANDS = [syncCommand, fanCommand, linkCommand, askCommand, agentCommand];
