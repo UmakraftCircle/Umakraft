@@ -10,6 +10,7 @@ import { createLogger } from '@ai-agent-platform/shared';
 import { trainerLinkStore, type TrainerLink } from '@ai-agent-platform/integrations';
 import { renderGainReport, renderLeaderboardReport } from '@ai-agent-platform/image-report';
 import { handleAsk } from './ask.js';
+import { handleAgent } from './agent.js';
 
 const logger = createLogger('Discord-Handlers');
 
@@ -395,6 +396,8 @@ export async function routeCommand(interaction: ChatInputCommandInteraction) {
       else await interaction.reply({ content: 'Unknown subcommand.', ephemeral: true });
     } else if (commandName === 'ask') {
       await handleAsk(interaction);
+    } else if (commandName === 'agent') {
+      await handleAgent(interaction);
     }
   } catch (error: any) {
     logger.error(`Handler error for /${commandName} ${subcommand || ''}: ${error.message}`);
