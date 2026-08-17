@@ -9,6 +9,10 @@ import { fanTrackerAPI, TrainerStats } from '@ai-agent-platform/fan-tracker';
 import { createLogger } from '@ai-agent-platform/shared';
 import { trainerLinkStore, type TrainerLink } from '@ai-agent-platform/integrations';
 import { renderGainReport, renderLeaderboardReport } from '@ai-agent-platform/image-report';
+// Feature 1 — Context & Memory
+import { conversationMemoryStore } from '@ai-agent-platform/integrations';
+import { conversationContextBuilder } from '@ai-agent-platform/core';
+import type { AIService } from '@ai-agent-platform/ai';
 
 const logger = createLogger('Discord-Handlers');
 
@@ -52,18 +56,18 @@ function formatGain(n: number): string {
 }
 
 function rankEmoji(rank: number | null): string {
-  if (rank === null) return '⚪';
-  if (rank <= 100) return '👑';
-  if (rank <= 500) return '🟢';
-  if (rank <= 2000) return '🔵';
-  if (rank <= 5000) return '🟡';
-  return '⚪';
+  if (rank === null) return '⭐';
+  if (rank <= 100) return '🥇';
+  if (rank <= 500) return '🥈';
+  if (rank <= 2000) return '🥉';
+  if (rank <= 5000) return '🎖️';
+  return '⭐';
 }
 
 function getDailyMilestoneTitle(dailyGain: number): string {
-  if (dailyGain >= 20_000_000) return '⭐ Superstar';
+  if (dailyGain >= 20_000_000) return '🏆 Superstar';
   if (dailyGain >= 15_000_000) return '🌟 Star';
-  if (dailyGain >= 10_000_000) return '🏆 Famous';
+  if (dailyGain >= 10_000_000) return '🔥 Famous';
   if (dailyGain >= 7_500_000)  return '🌸 Well-known';
   if (dailyGain >= 5_000_000)  return '🚀 First leap';
   return '-';
@@ -72,19 +76,19 @@ function getDailyMilestoneTitle(dailyGain: number): string {
 function getMonthlyMilestoneTitle(monthlyFans: number, existingTier?: string): string {
   if (existingTier && existingTier !== '-') {
     const iconMap: Record<string, string> = {
-      'Legend': '👑 Legend',
-      'Super-Competitive': '⚡ Super-Competitive',
-      'Competitive': '🔥 Competitive',
-      'Casual': '🌱 Casual',
-      'Minimum': '📏 Minimum',
+      'Legend': '🥇 Legend',
+      'Super-Competitive': '🥈 Super-Competitive',
+      'Competitive': '🥉 Competitive',
+      'Casual': '🌸 Casual',
+      'Minimum': '🌻 Minimum',
     };
     if (iconMap[existingTier]) return iconMap[existingTier];
   }
-  if (monthlyFans >= 200_000_000) return '👑 Legend';
-  if (monthlyFans >= 150_000_000) return '⚡ Super-Competitive';
-  if (monthlyFans >= 100_000_000) return '🔥 Competitive';
-  if (monthlyFans >= 75_000_000)  return '🌱 Casual';
-  if (monthlyFans >= 60_000_000)  return '📏 Minimum';
+  if (monthlyFans >= 200_000_000) return '🥇 Legend';
+  if (monthlyFans >= 150_000_000) return '🥈 Super-Competitive';
+  if (monthlyFans >= 100_000_000) return '🥉 Competitive';
+  if (monthlyFans >= 75_000_000)  return '🌸 Casual';
+  if (monthlyFans >= 60_000_000)  return '🌻 Minimum';
   return '-';
 }
 
@@ -141,18 +145,18 @@ export async function handleFansGain(interaction: ChatInputCommandInteraction) {
     `🆔 **Trainer ID:** ${stats.trainerId}`,
     ``,
     `🎖️ **Milestones:**`,
-    `• **Daily Milestone:** ${dailyMilestone}`,
-    `• **Monthly Title:** ${monthlyMilestone}`,
+    `　**Daily Milestone:** ${dailyMilestone}`,
+    `　**Monthly Title:** ${monthlyMilestone}`,
     ``,
     `📈 **Fan Gain:**`,
-    `• **Daily:** ${daily}`,
-    `• **Weekly:** ${weekly}`,
-    `• **Monthly:** ${monthly}`,
-    `• **Total Fans:** ${total}`,
+    `　**Daily:** ${daily}`,
+    `　**Weekly:** ${weekly}`,
+    `　**Monthly:** ${monthly}`,
+    `　**Total Fans:** ${total}`,
   ].join('\n') + (stats.previousCircleName ? `\n\n🔄 Transferred from **${stats.previousCircleName}**` : '');
 
   const embed = new EmbedBuilder()
-    .setTitle(`📊 Fan Gain Statistics`)
+    .setTitle(`📈 Fan Gain Statistics`)
     .setColor(0x57F287)
     .setDescription(description)
     .setFooter({ text: `UmaKraft · ${new Date(stats.updatedAt).toLocaleDateString()}` });
@@ -229,21 +233,21 @@ export async function handleFansLeaderboard(interaction: ChatInputCommandInterac
     let mainStat: string;
     switch (period) {
       case 'daily':
-        mainStat = `• **Daily Gain:** ${dailyGainStr} | **Monthly:** ${monthlyGainStr}`;
+        mainStat = `　**Daily Gain:** ${dailyGainStr} | **Monthly:** ${monthlyGainStr}`;
         break;
       case 'weekly':
-        mainStat = `• **Weekly Gain:** ${weeklyGainStr} | **Daily:** ${dailyGainStr}`;
+        mainStat = `　**Weekly Gain:** ${weeklyGainStr} | **Daily:** ${dailyGainStr}`;
         break;
       case 'monthly':
       default:
-        mainStat = `• **Monthly Gain:** ${monthlyGainStr} | **Daily:** ${dailyGainStr}`;
+        mainStat = `　**Monthly Gain:** ${monthlyGainStr} | **Daily:** ${dailyGainStr}`;
         break;
     }
 
     return [
       `${medal} **${s.trainerName}** (\`${s.trainerId}\`)`,
-      `• **Daily Milestone:** ${dailyMilestone}`,
-      `• **Monthly Title:** ${monthlyMilestone}`,
+      `　**Daily Milestone:** ${dailyMilestone}`,
+      `　**Monthly Title:** ${monthlyMilestone}`,
       `${mainStat} | **Total:** ${totalFansStr}`,
     ].join('\n');
   });
@@ -350,12 +354,12 @@ export async function handleLinkList(interaction: ChatInputCommandInteraction) {
   const links = await trainerLinkStore.getAll();
 
   if (links.length === 0) {
-    await interaction.reply('📭 No Discord ↔ trainer links configured yet. Admins can use `/link add`.');
+    await interaction.reply('🧭 No Discord ↔ trainer links configured yet. Admins can use `/link add`.');
     return;
   }
 
   const lines = links.map(l =>
-    `• <@${l.discordUserId}> → **${l.trainerName}** (${l.trainerId}) — linked <t:${Math.floor(new Date(l.linkedAt).getTime() / 1000)}:R>`
+    `　<@${l.discordUserId}> → **${l.trainerName}** (${l.trainerId}) — linked <t:${Math.floor(new Date(l.linkedAt).getTime() / 1000)}:R>`
   );
 
   const embed = new EmbedBuilder()
@@ -364,6 +368,84 @@ export async function handleLinkList(interaction: ChatInputCommandInteraction) {
     .setColor(0x5865F2);
 
   await interaction.reply({ embeds: [embed] });
+}
+
+// ── /ask — AI chat (Feature 1: Context & Memory) ─────────────────────────
+
+// How long the /ask answer stays visible in-channel before self-deleting (ms).
+const ASK_REPLY_TTL_MS = 60_000;
+
+/**
+ * Handle the /ask command.
+ *
+ * Flow:
+ *  1. deferReply (thinking state) — visible to the channel, not ephemeral.
+ *  2. Build scoped context (short-term + long-term) via ConversationContextBuilder.
+ *  3. Call the AI service (provider-agnostic; injected).
+ *  4. Persist the user message + AI response via ConversationMemoryStore.
+ *  5. editReply with the answer, then delete it after 60s.
+ */
+export async function handleAsk(
+  interaction: ChatInputCommandInteraction,
+  aiService: AIService,
+) {
+  const prompt = interaction.options.getString('prompt', true);
+  await interaction.deferReply({ ephemeral: false });
+
+  const scope = {
+    userId: interaction.user.id,
+    guildId: interaction.guildId ?? '',
+    channelId: interaction.channelId ?? '',
+  };
+
+  try {
+    // Build context (scoped, budgeted, relevance-filtered).
+    const ctx = await conversationContextBuilder.build(scope, prompt);
+
+    // Call the model.
+    const answer = await aiService.generate({ system: ctx.system, prompt: ctx.prompt });
+
+    // Persist the turn (user + assistant) against the session.
+    const session = await conversationMemoryStore.getOrCreateSession(scope);
+    await conversationMemoryStore.appendMessage({
+      sessionId: session.sessionId,
+      userId: scope.userId,
+      guildId: scope.guildId,
+      channelId: scope.channelId,
+      messageId: interaction.id,
+      role: 'user',
+      content: prompt,
+    });
+    await conversationMemoryStore.appendMessage({
+      sessionId: session.sessionId,
+      userId: scope.userId,
+      guildId: scope.guildId,
+      channelId: scope.channelId,
+      role: 'assistant',
+      content: answer,
+    });
+
+    logger.info(
+      `/ask answered for ${interaction.user.tag} ` +
+      `(context: ${ctx.debug.recentCount} recent turns, ${ctx.debug.longTermCount} LTM, ` +
+      `~${ctx.debug.estimatedTokens} tok, truncated=${ctx.debug.truncated})`
+    );
+
+    await interaction.editReply(answer);
+
+    // Self-delete after 60s (visible to channel, then disappears).
+    setTimeout(async () => {
+      try {
+        await interaction.deleteReply();
+        logger.info(`/ask reply for ${interaction.user.tag} auto-deleted (60s TTL)`);
+      } catch (err: any) {
+        logger.warn(`Failed to auto-delete /ask reply: ${err.message}`);
+      }
+    }, ASK_REPLY_TTL_MS);
+  } catch (err: any) {
+    logger.error(`/ask failed for ${interaction.user.tag}: ${err.message}`);
+    await interaction.editReply('⚠️ Something went wrong while processing your question. Please try again.');
+  }
 }
 
 // ── Autocomplete: /link add trainer ───────────────────────
@@ -396,7 +478,7 @@ export async function handleTrainerAutocomplete(interaction: AutocompleteInterac
 
 // ── Router ────────────────────────────────────────────────
 
-export async function routeCommand(interaction: ChatInputCommandInteraction) {
+export async function routeCommand(interaction: ChatInputCommandInteraction, aiService?: AIService) {
   const { commandName } = interaction;
   const subcommand = interaction.options.getSubcommand(false);
 
@@ -407,6 +489,12 @@ export async function routeCommand(interaction: ChatInputCommandInteraction) {
       if (subcommand === 'gain') await handleFansGain(interaction);
       else if (subcommand === 'leaderboard') await handleFansLeaderboard(interaction);
       else await interaction.reply({ content: 'Unknown subcommand.', ephemeral: true });
+    } else if (commandName === 'ask') {
+      if (!aiService) {
+        await interaction.reply({ content: '⚠️ AI service is not configured.', ephemeral: true });
+        return;
+      }
+      await handleAsk(interaction, aiService);
     } else if (commandName === 'link') {
       if (subcommand === 'add') await handleLinkAdd(interaction);
       else if (subcommand === 'remove') await handleLinkRemove(interaction);
