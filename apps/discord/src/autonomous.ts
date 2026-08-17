@@ -13,32 +13,14 @@ import cron from 'node-cron';
 
 const logger = createLogger('Autonomous');
 
-// ── Event filter/router (Feature 5.1) ─────────────────────────────────────
-// Only relevant events are routed to the agent; everything else is ignored.
-// This is intentionally a narrow, deterministic allow-list — the AI does not
-// see raw Discord events.
-
 const RELEVANT_EVENT_TYPES = new Set(['messageCreate', 'interactionCreate', 'guildMemberAdd']);
 
 export function isRelevantEvent(eventType: string): boolean {
   return RELEVANT_EVENT_TYPES.has(eventType);
 }
 
-// ── Timezone / schedule helpers (Feature 5.2) ──────────────────────────────
-
 const DEFAULT_TZ = process.env['TZ'] || 'Asia/Manila';
 
-/** Compute next run ISO from a cron expression + timezone. */
-function nextCronRun(cronExpr: string, tz: string): string {
-  // node-cron's sendAt is not exported; compute a naive next run:
-  // for our supported schedule types we simply store cron and let the ticker
-  // evaluate due-ness. Here we compute an initial next_run_at conservatively.
-  const now = new Date();
-  now.setMinutes(now.getMinutes() + 1);
-  return now.toISOString();
-}
-
-/** Parse a human duration like "30m", "2h", "1d" into ms. */
 function parseDuration(input: string): number {
   const m = input.trim().toLowerCase().match(/^(\d+)\s*(m|h|d)?$/);
   if (!m) return NaN;
@@ -52,30 +34,25 @@ function parseDuration(input: string): number {
   }
 }
 
-/** Map a task type to a default cron expression. */
 function defaultCronFor(type: TaskType, interval?: string): string {
   switch (type) {
     case 'watch_uma':
     case 'watch_event': {
-      // hourly if unspecified
       const ms = interval ? parseDuration(interval) : 60 * 60 * 1000;
       const hours = Math.max(1, Math.round(ms / (60 * 60 * 1000)));
       return `0 */${hours} * * *`;
     }
     case 'digest':
-      return '0 9 * * *'; // daily 9am
+      return '0 9 * * *';
     case 'remind':
-      return ''; // one-time, uses nextRunAt directly
+      return '';
     default:
       return '0 * * * *';
   }
 }
 
-// ── Scheduler ticker (Feature 5.2/5.3) ─────────────────────────────────────
-
 let tickerStarted = false;
 
-/** Poll every minute for due scheduled tasks and enqueue them. */
 export function startScheduler(client: Client, runTask: (task: ScheduledTask) => Promise<void>): void {
   if (tickerStarted) return;
   tickerStarted = true;
@@ -83,15 +60,11 @@ export function startScheduler(client: Client, runTask: (task: ScheduledTask) =>
     try {
       const due = await scheduleStore.listDue();
       for (const task of due) {
-        // Recompute next run and claim (idempotent against concurrent tickers).
-        const nextCron = task.taskType === 'remind' ? task.nextRunAt : nextCronRun(task.schedule, task.timezone);
         const claimed = await scheduleStore.claim(task.id, new Date(Date.now() + 60 * 60 * 1000).toISOString());
         if (!claimed) continue;
-        // For one-time reminders, disable after firing.
         if (task.taskType === 'remind') {
           await scheduleStore.setEnabled(task.id, false);
         }
-        // Fire-and-forget with error guard (never crash the ticker).
         runTask(task).catch((err: any) => logger.error(`scheduled task ${task.id} failed: ${err?.message}`));
       }
     } catch (err: any) {
@@ -101,8 +74,6 @@ export function startScheduler(client: Client, runTask: (task: ScheduledTask) =>
   logger.info(`Autonomous scheduler started (${DEFAULT_TZ})`);
 }
 
-// ── Confirmation buttons (Feature 5.5) ─────────────────────────────────────
-
 export function confirmationRow(confirmationId: string): ActionRowBuilder<ButtonBuilder> {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId(`cfm:approve:${confirmationId}`).setLabel('Confirm').setStyle(ButtonStyle.Success),
@@ -110,62 +81,31 @@ export function confirmationRow(confirmationId: string): ActionRowBuilder<Button
   );
 }
 
-/**
- * Handle a confirmation button press. Ensures the action is single-use,
- * bound to the correct user, and unexpired.
- */
-export async function handleConfirmationButton(
-  interaction: ButtonInteraction,
-  onApproved: (confirmationId: string) => Promise<void>,
-): Promise<void> {
-  const customId = interaction.customId;
-  const match = customId.match(/^cfm:(approve|cancel):(.+)$/);
+export async function handleConfirmationButton(interaction: ButtonInteraction, onApproved: (confirmationId: string) => Promise<void>): Promise<void> {
+  const match = interaction.customId.match(/^cfm:(approve|cancel):(.+)$/);
   if (!match) return;
   const verb = match[1];
   const confirmationId = match[2];
   const userId = interaction.user.id;
 
   const conf = await confirmationStore.get(confirmationId);
-  if (!conf) {
-    await interaction.reply({ content: 'This confirmation no longer exists.', ephemeral: true });
-    return;
-  }
-  if (conf.userId !== userId) {
-    await interaction.reply({ content: 'Only the original requester can approve this.', ephemeral: true });
-    return;
-  }
-  if (conf.consumed !== 0) {
-    await interaction.reply({ content: 'This confirmation was already used.', ephemeral: true });
-    return;
-  }
-  if (new Date(conf.expiresAt).getTime() <= Date.now()) {
-    await interaction.reply({ content: 'This confirmation expired.', ephemeral: true });
-    return;
-  }
+  if (!conf) { await interaction.reply({ content: 'This confirmation no longer exists.', ephemeral: true }); return; }
+  if (conf.userId !== userId) { await interaction.reply({ content: 'Only the original requester can approve this.', ephemeral: true }); return; }
+  if (conf.consumed !== 0) { await interaction.reply({ content: 'This confirmation was already used.', ephemeral: true }); return; }
+  if (new Date(conf.expiresAt).getTime() <= Date.now()) { await interaction.reply({ content: 'This confirmation expired.', ephemeral: true }); return; }
 
   if (verb === 'cancel') {
-    // consume so it cannot be re-approved
     await confirmationStore.consume(confirmationId, userId);
     await interaction.reply({ content: 'Action cancelled.', ephemeral: true });
     return;
   }
 
-  // approve
   const cons = await confirmationStore.consume(confirmationId, userId);
-  if (!cons.ok) {
-    await interaction.reply({ content: `Could not approve: ${cons.reason}.`, ephemeral: true });
-    return;
-  }
+  if (!cons.ok) { await interaction.reply({ content: `Could not approve: ${cons.reason}.`, ephemeral: true }); return; }
   await interaction.reply({ content: '✅ Approved! Running action…', ephemeral: true });
   await onApproved(confirmationId);
 }
 
-// ── Autonomous research / notify policy (Feature 5.3/5.7) ─────────────────
-
-/**
- * Determine whether action is needed and, if so, notify the user — once.
- * Uses contentFingerprint + NotificationStore for idempotency.
- */
 export function makeAutonomousNotifier(controller: ActionController, send: (userId: string, channelId: string | null, message: string) => Promise<void>) {
   return async function notifyIfNeeded(userId: string, channelId: string | null, findings: { source?: string; title?: string; snippet?: string; content?: string }[], summary: (f: typeof findings) => string): Promise<boolean> {
     if (findings.length === 0) return false;
@@ -176,7 +116,6 @@ export function makeAutonomousNotifier(controller: ActionController, send: (user
       if (isNew) anyNew = true;
     }
     if (anyNew) {
-      // low-risk auto action (send_notification) through the controller
       const out = await controller.execute({
         slug: 'send_notification',
         userId,
@@ -188,8 +127,6 @@ export function makeAutonomousNotifier(controller: ActionController, send: (user
     return false;
   };
 }
-
-// ── Command builders (Feature 5.2) ─────────────────────────────────────────
 
 export const scheduleCommand = new SlashCommandBuilder()
   .setName('schedule')
@@ -224,15 +161,11 @@ export const unscheduleCommand = new SlashCommandBuilder()
   .setDMPermission(false)
   .toJSON();
 
-// ── Handlers ───────────────────────────────────────────────────────────────
-
-/** Validate a schedule command against rate limits before creating. */
 export async function handleScheduleCreate(interaction: ChatInputCommandInteraction): Promise<void> {
   const sub = interaction.options.getSubcommand(true);
   const userId = interaction.user.id;
   const guildId = interaction.guildId ?? null;
 
-  // Enforce per-user / guild / global scheduled-task caps (simple inline check).
   const [userCount, guildCount, total] = await Promise.all([
     scheduleStore.countByUser(userId),
     guildId ? scheduleStore.countByGuild(guildId) : Promise.resolve(0),
@@ -244,6 +177,7 @@ export async function handleScheduleCreate(interaction: ChatInputCommandInteract
 
   const tz = DEFAULT_TZ;
   let task: ScheduledTask;
+  const initialNext = new Date(Date.now() + 60 * 1000).toISOString();
 
   if (sub === 'watch') {
     const target = interaction.options.getString('target', true);
@@ -254,36 +188,22 @@ export async function handleScheduleCreate(interaction: ChatInputCommandInteract
       taskType: isEvent ? 'watch_event' : 'watch_uma',
       taskConfig: { target },
       schedule: defaultCronFor(isEvent ? 'watch_event' : 'watch_uma', interval),
-      timezone: tz,
-      enabled: 1,
-      nextRunAt: nextCronRun('', tz),
+      timezone: tz, enabled: 1, nextRunAt: initialNext,
     });
   } else if (sub === 'digest') {
     task = await scheduleStore.create({
       userId, guildId,
-      taskType: 'digest',
-      taskConfig: { topic: 'Uma Musume news' },
-      schedule: defaultCronFor('digest'),
-      timezone: tz,
-      enabled: 1,
-      nextRunAt: nextCronRun('', tz),
+      taskType: 'digest', taskConfig: { topic: 'Uma Musume news' },
+      schedule: defaultCronFor('digest'), timezone: tz, enabled: 1, nextRunAt: initialNext,
     });
   } else if (sub === 'remind') {
     const about = interaction.options.getString('about', true);
     const inStr = interaction.options.getString('in', true);
     const ms = parseDuration(inStr);
-    if (Number.isNaN(ms) || ms <= 0) {
-      await interaction.reply({ content: 'Invalid duration. Use e.g. 30m, 2h, 1d.', ephemeral: true });
-      return;
-    }
+    if (Number.isNaN(ms) || ms <= 0) { await interaction.reply({ content: 'Invalid duration. Use e.g. 30m, 2h, 1d.', ephemeral: true }); return; }
     task = await scheduleStore.create({
-      userId, guildId,
-      taskType: 'remind',
-      taskConfig: { about },
-      schedule: '',
-      timezone: tz,
-      enabled: 1,
-      nextRunAt: new Date(Date.now() + ms).toISOString(),
+      userId, guildId, taskType: 'remind', taskConfig: { about },
+      schedule: '', timezone: tz, enabled: 1, nextRunAt: new Date(Date.now() + ms).toISOString(),
     });
   } else {
     await interaction.reply({ content: 'Unknown subcommand.', ephemeral: true });
@@ -295,10 +215,7 @@ export async function handleScheduleCreate(interaction: ChatInputCommandInteract
 
 export async function handleMyTasks(interaction: ChatInputCommandInteraction): Promise<void> {
   const tasks = await scheduleStore.listByUser(interaction.user.id);
-  if (tasks.length === 0) {
-    await interaction.reply('You have no scheduled tasks.');
-    return;
-  }
+  if (tasks.length === 0) { await interaction.reply('You have no scheduled tasks.'); return; }
   const lines = tasks.map((t) => `\`${t.id}\` [${t.taskType}] ${t.enabled ? 'on' : 'off'} — next ${t.nextRunAt}`);
   await interaction.reply(lines.join('\n'));
 }
@@ -306,10 +223,26 @@ export async function handleMyTasks(interaction: ChatInputCommandInteraction): P
 export async function handleUnschedule(interaction: ChatInputCommandInteraction): Promise<void> {
   const id = interaction.options.getString('id', true);
   const task = await scheduleStore.get(id);
-  if (!task || task.userId !== interaction.user.id) {
-    await interaction.reply({ content: 'Task not found or you do not own it.', ephemeral: true });
-    return;
-  }
+  if (!task || task.userId !== interaction.user.id) { await interaction.reply({ content: 'Task not found or you do not own it.', ephemeral: true }); return; }
   await scheduleStore.remove(id);
   await interaction.reply('🗑️ Task cancelled.');
+}
+
+/**
+ * Wire autonomous behavior into a Discord Client: handle confirmation buttons
+ * and start the scheduler. `runTask` is supplied by the caller (index.ts) and
+ * executes a due scheduled task via AgentRunner.
+ */
+export function wireAutonomy(
+  client: Client,
+  runTask: (task: ScheduledTask) => Promise<void>,
+  onApproved: (confirmationId: string) => Promise<void>,
+): void {
+  client.on('interactionCreate', async (interaction) => {
+    if (interaction.isButton()) {
+      await handleConfirmationButton(interaction, onApproved).catch((err: any) => logger.error(`button handler error: ${err?.message}`));
+    }
+  });
+  startScheduler(client, runTask);
+  logger.info('Autonomous behavior wired (event filter + scheduler + confirmation buttons)');
 }
