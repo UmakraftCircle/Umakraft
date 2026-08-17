@@ -5,6 +5,7 @@ export * from './database.js';
 export * from './turso.js';
 export * from './trainer-links.js';
 export * from './conversation-memory.js';
+export * from './web-search.js';
 
 const logger = createLogger('Integrations');
 
