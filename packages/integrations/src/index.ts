@@ -7,6 +7,11 @@ export * from './trainer-links.js';
 export * from './conversation-memory.js';
 export * from './web-search.js';
 export * from './task-state.js';
+export * from './schedule-store.js';
+export * from './automation.js';
+export * from './confirmation-store.js';
+export * from './notification-store.js';
+export * from './action-controller.js';
 
 const logger = createLogger('Integrations');
 
