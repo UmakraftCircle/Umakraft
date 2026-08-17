@@ -8,7 +8,8 @@ import {
 import { fanTrackerAPI, TrainerStats } from '@ai-agent-platform/fan-tracker';
 import { createLogger } from '@ai-agent-platform/shared';
 import { trainerLinkStore, type TrainerLink } from '@ai-agent-platform/integrations';
-import { renderGainReport, renderLeaderboardReport } from '@ai-agent-platform/image-report';
+import { renderGainReport, renderLeaderboardReport, renderCompareReport } from '@ai-agent-platform/image-report';
+import { CreateCompareSummaryService } from '@ai-agent-platform/ai';
 import { handleAsk } from './ask.js';
 import { handleAgent } from './agent.js';
 import { handleScheduleCreate, handleMyTasks, handleUnschedule } from './autonomous.js';
@@ -17,6 +18,9 @@ const logger = createLogger('Discord-Handlers');
 
 const ALLOWED_PERIODS = new Set(['daily', 'weekly', 'monthly']);
 const ALLOWED_LEADERBOARD_TOPS = new Set([10, 15, 20, 30, 60]);
+
+// Server owner restriction: this trainer's stats are classified.
+const SERVER_OWNER_TRAINER_ID = '612856830731';
 
 function sanitizePeriod(input: string): 'daily' | 'weekly' | 'monthly' {
   return ALLOWED_PERIODS.has(input) ? (input as 'daily' | 'weekly' | 'monthly') : 'monthly';
@@ -53,45 +57,45 @@ function formatGain(n: number): string {
 }
 
 function rankEmoji(rank: number | null): string {
-  if (rank === null) return '\u2b50';
-  if (rank <= 100) return '\ud83d\udc51';
-  if (rank <= 500) return '\ud83e\udd47';
-  if (rank <= 2000) return '\ud83e\udd48';
-  if (rank <= 5000) return '\ud83e\udd49';
-  return '\u2b50';
+  if (rank === null) return '⬐';
+  if (rank <= 100) return '🏅';
+  if (rank <= 500) return '🥈';
+  if (rank <= 2000) return '🥉';
+  if (rank <= 5000) return '🎖';
+  return '⬐';
 }
 
 function getDailyMilestoneTitle(dailyGain: number): string {
-  if (dailyGain >= 20_000_000) return '\ud83c\udf1f Superstar';
-  if (dailyGain >= 15_000_000) return '\ud83c\udf0c Star';
-  if (dailyGain >= 10_000_000) return '\ud83c\udf96\ufe0f Famous';
-  if (dailyGain >= 7_500_000)  return '\ud83c\udff8 Well-known';
-  if (dailyGain >= 5_000_000)  return '\ud83d\ude80 First leap';
+  if (dailyGain >= 20_000_000) return '🏟 Superstar';
+  if (dailyGain >= 15_000_000) return '🏌 Star';
+  if (dailyGain >= 10_000_000) return '🏆️ Famous';
+  if (dailyGain >= 7_500_000)  return '🏸 Well-known';
+  if (dailyGain >= 5_000_000)  return '🚀 First leap';
   return '-';
 }
 
 function getMonthlyMilestoneTitle(monthlyFans: number, existingTier?: string): string {
   if (existingTier && existingTier !== '-') {
     const iconMap: Record<string, string> = {
-      'Legend': '\ud83d\udc51 Legend',
-      'Super-Competitive': '\u2b50 Super-Competitive',
-      'Competitive': '\ud83e\udd49 Competitive',
-      'Casual': '\ud83c\udfb1 Casual',
-      'Minimum': '\ud83c\udfce\ufe0f Minimum',
+      'Legend': '🏅 Legend',
+      'Super-Competitive': '⬐ Super-Competitive',
+      'Competitive': '🎖 Competitive',
+      'Casual': '🏁 Casual',
+      'Minimum': '🏆️ Minimum',
     };
     if (iconMap[existingTier]) return iconMap[existingTier];
   }
-  if (monthlyFans >= 200_000_000) return '\ud83d\udc51 Legend';
-  if (monthlyFans >= 150_000_000) return '\u2b50 Super-Competitive';
-  if (monthlyFans >= 100_000_000) return '\ud83e\udd49 Competitive';
-  if (monthlyFans >= 75_000_000)  return '\ud83c\udfb1 Casual';
-  if (monthlyFans >= 60_000_000)  return '\ud83c\udfce\ufe0f Minimum';
+  if (monthlyFans >= 200_000_000) return '🏅 Legend';
+  if (monthlyFans >= 150_000_000) return '⬐ Super-Competitive';
+  if (monthlyFans >= 100_000_000) return '🎖 Competitive';
+  if (monthlyFans >= 75_000_000)  return '🏁 Casual';
+  if (monthlyFans >= 60_000_000)  return '🏆️ Minimum';
   return '-';
 }
 
 export async function handleSync(interaction: ChatInputCommandInteraction) {
   if (!isAdmin(interaction)) {
-    await interaction.reply({ content: '\ud83d\udeab This command is admin-only.', ephemeral: true });
+    await interaction.reply({ content: '🔒 This command is admin-only.', ephemeral: true });
     return;
   }
 
@@ -105,10 +109,10 @@ export async function handleSync(interaction: ChatInputCommandInteraction) {
   logger.info(`Sync: cleared cache, fetched ${members.length} active members from Umakraft.`);
 
   await interaction.editReply(
-    `\u2705 **Sync complete!**\n` +
+    `✅ **Sync complete!**\n` +
     `Fetched **${members.length} active members** from Umakraft.\n` +
     `Linked Discord users: **${linkCount}**\n` +
-    `Top fan: **${members[0]?.trainerName || 'N/A'}** \u2014 ${members[0] ? formatFans(members[0].totalFans) : 'N/A'} fans`
+    `Top fan: **${members[0]?.trainerName || 'N/A'}** — ${members[0] ? formatFans(members[0].totalFans) : 'N/A'} fans`
   );
 }
 
@@ -119,15 +123,13 @@ export async function handleFansGain(interaction: ChatInputCommandInteraction) {
   const link = await trainerLinkStore.getByDiscordUser(interaction.user.id);
   if (!link) {
     await interaction.editReply(
-      '\u2695\ufe0f You are not linked to a trainer yet. Ask an admin to use `/link add` to connect you.'
+      '⚠️ You are not linked to a trainer yet. Ask an admin to use `/link add` to connect you.'
     );
     return;
   }
 
   const stats = await fanTrackerAPI.fetchTrainerStats(link.trainerId);
 
-  // The image report IS the reply — render it as a full embed image (truth),
-  // not an attached file. No text-embed fallback.
   const fileName = 'fan-gain.png';
   const attachment = new AttachmentBuilder(await renderGainReport({
     trainerName: stats.trainerName,
@@ -141,7 +143,7 @@ export async function handleFansGain(interaction: ChatInputCommandInteraction) {
   }), { name: fileName });
 
   const embed = new EmbedBuilder()
-    .setTitle('\ud83d\udcc8 Fan Gain Report')
+    .setTitle('🏈 Fan Gain Report')
     .setColor(0x57F287)
     .setImage(`attachment://${fileName}`);
 
@@ -157,7 +159,7 @@ export async function handleFansLeaderboard(interaction: ChatInputCommandInterac
 
   if (members.length === 0) {
     await interaction.editReply(
-      '\u2695\ufe0f No active trainers found in the leaderboard right now.\n' +
+      '⚠️ No active trainers found in the leaderboard right now.\n' +
       'The uma.moe API may have returned empty data. Try `/sync` to refresh, or wait a few minutes.'
     );
     return;
@@ -176,12 +178,10 @@ export async function handleFansLeaderboard(interaction: ChatInputCommandInterac
   const topN = members.slice(0, Math.min(top, members.length));
 
   if (topN.length === 0) {
-    await interaction.editReply('\u2695\ufe0f Not enough data to build a leaderboard yet.');
+    await interaction.editReply('⚠️ Not enough data to build a leaderboard yet.');
     return;
   }
 
-  // The image report IS the reply — render it as a full embed image (truth),
-  // not an attached file.
   const fileName = 'fan-leaderboard.png';
   const attachment = new AttachmentBuilder(await renderLeaderboardReport({
     entries: topN.map((s, i) => ({
@@ -198,7 +198,7 @@ export async function handleFansLeaderboard(interaction: ChatInputCommandInterac
   }), { name: fileName });
 
   const embed = new EmbedBuilder()
-    .setTitle(`\ud83c\udfae Fan Leaderboard \u2014 Top ${topN.length} (${period.toUpperCase()})`)
+    .setTitle(`🎺 Fan Leaderboard — Top ${topN.length} (${period.toUpperCase()})`)
     .setColor(0xF1C40F)
     .setImage(`attachment://${fileName}`);
 
@@ -207,7 +207,7 @@ export async function handleFansLeaderboard(interaction: ChatInputCommandInterac
 
 export async function handleLinkAdd(interaction: ChatInputCommandInteraction) {
   if (!isAdmin(interaction)) {
-    await interaction.reply({ content: '\ud83d\udeab This command is admin-only.', ephemeral: true });
+    await interaction.reply({ content: '🔒 This command is admin-only.', ephemeral: true });
     return;
   }
 
@@ -219,7 +219,7 @@ export async function handleLinkAdd(interaction: ChatInputCommandInteraction) {
   const trainerName = match ? match[1] : trainerInput;
 
   if (!/^\d+$/.test(trainerId)) {
-    await interaction.reply({ content: `\u2695\ufe0f Invalid trainer. Use autocomplete to select a valid trainer. Got: \`${trainerInput}\``, ephemeral: true });
+    await interaction.reply({ content: `⚠️ Invalid trainer. Use autocomplete to select a valid trainer. Got: \`${trainerInput}\``, ephemeral: true });
     return;
   }
 
@@ -232,17 +232,17 @@ export async function handleLinkAdd(interaction: ChatInputCommandInteraction) {
   });
 
   const verb = existing ? 'Updated' : 'Linked';
-  logger.info(`${verb} Discord user ${user.tag} \u2194 trainer ${trainerName} (${trainerId})`);
+  logger.info(`${verb} Discord user ${user.tag} ↔ trainer ${trainerName} (${trainerId})`);
 
   await interaction.reply(
-    `\u2705 **${verb}!**\n` +
+    `✅ **${verb}!**\n` +
     `<@${user.id}> is now linked to **${trainerName}** (${trainerId}).`
   );
 }
 
 export async function handleLinkRemove(interaction: ChatInputCommandInteraction) {
   if (!isAdmin(interaction)) {
-    await interaction.reply({ content: '\ud83d\udeab This command is admin-only.', ephemeral: true });
+    await interaction.reply({ content: '🔒 This command is admin-only.', ephemeral: true });
     return;
   }
 
@@ -250,13 +250,13 @@ export async function handleLinkRemove(interaction: ChatInputCommandInteraction)
 
   const removed = await trainerLinkStore.remove(user.id);
   if (!removed) {
-    await interaction.reply({ content: `\u2695\ufe0f <@${user.id}> is not linked to any trainer.`, ephemeral: true });
+    await interaction.reply({ content: `⚠️ <@${user.id}> is not linked to any trainer.`, ephemeral: true });
     return;
   }
 
   logger.info(`Unlinked Discord user ${user.tag} from trainer ${removed.trainerName}`);
   await interaction.reply(
-    `\ud83d\uddd1\ufe0f **Unlinked!**\n` +
+    `🗑️ **Unlinked!**\n` +
     `<@${user.id}> is no longer linked to **${removed.trainerName}**.`
   );
 }
@@ -265,20 +265,140 @@ export async function handleLinkList(interaction: ChatInputCommandInteraction) {
   const links = await trainerLinkStore.getAll();
 
   if (links.length === 0) {
-    await interaction.reply('\ud83d\udcdd No Discord \u2194 trainer links configured yet. Admins can use `/link add`.');
+    await interaction.reply('📋 No Discord ↔ trainer links configured yet. Admins can use `/link add`.');
     return;
   }
 
   const lines = links.map((l) =>
-    `\u2022 <@${l.discordUserId}> \u2192 **${l.trainerName}** (${l.trainerId}) \u2014 linked <t:${Math.floor(new Date(l.linkedAt).getTime() / 1000)}:R>`
+    `• <@${l.discordUserId}> ↔ **${l.trainerName}** (${l.trainerId}) — linked <t:${Math.floor(new Date(l.linkedAt).getTime() / 1000)}:R>`
   );
 
   const embed = new EmbedBuilder()
-    .setTitle(`\ud83d\udcd7 Trainer Links (${links.length})`)
+    .setTitle(`📋 Trainer Links (${links.length})`)
     .setDescription(lines.join('\n'))
     .setColor(0x5865F2);
 
   await interaction.reply({ embeds: [embed] });
+}
+
+async function resolveTrainerByInput(input: string): Promise<TrainerStats | null> {
+  const members = await fanTrackerAPI.fetchAllMembers();
+  const clean = input.trim();
+  const byId = members.find((m) => m.trainerId === clean);
+  if (byId) return byId;
+  const m = clean.match(/^(.+?)\s*\((\d+)\)$/);
+  if (m) {
+    const byParenId = members.find((x) => x.trainerId === m[2]);
+    if (byParenId) return byParenId;
+  }
+  const byName = members.find((x) => x.trainerName.toLowerCase() === clean.toLowerCase());
+  return byName ?? null;
+}
+
+function gainForPeriod(stats: TrainerStats, period: 'daily' | 'weekly' | 'monthly'): number {
+  switch (period) {
+    case 'daily': return stats.dailyGain;
+    case 'weekly': return stats.weeklyGain;
+    case 'monthly': return stats.monthlyFans;
+    default: return stats.monthlyFans;
+  }
+}
+
+export async function handleCompare(interaction: ChatInputCommandInteraction) {
+  const periodRaw = interaction.options.getString('period');
+  if (!periodRaw || !ALLOWED_PERIODS.has(periodRaw)) {
+    await interaction.reply({ content: '⚠️ Invalid period. Must be `daily`, `weekly`, or `monthly`.', ephemeral: true });
+    return;
+  }
+  const period = periodRaw as 'daily' | 'weekly' | 'monthly';
+
+  await interaction.deferReply();
+
+  const t1Input = interaction.options.getString('trainer1');
+  const t2Input = interaction.options.getString('trainer2');
+
+  let trainer1: TrainerStats | null = null;
+  let trainer2: TrainerStats | null = null;
+
+  const ownLink = await trainerLinkStore.getByDiscordUser(interaction.user.id);
+
+  if (t1Input) {
+    trainer1 = await resolveTrainerByInput(t1Input);
+  } else if (ownLink) {
+    trainer1 = await fanTrackerAPI.fetchTrainerStats(ownLink.trainerId);
+  }
+
+  if (t2Input) {
+    trainer2 = await resolveTrainerByInput(t2Input);
+  } else if (ownLink) {
+    trainer2 = await fanTrackerAPI.fetchTrainerStats(ownLink.trainerId);
+  }
+
+  if (!trainer1 || !trainer2) {
+    await interaction.editReply('⚠️ Could not resolve one or both trainers. Use autocomplete to select valid trainers.');
+    return;
+  }
+
+  // Server owner restriction — check BEFORE any stat retrieval/render.
+  if (trainer1.trainerId === SERVER_OWNER_TRAINER_ID || trainer2.trainerId === SERVER_OWNER_TRAINER_ID) {
+    await interaction.editReply('classified information');
+    return;
+  }
+
+  const g1 = gainForPeriod(trainer1, period);
+  const g2 = gainForPeriod(trainer2, period);
+
+  const summaryService = CreateCompareSummaryService();
+  const { summary } = await summaryService.generate({
+    trainer1Id: trainer1.trainerId,
+    trainer1Name: trainer1.trainerName,
+    trainer1Gain: g1,
+    trainer2Id: trainer2.trainerId,
+    trainer2Name: trainer2.trainerName,
+    trainer2Gain: g2,
+    period,
+  });
+
+  const fileName = 'fan-compare.png';
+  const attachment = new AttachmentBuilder(await renderCompareReport({
+    period,
+    periodLabel: PERIOD_LABELS[period] || 'this month',
+    trainer1: {
+      trainerId: trainer1.trainerId,
+      trainerName: trainer1.trainerName,
+      gain: g1,
+      totalFans: trainer1.totalFans,
+      clubRankTier: trainer1.clubRankTier,
+    },
+    trainer2: {
+      trainerId: trainer2.trainerId,
+      trainerName: trainer2.trainerName,
+      gain: g2,
+      totalFans: trainer2.totalFans,
+      clubRankTier: trainer2.clubRankTier,
+    },
+    summary,
+    updatedAt: new Date().toISOString(),
+  }), { name: fileName });
+
+  const embed = new EmbedBuilder()
+    .setTitle(`⚔️ Fan Comparison (${period.toUpperCase()})`)
+    .setColor(0x4CAF72)
+    .setImage(`attachment://${fileName}`);
+
+  await interaction.editReply({ embeds: [embed], files: [attachment] });
+}
+
+async function resolveAutocompleteChoices(query: string) {
+  const members = await fanTrackerAPI.fetchAllMembers();
+  const q = query.toLowerCase().trim();
+  return members
+    .filter((m) => m.trainerName.toLowerCase().includes(q) || m.trainerId.includes(q))
+    .slice(0, 25)
+    .map((m) => ({
+      name: `${m.trainerName} (${m.trainerId}) · ${formatFans(m.totalFans)} fans`,
+      value: `${m.trainerName} (${m.trainerId})`,
+    }));
 }
 
 export async function handleTrainerAutocomplete(interaction: AutocompleteInteraction) {
@@ -288,19 +408,21 @@ export async function handleTrainerAutocomplete(interaction: AutocompleteInterac
   const query = focused.value.toLowerCase().trim();
 
   try {
-    const members = await fanTrackerAPI.fetchAllMembers();
+    const filtered = await resolveAutocompleteChoices(query);
+    await interaction.respond(filtered);
+  } catch {
+    await interaction.respond([]);
+  }
+}
 
-    const filtered = members
-      .filter((m) =>
-        m.trainerName.toLowerCase().includes(query) ||
-        m.trainerId.includes(query)
-      )
-      .slice(0, 25)
-      .map((m) => ({
-        name: `${m.trainerName} (${m.trainerId}) \u00b7 ${formatFans(m.totalFans)} fans`,
-        value: `${m.trainerName} (${m.trainerId})`,
-      }));
+export async function handleCompareAutocomplete(interaction: AutocompleteInteraction) {
+  const focused = interaction.options.getFocused(true);
+  if (focused.name !== 'trainer1' && focused.name !== 'trainer2') return;
 
+  const query = focused.value.toLowerCase().trim();
+
+  try {
+    const filtered = await resolveAutocompleteChoices(query);
     await interaction.respond(filtered);
   } catch {
     await interaction.respond([]);
@@ -323,6 +445,8 @@ export async function routeCommand(interaction: ChatInputCommandInteraction) {
       else if (subcommand === 'remove') await handleLinkRemove(interaction);
       else if (subcommand === 'list') await handleLinkList(interaction);
       else await interaction.reply({ content: 'Unknown subcommand.', ephemeral: true });
+    } else if (commandName === 'compare') {
+      await handleCompare(interaction);
     } else if (commandName === 'ask') {
       await handleAsk(interaction);
     } else if (commandName === 'agent') {
@@ -336,9 +460,9 @@ export async function routeCommand(interaction: ChatInputCommandInteraction) {
     }
   } catch (error: any) {
     logger.error(`Handler error for /${commandName} ${subcommand || ''}: ${error.message}`);
-    const fallback = { content: '\u2694\ufe0f An error occurred while processing your command.', ephemeral: true };
+    const fallback = { content: '⚠️ An error occurred while processing your command.', ephemeral: true };
     if (interaction.deferred || interaction.replied) {
-      await interaction.editReply('\u2694\ufe0f An error occurred while processing your command.');
+      await interaction.editReply('⚠️ An error occurred while processing your command.');
     } else {
       await interaction.reply(fallback);
     }
