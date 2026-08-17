@@ -7,7 +7,6 @@ import { detectNewMilestone, detectMonthlyAchievement } from '@ai-agent-platform
 import cron from 'node-cron';
 import * as readline from 'readline';
 
-// Import all platform tools
 import { allTools } from '@ai-agent-platform/tools';
 import { allIntegrations } from '@ai-agent-platform/integrations';
 import { allDomainTools as fanTrackerTools, fanTrackerAPI } from '@ai-agent-platform/fan-tracker';
@@ -15,93 +14,46 @@ import { trainerLinkStore } from '@ai-agent-platform/integrations';
 import { MessageSupervisor } from './supervisor.js';
 import { allDomainTools as prMonitorTools } from '@ai-agent-platform/pr-monitor';
 
-// Discord slash commands
 import { ALL_COMMANDS } from './commands.js';
 import { routeCommand, handleTrainerAutocomplete } from './handlers.js';
+import { wireAutonomy, handleConfirmationButton } from './autonomous.js';
+import { ToolRegistry, AgentRunner } from '@ai-agent-platform/core';
+import { taskStateStore } from '@ai-agent-platform/integrations';
 
 const logger = createLogger('Discord-Bot');
 
-// ── Bootstrap tool registry ──
-
-for (const tool of [...allTools]) {
-  toolRegistry.register(tool);
-}
-for (const integration of allIntegrations) {
-  toolRegistry.register(integration);
-}
-for (const domainTool of [...fanTrackerTools, ...prMonitorTools]) {
-  toolRegistry.register(domainTool);
-}
+for (const tool of [...allTools]) toolRegistry.register(tool);
+for (const integration of allIntegrations) toolRegistry.register(integration);
+for (const domainTool of [...fanTrackerTools, ...prMonitorTools]) toolRegistry.register(domainTool);
 
 logger.info(`Registered ${toolRegistry.getDeclarativeSchemas().length} tools in Discord bot.`);
-
-// ── Real Gateway Mode ──
 
 async function startGatewayBot() {
   const token = process.env['DISCORD_BOT_TOKEN']!;
   const clientId = process.env['DISCORD_CLIENT_ID']!;
 
-  // Validate token format — Discord tokens are ~70 chars, base64-like
-  if (!token || token.length < 50) {
-    logger.error('DISCORD_BOT_TOKEN appears invalid (too short or missing). Aborting Gateway mode.');
-    return;
-  }
-  if (!clientId || clientId.length < 15) {
-    logger.error('DISCORD_CLIENT_ID appears invalid. Aborting Gateway mode.');
-    return;
-  }
+  if (!token || token.length < 50) { logger.error('DISCORD_BOT_TOKEN appears invalid. Aborting Gateway mode.'); return; }
+  if (!clientId || clientId.length < 15) { logger.error('DISCORD_CLIENT_ID appears invalid. Aborting Gateway mode.'); return; }
 
-  const client = new Client({
-    intents: [
-      GatewayIntentBits.Guilds,
-      GatewayIntentBits.GuildMembers,
-      GatewayIntentBits.GuildMessages,
-    ],
-  });
+  const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildMessages] });
 
-  // ── Register slash commands on ready ──
   client.on(Events.ClientReady, async () => {
     logger.info(`Logged in as ${client.user?.tag}!`);
-
     const rest = new REST({ version: '10' }).setToken(token);
-
     try {
       logger.info(`Registering ${ALL_COMMANDS.length} slash commands...`);
-
-      // Register globally (can also register per-guild during dev)
       const guildId = process.env['DISCORD_GUILD_ID'];
-      if (guildId) {
-        // Guild-specific: instant updates (good for development)
-        await rest.put(Routes.applicationGuildCommands(clientId, guildId), {
-          body: ALL_COMMANDS,
-        });
-        logger.info(`Registered ${ALL_COMMANDS.length} slash commands to guild ${guildId}.`);
-      } else {
-        // Global: takes up to 1 hour to propagate (production)
-        await rest.put(Routes.applicationCommands(clientId), {
-          body: ALL_COMMANDS,
-        });
-        logger.info(`Registered ${ALL_COMMANDS.length} slash commands globally.`);
-      }
-    } catch (err: any) {
-      logger.error(`Failed to register slash commands: ${err.message}`);
-    }
+      if (guildId) { await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: ALL_COMMANDS }); logger.info(`Registered ${ALL_COMMANDS.length} commands to guild ${guildId}.`); }
+      else { await rest.put(Routes.applicationCommands(clientId), { body: ALL_COMMANDS }); logger.info(`Registered ${ALL_COMMANDS.length} commands globally.`); }
+    } catch (err: any) { logger.error(`Failed to register slash commands: ${err.message}`); }
   });
 
-  // ── Handle interactions ──
   client.on(Events.InteractionCreate, async (interaction: Interaction) => {
-    if (interaction.isAutocomplete()) {
-      await handleTrainerAutocomplete(interaction);
-      return;
-    }
-
-    if (interaction.isChatInputCommand()) {
-      await routeCommand(interaction);
-      return;
-    }
+    if (interaction.isAutocomplete()) { await handleTrainerAutocomplete(interaction); return; }
+    if (interaction.isChatInputCommand()) { await routeCommand(interaction); return; }
+    if (interaction.isButton()) { await handleConfirmationButton(interaction, onApproved).catch((err: any) => logger.error(`button error: ${err?.message}`)); return; }
   });
 
-  // ── New Member Greeting ──
   const groqKey = process.env['GROQ_API_KEY'];
   let greetingService: GreetingService;
   let dailyService: DailyMessageService;
@@ -136,554 +88,91 @@ async function startGatewayBot() {
   client.on(Events.GuildMemberAdd, async (member) => {
     try {
       const guild = member.guild;
-
-      // Find a suitable welcome channel
       const welcomeChannel: TextChannel | undefined =
-        (guild.channels.cache.find(
-          (c): c is TextChannel =>
-            c.isTextBased() && !c.isDMBased() && c.name === 'bot-announcement',
-        ) as TextChannel | undefined) ??
-        guild.systemChannel ??
-        (guild.channels.cache.find(
-          (c): c is TextChannel =>
-            c.isTextBased() && !c.isDMBased() && c.name !== 'rules',
-        ) as TextChannel | undefined);
-
-      if (!welcomeChannel) {
-        logger.warn(`No suitable welcome channel found in guild "${guild.name}".`);
-        return;
-      }
-
-      const greeting = await greetingService.generateGreeting(
-        member.user.displayName,
-        guild.name,
-        guild.memberCount,
-      );
-
+        (guild.channels.cache.find((c): c is TextChannel => c.isTextBased() && !c.isDMBased() && c.name === 'bot-announcement') as TextChannel | undefined) ?? guild.systemChannel ?? (guild.channels.cache.find((c): c is TextChannel => c.isTextBased() && !c.isDMBased() && c.name !== 'rules') as TextChannel | undefined);
+      if (!welcomeChannel) { logger.warn(`No suitable welcome channel in guild "${guild.name}".`); return; }
+      const greeting = await greetingService.generateGreeting(member.user.displayName, guild.name, guild.memberCount);
       await supervisor.trySend(welcomeChannel, greeting, `greeting:${member.user.tag}`);
       logger.info(`✅ Welcomed ${member.user.tag} in #${welcomeChannel.name} (${guild.name})`);
-    } catch (err: any) {
-      logger.error(`Failed to send welcome for ${member.user?.tag}: ${err.message}`);
-    }
+    } catch (err: any) { logger.error(`Failed to send welcome for ${member.user?.tag}: ${err.message}`); }
   });
 
   logger.info(`Registered guildMemberAdd → greeting handler (cached: ${greetingService.getCachedCount()})`);
-
-  // ── Daily Message Cron Jobs (morning / noon / evening / midnight) ──
 
   const sendDailyMessage = async (timeSlot: TimeSlot, emoji: string) => {
     try {
       const guild = client.guilds.cache.first();
       if (!guild) { logger.warn(`Daily [${timeSlot}]: no guild available.`); return; }
-
-      const channel: TextChannel | undefined =
-        (guild.channels.cache.find(
-          (c): c is TextChannel => c.isTextBased() && !c.isDMBased() && c.name === 'bot-announcement',
-        ) as TextChannel | undefined) ??
-        guild.systemChannel ??
-        (guild.channels.cache.find(
-          (c): c is TextChannel => c.isTextBased() && !c.isDMBased(),
-        ) as TextChannel | undefined);
-
+      const channel: TextChannel | undefined = (guild.channels.cache.find((c): c is TextChannel => c.isTextBased() && !c.isDMBased() && c.name === 'bot-announcement') as TextChannel | undefined) ?? guild.systemChannel ?? (guild.channels.cache.find((c): c is TextChannel => c.isTextBased() && !c.isDMBased()) as TextChannel | undefined);
       if (!channel) { logger.warn(`Daily [${timeSlot}]: no suitable channel.`); return; }
-
       const msg = await dailyService.generateDailyMessage(timeSlot, guild.name, guild.memberCount);
       await supervisor.trySend(channel, msg, `daily:${timeSlot}`);
-
       const pools = dailyService.getAllPoolSizes();
-      logger.info(
-        `${emoji} Daily [${timeSlot}] sent to #${channel.name} ` +
-        `(pools: ☀${pools.morning} 🌤${pools.noon} 🌅${pools.evening} 🌙${pools.midnight})`,
-      );
-    } catch (err: any) {
-      logger.error(`Daily [${timeSlot}] failed: ${err.message}`);
-    }
+      logger.info(`${emoji} Daily [${timeSlot}] sent to #${channel.name} (pools: ☀${pools.morning} 🌤${pools.noon} 🌅${pools.evening} 🌙${pools.midnight})`);
+    } catch (err: any) { logger.error(`Daily [${timeSlot}] failed: ${err.message}`); }
   };
 
   const tz = process.env['TZ'] || 'Asia/Manila';
+  cron.schedule('0 8 * * *', () => sendDailyMessage('morning', '☀️'), { timezone: tz });
+  cron.schedule('0 12 * * *', () => sendDailyMessage('noon', '🌤️'), { timezone: tz });
+  cron.schedule('0 18 * * *', () => sendDailyMessage('evening', '🌅'), { timezone: tz });
+  cron.schedule('0 0 * * *', () => sendDailyMessage('midnight', '🌙'), { timezone: tz });
+  logger.info(`Daily cron jobs scheduled (${tz})`);
 
-  cron.schedule('0 8 * * *',   () => sendDailyMessage('morning',  '☀️'),  { timezone: tz });
-  cron.schedule('0 12 * * *',  () => sendDailyMessage('noon',     '🌤️'), { timezone: tz });
-  cron.schedule('0 18 * * *',  () => sendDailyMessage('evening',  '🌅'),  { timezone: tz });
-  cron.schedule('0 0 * * *',   () => sendDailyMessage('midnight', '🌙'),  { timezone: tz });
-
-  logger.info(`Daily cron jobs scheduled (${tz}): ☀️ 8AM  🌤️ 12PM  🌅 6PM  🌙 12AM`);
-
-  // ── Milestone Tracker (fan-count milestone detection) ──
-  // Persisted to file so milestones aren't lost across restarts (audit #11)
-  const MILESTONE_STATE_FILE = process.env['MILESTONE_STATE_FILE'] || '.cache/milestone-state.json';
-
-  const previousFanCounts = new Map<string, number>(); // trainerId → last known fan count
-  const previousMonthlyGains = new Map<string, number>(); // trainerId → last month's gain
-
-  async function loadMilestoneState(): Promise<void> {
+  // ── Feature 5: autonomous operation ──
+  const onApproved = async (_confirmationId: string) => { logger.info('High-risk action approved.'); };
+  const runScheduledTask = async (task: any) => {
     try {
-      const fs = await import('node:fs/promises');
-      const raw = await fs.readFile(MILESTONE_STATE_FILE, 'utf-8');
-      const state = JSON.parse(raw);
-      if (state.fanCounts) {
-        for (const [k, v] of Object.entries(state.fanCounts)) {
-          previousFanCounts.set(k, v as number);
-        }
-      }
-      if (state.monthlyGains) {
-        for (const [k, v] of Object.entries(state.monthlyGains)) {
-          previousMonthlyGains.set(k, v as number);
-        }
-      }
-      logger.info(`Loaded milestone state: ${previousFanCounts.size} fan counts, ${previousMonthlyGains.size} monthly gains`);
-    } catch {
-      // First run
-    }
-  }
-
-  async function saveMilestoneState(): Promise<void> {
-    try {
-      const fs = await import('node:fs/promises');
-      const pathMod = await import('node:path');
-      await fs.mkdir(pathMod.dirname(MILESTONE_STATE_FILE), { recursive: true });
-      await fs.writeFile(MILESTONE_STATE_FILE, JSON.stringify({
-        fanCounts: Object.fromEntries(previousFanCounts),
-        monthlyGains: Object.fromEntries(previousMonthlyGains),
-      }, null, 2), 'utf-8');
-    } catch (err: any) {
-      logger.warn(`Failed to persist milestone state: ${err.message}`);
-    }
-  }
-
-  // Load persisted state at startup so restarts don't miss milestones (audit #11)
-  await loadMilestoneState();
-
-  const checkAndSendMilestones = async () => {
-    try {
-      const guild = client.guilds.cache.first();
-      if (!guild) { logger.warn('Milestone check: no guild available.'); return; }
-
-      const channel: TextChannel | undefined =
-        (guild.channels.cache.find(
-          (c): c is TextChannel => c.isTextBased() && !c.isDMBased() && c.name === 'bot-announcement',
-        ) as TextChannel | undefined) ??
-        guild.systemChannel ??
-        (guild.channels.cache.find(
-          (c): c is TextChannel => c.isTextBased() && !c.isDMBased(),
-        ) as TextChannel | undefined);
-
-      if (!channel) { logger.warn('Milestone check: no suitable channel.'); return; }
-
-      const members = await fanTrackerAPI.fetchAllMembers();
-      logger.info(`Milestone check: fetched ${members.length} members from fan tracker.`);
-
-      for (const member of members) {
-        const prev = previousFanCounts.get(member.trainerId);
-        const curr = member.totalFans;
-
-        // Initialize tracking on first run (don't trigger on initial data load)
-        if (prev === undefined) {
-          previousFanCounts.set(member.trainerId, curr);
-          continue;
-        }
-
-        const milestone = detectNewMilestone(prev, curr);
-        if (milestone) {
-          const msg = await milestoneService.generateMilestoneMessage(
-            milestone.tier,
-            member.trainerName,
-            curr,
-            guild.name,
-          );
-          await supervisor.trySend(channel, msg, `milestone:${milestone.title}:${member.trainerName}`);
-          logger.info(
-            `${milestone.emoji} Milestone [${milestone.title}] sent for ${member.trainerName} ` +
-            `(${prev.toLocaleString()} → ${curr.toLocaleString()} fans)`,
-          );
-
-          // Update stored count to prevent re-triggering
-          previousFanCounts.set(member.trainerId, curr);
-        }
-
-        // Always update if count increased
-        if (curr > prev) {
-          previousFanCounts.set(member.trainerId, curr);
-        }
-      }
-
-      logger.info('Milestone check complete.');
-      saveMilestoneState().catch(() => {});
-    } catch (err: any) {
-      logger.error(`Milestone check failed: ${err.message}`);
-    }
+      const aiService = createProvider((process.env['AI_PROVIDER'] as any) || 'groq', process.env['GROQ_API_KEY'] || process.env['OPENAI_API_KEY'] || '');
+      const runner = new AgentRunner(aiService, ToolRegistry.getInstance(), taskStateStore);
+      const goal = task.taskConfig?.target || task.taskConfig?.about || task.taskConfig?.topic || task.taskType;
+      await runner.run(task.userId, `Scheduled ${task.taskType}: ${goal}`, { guildId: task.guildId, channelId: task.channelId ?? null });
+    } catch (err: any) { logger.error(`scheduled task ${task.id} run error: ${err?.message}`); }
   };
-
-  // Check milestones daily at 9 AM (after morning message, giving time for data sync)
-  cron.schedule('0 9 * * *', checkAndSendMilestones, { timezone: tz });
-  logger.info(`Milestone check scheduled (${tz}): daily at 9AM`);
-
-  // ── Monthly Top 3 Achievement (after tally period on 1st of month at 10AM) ──
-
-  const checkMonthlyAchievements = async () => {
-    try {
-      const guild = client.guilds.cache.first();
-      if (!guild) { logger.warn('Monthly check: no guild available.'); return; }
-
-      const channel: TextChannel | undefined =
-        (guild.channels.cache.find(
-          (c): c is TextChannel => c.isTextBased() && !c.isDMBased() && c.name === 'bot-announcement',
-        ) as TextChannel | undefined) ??
-        guild.systemChannel ??
-        (guild.channels.cache.find(
-          (c): c is TextChannel => c.isTextBased() && !c.isDMBased(),
-        ) as TextChannel | undefined);
-
-      if (!channel) { logger.warn('Monthly check: no suitable channel.'); return; }
-
-      const [links, members] = await Promise.all([
-        trainerLinkStore.getAll(),
-        fanTrackerAPI.fetchAllMembers(),
-      ]);
-
-      if (links.length === 0) {
-        logger.info('Monthly check: no linked members — skipping.');
-        return;
-      }
-
-      const linkedIds = new Set(links.map(l => l.trainerId));
-      const monthlyMap = new Map<string, number>();
-      const tierMap = new Map<string, string>();
-      for (const m of members) {
-        if (linkedIds.has(m.trainerId)) {
-          monthlyMap.set(m.trainerId, m.monthlyFans ?? 0);
-          tierMap.set(m.trainerId, m.clubRankTier ?? '-');
-        }
-      }
-
-      // Build ranked top 3 monthly champions
-      const rankedMonthly: MonthlyAchiever[] = links
-        .map((link) => {
-          const monthlyGain = monthlyMap.get(link.trainerId) ?? 0;
-          return {
-            trainerName: link.trainerName,
-            discordUserId: link.discordUserId,
-            trainerId: link.trainerId,
-            monthlyGain,
-            tier: tierMap.get(link.trainerId) ?? 'Active',
-            rank: 0,
-          };
-        })
-        .sort((a, b) => b.monthlyGain - a.monthlyGain)
-        .slice(0, 3)
-        .map((a, i) => ({ ...a, rank: i + 1 }));
-
-      if (rankedMonthly.length === 0) {
-        logger.info('Monthly check: no ranked monthly champions — skipping.');
-        return;
-      }
-
-      // Refresh stale names from live API before generating the message
-      for (const achiever of rankedMonthly) {
-        const live = members.find(m => m.trainerId === achiever.trainerId);
-        if (live?.trainerName && !live.trainerName.startsWith('[MOCK]')) {
-          achiever.trainerName = live.trainerName;
-        }
-      }
-
-      const msg = await monthlyService.generateMonthlyTop3(rankedMonthly, guild.name);
-      await supervisor.trySend(channel, msg, `monthly-top3:${rankedMonthly.length}`);
-
-      logger.info(
-        `👑 Monthly Top 3 sent: top ${rankedMonthly.length} champions ` +
-        `(${rankedMonthly.map(a => `${a.trainerName}: +${(a.monthlyGain / 1_000_000).toFixed(1)}M`).join(', ')})`,
-      );
-
-      saveMilestoneState().catch(() => {});
-    } catch (err: any) {
-      logger.error(`Monthly achievement check failed: ${err.message}`);
-    }
-  };
-
-  // First day of every month at 10 AM
-  cron.schedule('0 10 1 * *', checkMonthlyAchievements, { timezone: tz });
-  logger.info(`Monthly achievement check scheduled (${tz}): 1st of month at 10AM`);
-
-  // ── Daily Gap Reminder (linked trainers below 60M monthly) ──
-
-  const sendGapReminder = async () => {
-    try {
-      const guild = client.guilds.cache.first();
-      if (!guild) { logger.warn('Gap reminder: no guild available.'); return; }
-
-      const channel: TextChannel | undefined =
-        (guild.channels.cache.find(
-          (c): c is TextChannel => c.isTextBased() && !c.isDMBased() && c.name === 'bot-message',
-        ) as TextChannel | undefined) ??
-        guild.systemChannel ??
-        (guild.channels.cache.find(
-          (c): c is TextChannel => c.isTextBased() && !c.isDMBased(),
-        ) as TextChannel | undefined);
-
-      if (!channel) { logger.warn('Gap reminder: no suitable channel.'); return; }
-
-      const [links, members] = await Promise.all([
-        trainerLinkStore.getAll(),
-        fanTrackerAPI.fetchAllMembers(),
-      ]);
-
-      if (links.length === 0) {
-        logger.info('Gap reminder: no linked members — skipping.');
-        return;
-      }
-
-      const linkedIds = new Set(links.map(l => l.trainerId));
-      const monthlyMap = new Map<string, number>();
-      for (const m of members) monthlyMap.set(m.trainerId, m.monthlyFans ?? 0);
-
-      const gaps: TrainerGap[] = [];
-      for (const link of links) {
-        const monthly = monthlyMap.get(link.trainerId) ?? 0;
-        if (monthly >= 60_000_000) continue; // graduated
-        gaps.push({
-          trainerName: link.trainerName,
-          discordUserId: link.discordUserId,
-          trainerId: link.trainerId,
-          monthlyFans: monthly,
-          deficit: 60_000_000 - monthly,
-        });
-      }
-
-      // Refresh stale names from live API before generating the message
-      for (const gap of gaps) {
-        const live = members.find(m => m.trainerId === gap.trainerId);
-        if (live?.trainerName && !live.trainerName.startsWith('[MOCK]')) {
-          gap.trainerName = live.trainerName;
-        }
-      }
-
-      if (gaps.length === 0) {
-        logger.info('Gap reminder: all linked trainers have 60M+ monthly — skipping.');
-        return;
-      }
-
-      // Skip if all monthly counts are zero — API may be down
-      const allZero = gaps.every(g => g.monthlyFans === 0);
-      if (allZero) {
-        logger.warn('Gap reminder: all monthly counts are 0 — API may be down, skipping.');
-        return;
-      }
-
-      const msg = await reminderService.generateReminder(gaps, guild.name);
-      await supervisor.trySend(channel, msg, `gap-reminder:${gaps.length}`);
-
-      const pool = reminderService.getPoolSize();
-      logger.info(
-        `🎯 Gap reminder sent: ${gaps.length} trainer(s) below 60M monthly ` +
-        `(${gaps.map(g => `${g.trainerName}: ${(g.deficit/1e6).toFixed(1)}M deficit`).join(', ')}) ` +
-        `(cache: ${pool})`,
-      );
-    } catch (err: any) {
-      logger.error(`Gap reminder failed: ${err.message}`);
-    }
-  };
-
-  // Daily at 7 AM — morning motivation before the morning message
-  cron.schedule('0 7 * * *', sendGapReminder, { timezone: tz });
-  logger.info(`Gap reminder scheduled (${tz}): daily at 7AM`);
-
-  // ── Daily Achievement Top 10 (evening recap of the day's best) ──
-
-  const sendDailyAchievement = async () => {
-    try {
-      const guild = client.guilds.cache.first();
-      if (!guild) { logger.warn('Daily achievement: no guild available.'); return; }
-
-      const channel: TextChannel | undefined =
-        (guild.channels.cache.find(
-          (c): c is TextChannel => c.isTextBased() && !c.isDMBased() && c.name === 'bot-message',
-        ) as TextChannel | undefined) ??
-        guild.systemChannel ??
-        (guild.channels.cache.find(
-          (c): c is TextChannel => c.isTextBased() && !c.isDMBased(),
-        ) as TextChannel | undefined);
-
-      if (!channel) { logger.warn('Daily achievement: no suitable channel.'); return; }
-
-      const [links, members] = await Promise.all([
-        trainerLinkStore.getAll(),
-        fanTrackerAPI.fetchAllMembers(),
-      ]);
-
-      if (links.length === 0) {
-        logger.info('Daily achievement: no linked members — skipping.');
-        return;
-      }
-
-      const linkedIds = new Set(links.map(l => l.trainerId));
-      const dailyMap = new Map<string, number>();
-      const tierMap = new Map<string, string>();
-      for (const m of members) {
-        if (linkedIds.has(m.trainerId)) {
-          dailyMap.set(m.trainerId, m.dailyGain ?? 0);
-          tierMap.set(m.trainerId, m.clubRankTier ?? '-');
-        }
-      }
-
-      // Build ranked top 3 by daily gain
-      const ranked: DailyAchiever[] = links
-        .map((link) => ({
-          trainerName: link.trainerName,
-          discordUserId: link.discordUserId,
-          trainerId: link.trainerId,
-          dailyGain: dailyMap.get(link.trainerId) ?? 0,
-          tier: tierMap.get(link.trainerId) ?? '-',
-          rank: 0, // placeholder, assigned after sort
-        }))
-        .sort((a, b) => b.dailyGain - a.dailyGain)
-        .slice(0, 3)
-        .map((a, i) => ({ ...a, rank: i + 1 }));
-
-      if (ranked.length === 0) {
-        logger.info('Daily achievement: no ranked achievers — skipping.');
-        return;
-      }
-
-      // Skip if all daily gains are zero — API may be down
-      const allZero = ranked.every(a => a.dailyGain === 0);
-      if (allZero) {
-        logger.warn('Daily achievement: all daily gains are 0 — API may be down, skipping.');
-        return;
-      }
-
-      // Refresh stale names from live API before generating the message
-      for (const achiever of ranked) {
-        const live = members.find(m => m.trainerId === achiever.trainerId);
-        if (live?.trainerName && !live.trainerName.startsWith('[MOCK]')) {
-          achiever.trainerName = live.trainerName;
-        }
-      }
-
-      const msg = await dailyAchievementService.generateDailyTop10(ranked, guild.name);
-      await supervisor.trySend(channel, msg, `daily-achievement:${ranked.length}`);
-
-      logger.info(
-        `🌟 Daily achievement sent: top ${ranked.length} trainers ` +
-        `(${ranked.map(a => `${a.trainerName}: +${(a.dailyGain / 1_000_000).toFixed(1)}M`).join(', ')}) ` +
-        `(cache: ${dailyAchievementService.getPoolSize()})`,
-      );
-    } catch (err: any) {
-      logger.error(`Daily achievement failed: ${err.message}`);
-    }
-  };
-
-  // Daily at 8 PM — evening recap of the day's top performers
-  cron.schedule('0 20 * * *', sendDailyAchievement, { timezone: tz });
-  logger.info(`Daily achievement scheduled (${tz}): daily at 8PM`);
-
-
-
+  wireAutonomy(client, runScheduledTask, onApproved);
   await client.login(token);
 }
-
-// ── CLI Simulator Mode ──
 
 function startSimulator() {
   logger.warn('No DISCORD_BOT_TOKEN detected!');
   logger.info('Booting in interactive CLI SIMULATOR mode.');
-  logger.info('');
-  logger.info('Available commands (simulated):');
-  logger.info('  /sync                          — refresh cache');
-  logger.info('  /fans gain [daily|weekly|monthly]  — fan gain');
-  logger.info('  /fans leaderboard [10|15|20|30] [daily|weekly|monthly]');
-  logger.info('  /link add <user> <trainer-id>  — link user');
-  logger.info('  /link remove <user>            — unlink user');
-  logger.info('  /link list                     — show links');
-  logger.info('  !agent <prompt>                — run full agent pipeline');
-  logger.info('  exit                           — quit');
-  logger.info('');
-
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
+  logger.info('Set DISCORD_BOT_TOKEN + DISCORD_CLIENT_ID to enable full Gateway mode.');
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   const promptUser = () => {
-    rl.question('\x1b[36m[Discord #general-chat]>\x1b[0m ', async (input) => {
+    rl.question('> ', async (input) => {
       const trimmed = input.trim();
-
-      if (trimmed.toLowerCase() === 'exit') {
-        rl.close();
-        logger.info('Simulator stopped.');
-        process.exit(0);
-      }
-
-      if (trimmed.startsWith('!agent ')) {
-        await runAgentPipeline(trimmed.replace('!agent ', ''));
-      } else if (trimmed.startsWith('/')) {
-        console.log('\x1b[33m[Simulator]\x1b[0m Slash commands require a real Discord connection.');
-        console.log('  Set DISCORD_BOT_TOKEN + DISCORD_CLIENT_ID to enable full Gateway mode.\n');
-      } else if (trimmed !== '') {
-        console.log('\x1b[90m[System] Message sent (use !agent or /command)\x1b[0m\n');
-      }
-
+      if (trimmed.toLowerCase() === 'exit') { rl.close(); process.exit(0); }
+      if (trimmed.startsWith('!agent ')) { await runAgentPipeline(trimmed.replace('!agent ', '')); }
+      else if (trimmed.startsWith('/')) { console.log('Slash commands require a real Discord connection.'); }
       promptUser();
     });
   };
-
   promptUser();
 }
-
-// ── Agent pipeline (kept for !agent prefix in simulator) ──
 
 async function runAgentPipeline(prompt: string) {
   const { Planner, TaskManager } = await import('@ai-agent-platform/core');
   const { MockAIService } = await import('@ai-agent-platform/ai');
-
   const ai = new MockAIService('claude-3-5-sonnet');
   const planner = new Planner(ai, toolRegistry);
   const taskManager = new TaskManager(toolRegistry);
-
-  console.log(`\n⏳ Planning for: "${prompt}"...`);
   const plan = await planner.plan(prompt);
-
-  console.log(`📋 Plan generated: ${plan.tasks.size} steps`);
-  for (const task of plan.tasks.values()) {
-    const deps = task.dependencies.length > 0 ? ` (after ${task.dependencies.join(', ')})` : '';
-    console.log(`  [${task.id}] ${task.name} via ${task.toolSlug}${deps}`);
-  }
-
-  console.log('🚀 Executing...');
   const result = await taskManager.executePlan(plan);
-
   let ok = 0, fail = 0;
-  for (const task of result.tasks.values()) {
-    if (task.status === 'completed') ok++;
-    else fail++;
-    console.log(`  [${task.id}] ${task.status}: ${task.result ? JSON.stringify(task.result).slice(0, 80) : task.error}`);
-  }
-
+  for (const task of result.tasks.values()) { if (task.status === 'completed') ok++; else fail++; }
   console.log(`\n✅ ${ok}/${result.tasks.size} tasks succeeded.\n`);
 }
-
-// ── Entry point ──
 
 async function startBot() {
   const token = process.env['DISCORD_BOT_TOKEN'];
   const clientId = process.env['DISCORD_CLIENT_ID'];
   const umaKey = process.env['UMAMOE_API_KEY'];
   const circleIds = (process.env['UMAMOE_CIRCLE_IDS'] || process.env['UMAMOE_CIRCLE_ID'] || '974470619,325938032').split(',').map(s => s.trim());
-
   logger.info('='.repeat(50));
   logger.info(`Starting ${PLATFORM_NAME} Discord Service...`);
-  logger.info('='.repeat(50));
   logger.info(`uma.moe API: ${umaKey ? '✅ key configured' : '⚠️ no key — may hit rate limits'}`);
   logger.info(`Circle IDs: ${circleIds.join(', ')}`);
-
-  if (token && clientId) {
-    await startGatewayBot();
-  } else {
-    if (token && !clientId) {
-      logger.warn('DISCORD_BOT_TOKEN is set but DISCORD_CLIENT_ID is missing.');
-      logger.warn('Both are required for Gateway mode. Falling back to simulator.');
-    }
-    startSimulator();
-  }
+  if (token && clientId) { await startGatewayBot(); } else { startSimulator(); }
 }
 
 startBot();
