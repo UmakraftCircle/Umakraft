@@ -6,6 +6,7 @@ export * from './turso.js';
 export * from './trainer-links.js';
 export * from './conversation-memory.js';
 export * from './web-search.js';
+export * from './task-state.js';
 
 const logger = createLogger('Integrations');
 
@@ -14,11 +15,7 @@ export const discordSendMessage: ToolDefinition = {
   name: 'Discord: Send Message',
   description: 'Sends a chat notification message to a specific Discord channel.',
   parameters: {
-    message: {
-      type: 'string',
-      description: 'The plain-text message content to broadcast',
-      required: true
-    }
+    message: { type: 'string', description: 'The plain-text message content to broadcast', required: true }
   },
   handler: async (args) => {
     const message = args['message'];
@@ -41,16 +38,8 @@ export const databaseStoreResult: ToolDefinition = {
   name: 'SQLite DB: Store Result',
   description: 'Saves execution results and run logs into the local persistent SQLite database.',
   parameters: {
-    planId: {
-      type: 'string',
-      description: 'The unique ID of the executed plan',
-      required: true
-    },
-    data: {
-      type: 'object',
-      description: 'The full ExecutionPlan object to save to the database',
-      required: true
-    }
+    planId: { type: 'string', description: 'The unique ID of the executed plan', required: true },
+    data: { type: 'object', description: 'The full ExecutionPlan object to save to the database', required: true }
   },
   handler: async (args) => {
     const planId = args['planId'];
