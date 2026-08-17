@@ -1,7 +1,7 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js';
 import { createLogger } from '@ai-agent-platform/shared';
 import { ToolRegistry } from '@ai-agent-platform/core';
-import { createProvider } from '@ai-agent-platform/ai';
+import { buildAIService } from './bootstrap.js';
 import { ToolCallingAgent } from '@ai-agent-platform/core';
 import { conversationMemoryStore } from '@ai-agent-platform/integrations';
 import { askTools } from './ask-tools.js';
@@ -38,12 +38,8 @@ export async function handleAsk(interaction: ChatInputCommandInteraction): Promi
       ? history.map((t) => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.content}`).join('\n')
       : undefined;
 
-    // Build an AI service from env. createProvider throws a clear error if no
-    // key is set (the caller surfaces it) — there is no silent mock fallback.
-    const aiService = createProvider(
-      (process.env['AI_PROVIDER'] as any) || 'groq',
-      process.env['GROQ_API_KEY'] || process.env['OPENAI_API_KEY'] || '',
-    );
+    // Build an AI service from env (honours AI_PROVIDER=local|groq|openai|anthropic).
+    const aiService = buildAIService();
 
     const agent = new ToolCallingAgent(aiService, ToolRegistry.getInstance());
     const answer = await agent.run(userId, question, context);

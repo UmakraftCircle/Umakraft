@@ -1,7 +1,7 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js';
 import { createLogger } from '@ai-agent-platform/shared';
 import { ToolRegistry, AgentRunner, ToolCallingAgent } from '@ai-agent-platform/core';
-import { createProvider } from '@ai-agent-platform/ai';
+import { buildAIService } from './bootstrap.js';
 import { taskStateStore } from '@ai-agent-platform/integrations';
 import { ensureAskToolsRegistered } from './ask.js';
 
@@ -23,10 +23,7 @@ export async function handleAgent(interaction: ChatInputCommandInteraction): Pro
   try {
     ensureAskToolsRegistered();
 
-    const aiService = createProvider(
-      (process.env['AI_PROVIDER'] as any) || 'groq',
-      process.env['GROQ_API_KEY'] || process.env['OPENAI_API_KEY'] || '',
-    );
+    const aiService = buildAIService();
 
     const registry = ToolRegistry.getInstance();
     const runner = new AgentRunner(aiService, registry, taskStateStore);
