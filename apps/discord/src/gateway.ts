@@ -4,7 +4,7 @@ import type { TimeSlot, AIService } from '@ai-agent-platform/ai';
 import cron from 'node-cron';
 import { MessageSupervisor } from './supervisor.js';
 import { ALL_COMMANDS } from './commands.js';
-import { routeCommand, handleTrainerAutocomplete } from './handlers.js';
+import { routeCommand, handleTrainerAutocomplete, handleCompareAutocomplete } from './handlers.js';
 import { wireAutonomy, handleConfirmationButton } from './autonomous.js';
 import { ToolRegistry, AgentRunner } from '@ai-agent-platform/core';
 import { taskStateStore } from '@ai-agent-platform/integrations';
@@ -63,7 +63,12 @@ export async function startGatewayBot() {
   // ── Handle interactions ──
   client.on(Events.InteractionCreate, async (interaction: Interaction) => {
     if (interaction.isAutocomplete()) {
-      await handleTrainerAutocomplete(interaction);
+      const focused = interaction.options.getFocused(true);
+      if (focused.name === 'trainer1' || focused.name === 'trainer2') {
+        await handleCompareAutocomplete(interaction);
+      } else {
+        await handleTrainerAutocomplete(interaction);
+      }
       return;
     }
 
@@ -152,7 +157,7 @@ export async function startGatewayBot() {
       );
 
       await supervisor.trySend(welcomeChannel, greeting, `greeting:${member.user.tag}`);
-      logger.info(`✅ Welcomed ${member.user.tag} in #${welcomeChannel.name} (${guild.name})`);
+      logger.info(`👋 Welcomed ${member.user.tag} in #${welcomeChannel.name} (${guild.name})`);
     } catch (err: any) {
       logger.error(`Failed to send welcome for ${member.user?.tag}: ${err.message}`);
     }
@@ -184,7 +189,7 @@ export async function startGatewayBot() {
       const pools = dailyService.getAllPoolSizes();
       logger.info(
         `${emoji} Daily [${timeSlot}] sent to #${channel.name} ` +
-        `(pools: ☀${pools.morning} 🌤${pools.noon} 🌅${pools.evening} 🌙${pools.midnight})`,
+        `(pools: 🌅${pools.morning} 🌇${pools.noon} 🌆${pools.evening} 🌙${pools.midnight})`,
       );
     } catch (err: any) {
       logger.error(`Daily [${timeSlot}] failed: ${err.message}`);
@@ -193,12 +198,12 @@ export async function startGatewayBot() {
 
   const tz = process.env['TZ'] || 'Asia/Manila';
 
-  cron.schedule('0 8 * * *',   () => sendDailyMessage('morning',  '☀️'),  { timezone: tz });
-  cron.schedule('0 12 * * *',  () => sendDailyMessage('noon',     '🌤️'), { timezone: tz });
-  cron.schedule('0 18 * * *',  () => sendDailyMessage('evening',  '🌅'),  { timezone: tz });
-  cron.schedule('0 0 * * *',   () => sendDailyMessage('midnight', '🌙'),  { timezone: tz });
+  cron.schedule('0 8 * * *',   () => sendDailyMessage('morning',  '🌞'),  { timezone: tz });
+  cron.schedule('0 12 * * *',  () => sendDailyMessage('noon',     '🌇'), { timezone: tz });
+  cron.schedule('0 18 * * *',  () => sendDailyMessage('evening',  '🌆'), { timezone: tz });
+  cron.schedule('0 0 * * *',   () => sendDailyMessage('midnight', '🌙'), { timezone: tz });
 
-  logger.info(`Daily cron jobs scheduled (${tz}): ☀️ 8AM  🌤️ 12PM  🌅 6PM  🌙 12AM`);
+  logger.info(`Daily cron jobs scheduled (${tz}): 🌞 8AM  🌇 12PM  🌆 6PM  🌙 12AM`);
 
   await registerMilestoneJobs({ client, greetingService, dailyService, milestoneService, monthlyService, reminderService, dailyAchievementService, supervisor });
   registerReminderJobs({ client, greetingService, dailyService, milestoneService, monthlyService, reminderService, dailyAchievementService, supervisor });
