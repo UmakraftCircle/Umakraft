@@ -2,12 +2,23 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": "./src"
+    "rootDir": "./src",
+    "composite": true,
+    "declaration": true,
+    "noEmit": false
   },
-  "include": ["src/**/*"],
+  "include": [
+    "src/**/*"
+  ],
   "references": [
-    { "path": "../shared" },
-    { "path": "../ai" },
-    { "path": "../integrations" }
+    {
+      "path": "../shared"
+    },
+    {
+      "path": "../ai"
+    },
+    {
+      "path": "../integrations"
+    }
   ]
 }
