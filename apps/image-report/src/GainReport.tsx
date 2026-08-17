@@ -1,3 +1,4 @@
+import React from 'react';
 import { WHITE, MINT, LIGHT_GREEN, MEDIUM_GREEN, PRIMARY_GREEN, DARK_GREEN, DEEP_GREEN, MUTED_GREEN, GREEN_SHADOW, GREEN_GLOW, GREEN_DIVIDER, CANVAS_WIDTH, CANVAS_HEIGHT, HEADER_HEIGHT, CARD_RADIUS, CARD_RADIUS_SM, FONT_FAMILY, FONT_SIZES, FONT_WEIGHTS } from './theme.js';
 
 export interface GainReportData { trainerName: string; trainerId: string; dailyGain: number; weeklyGain: number; monthlyFans: number; totalFans: number; clubRankTier: string; updatedAt: string; }
