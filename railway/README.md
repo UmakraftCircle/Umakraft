@@ -46,6 +46,21 @@
 | `TURSO_URL` | Turso database URL (e.g. `libsql://db-name.turso.io`) |
 | `TURSO_AUTH_TOKEN` | Turso auth token (from dashboard → Connect) |
 
+### Local brain (on-host Qwen supervisor — optional)
+
+The local Qwen 0.5B model (`node-llama-cpp`) runs entirely on the container as a
+last-resort "supervisor": when Groq generation fails, the brain retries once before
+the cache fallback.
+
+| Variable | Value |
+|---|---|
+| `LOCAL_BRAIN_ENABLED` | `true` to enable the local brain (default off) |
+| `LOCAL_MODEL_DIR` | Model directory (default `/data/models`) — **attach a Railway volume here** so the ~339 MB weights persist across redeploys |
+
+Use a Railway **Volume** mounted at `/data` (or `/data/models`) and give the service
+**≥ 1 GB RAM** (the model needs ~400–500 MB when loaded). The weights auto-download
+from HuggingFace on first startup if missing.
+
 ### Optional
 
 | Variable | Value |
@@ -75,6 +90,7 @@ Discord Gateway (WebSocket)
     ↓
 Turso (agent_tasks, scheduled_tasks, confirmations, notifications, conversation_memory) — persistent
 anysearch.com (web research) — on demand
+local Qwen brain (node-llama-cpp) — on-host message supervisor (optional)
 ```
 
 The bot doesn't expose an HTTP port itself — it connects OUT to Discord's Gateway.
