@@ -18,13 +18,24 @@
 | `DISCORD_CLIENT_ID` | Your Discord application ID |
 | `DISCORD_GUILD_ID` | Your Discord server (guild) ID |
 
-### AI provider (pick one)
+### AI provider
+
+**Groq generates ALL bot messages** — greetings, daily messages, milestones, monthly
+achievements, reminders, and daily achievements. This is the primary + fallback
+message-generation path and always runs on Groq.
 
 | Variable | Value |
 |---|---|
-| `AI_PROVIDER` | `groq` (or `openai` / `anthropic`) |
 | `GROQ_API_KEY` | Comma-separated Groq keys: `key1,key2,key3` |
-| `OPENAI_API_KEY` | OpenAI key — used as fallback when `AI_PROVIDER` is not `groq` |
+
+`AI_PROVIDER` (and `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`) only affect the **direct
+question-answering** commands `/ask` and `/agent`. Leave `AI_PROVIDER` unset (it
+defaults to `groq`) unless you specifically want those commands on another vendor.
+
+| Variable | Value |
+|---|---|
+| `AI_PROVIDER` | `groq` (default) / `openai` / `anthropic` — only for `/ask` + `/agent` |
+| `OPENAI_API_KEY` | OpenAI key (optional, for `/ask`/`/agent` fallback) |
 
 ### Web research (Feature 3 — `/ask` and `/agent` `search_web` tool)
 
@@ -48,9 +59,18 @@
 
 ### Local brain (on-host Qwen supervisor — optional)
 
-The local Qwen 0.5B model (`node-llama-cpp`) runs entirely on the container as a
-last-resort "supervisor": when Groq generation fails, the brain retries once before
-the cache fallback.
+The local Qwen 0.5B model (`node-llama-cpp`) runs entirely on the container. Its
+**only job is to re-fire a failed message generation once** before the cache
+fallback. It never generates the normal content — that is always Groq's work.
+
+The fallback chain is:
+
+```
+Groq primary (openai/gpt-oss-120b)
+  → Groq fallback (openai/gpt-oss-20b)
+     → LOCAL BRAIN retries once   ← only reached if both Groq tiers failed
+        → cache → bootstrap text
+```
 
 | Variable | Value |
 |---|---|
@@ -60,6 +80,10 @@ the cache fallback.
 Use a Railway **Volume** mounted at `/data` (or `/data/models`) and give the service
 **≥ 1 GB RAM** (the model needs ~400–500 MB when loaded). The weights auto-download
 from HuggingFace on first startup if missing.
+
+> **Do NOT set `AI_PROVIDER=local`.** That would make `/ask`/`/agent` answer
+> questions directly with the tiny 0.5B brain instead of Groq. The brain is a
+> message *retry supervisor*, not a question-answerer.
 
 ### Optional
 
