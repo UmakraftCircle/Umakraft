@@ -104,22 +104,28 @@ export class ActionController {
 
     lifecycle.transition('RUNNING');
 
-    // Execute with bounded retry + exponential backoff
+    // Execute with bounded retry + exponential backoff.
+    // `release` is invoked in a finally block so the concurrency slot is always
+    // returned, even when the action throws or the retry loop is exhausted.
     const maxRetries = args.maxRetries ?? 3;
     let lastErr = '';
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        const result = await args.action();
-        lifecycle.transition('COMPLETED');
-        return { ok: true, result, lifecycle: lifecycle.current };
-      } catch (err: any) {
-        lastErr = err?.message ?? String(err);
-        logger.warn(`action ${args.slug} attempt ${attempt + 1}/${maxRetries + 1} failed: ${lastErr}`);
-        if (!isRetryable(lastErr)) break;
-        if (attempt < maxRetries) {
-          await sleep(backoff(attempt));
+    try {
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          const result = await args.action();
+          lifecycle.transition('COMPLETED');
+          return { ok: true, result, lifecycle: lifecycle.current };
+        } catch (err: any) {
+          lastErr = err?.message ?? String(err);
+          logger.warn(`action ${args.slug} attempt ${attempt + 1}/${maxRetries + 1} failed: ${lastErr}`);
+          if (!isRetryable(lastErr)) break;
+          if (attempt < maxRetries) {
+            await sleep(backoff(attempt));
+          }
         }
       }
+    } finally {
+      release();
     }
 
     lifecycle.transition('FAILED');
