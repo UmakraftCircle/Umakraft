@@ -11,6 +11,7 @@ import { trainerLinkStore, type TrainerLink } from '@ai-agent-platform/integrati
 import { renderGainReport, renderLeaderboardReport } from '@ai-agent-platform/image-report';
 import { handleAsk } from './ask.js';
 import { handleAgent } from './agent.js';
+import { handleScheduleCreate, handleMyTasks, handleUnschedule } from './autonomous.js';
 
 const logger = createLogger('Discord-Handlers');
 
@@ -398,6 +399,12 @@ export async function routeCommand(interaction: ChatInputCommandInteraction) {
       await handleAsk(interaction);
     } else if (commandName === 'agent') {
       await handleAgent(interaction);
+    } else if (commandName === 'schedule') {
+      await handleScheduleCreate(interaction);
+    } else if (commandName === 'mytasks') {
+      await handleMyTasks(interaction);
+    } else if (commandName === 'unschedule') {
+      await handleUnschedule(interaction);
     }
   } catch (error: any) {
     logger.error(`Handler error for /${commandName} ${subcommand || ''}: ${error.message}`);
