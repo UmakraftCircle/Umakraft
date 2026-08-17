@@ -150,6 +150,10 @@ export class TaskManager {
         return;
       }
 
+      // Note: retryCount is the one AgentTask field we DO update in-place, because
+      // callers and the result-persistence layer read it off the task object after
+      // execution (see databaseStoreResult). status/result/error are tracked in the
+      // internal maps above and never written onto the shared plan mid-run.
       task.retryCount++;
       taskErrors.set(task.id, result.error ?? 'Unknown error');
 
