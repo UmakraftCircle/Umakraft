@@ -1,7 +1,9 @@
+import React from 'react';
 import { WHITE, MINT, LIGHT_GREEN, MEDIUM_GREEN, PRIMARY_GREEN, DARK_GREEN, DEEP_GREEN, MUTED_GREEN, GREEN_SHADOW, GREEN_GLOW, GREEN_DIVIDER, CANVAS_WIDTH, HEADER_HEIGHT, CARD_RADIUS, FONT_FAMILY, FONT_SIZES, FONT_WEIGHTS, leaderboardCanvasHeight } from './theme.js';
+import { BarChart, type BarChartData } from './charts.js';
 
 export interface LeaderboardEntry { rank: number; trainerName: string; dailyGain: number; weeklyGain: number; monthlyFans: number; totalFans: number; clubRankTier: string; }
-export interface LeaderboardReportData { entries: LeaderboardEntry[]; period: 'daily' | 'weekly' | 'monthly'; periodLabel: string; chartBuffer: Buffer | null; }
+export interface LeaderboardReportData { entries: LeaderboardEntry[]; period: 'daily' | 'weekly' | 'monthly'; periodLabel: string; chartData?: BarChartData | null; }
 
 function formatFans(n: number): string { if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`; if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`; return String(n); }
 function formatGain(n: number): string { if (n <= 0) return '-'; return `+${formatFans(n)}`; }
@@ -63,8 +65,16 @@ export function LeaderboardReport({ data }: { data: LeaderboardReportData }) {
   const count = data.entries.length;
   const canvasHeight = leaderboardCanvasHeight(count);
   const isCompact = count > 15;
-  const showChart = count <= 15 && data.chartBuffer !== null;
-  const chartSrc = data.chartBuffer ? `data:image/png;base64,${data.chartBuffer.toString('base64')}` : null;
+  const chartValues: number[] = data.chartData
+    ? data.chartData.values
+    : data.entries.map((e) => {
+        switch (data.period) {
+          case 'daily': return e.dailyGain;
+          case 'weekly': return e.weeklyGain;
+          default: return e.monthlyFans;
+        }
+      });
+  const showChart = count <= 15;
 
   return (<div style={{ display: 'flex', flexDirection: 'column', width: CANVAS_WIDTH, height: canvasHeight, backgroundColor: WHITE, fontFamily: FONT_FAMILY, position: 'relative', overflow: 'hidden' }}>
     <div style={{ position: 'absolute', top: -80, left: -60, width: 400, height: 400, borderRadius: '50%', background: `radial-gradient(circle, ${MINT} 0%, transparent 70%)`, opacity: 0.6 }}/>
@@ -80,7 +90,7 @@ export function LeaderboardReport({ data }: { data: LeaderboardReportData }) {
         </div>)}
         {data.entries.map((entry) => isCompact ? (<CompactRankRow key={entry.rank} entry={entry} period={data.period}/>) : (<FullRankRow key={entry.rank} entry={entry} period={data.period}/>))}
       </div>
-      {showChart && chartSrc && (<div style={{ display: 'flex', flex: 1, backgroundColor: WHITE, borderRadius: CARD_RADIUS, border: `1px solid ${MEDIUM_GREEN}`, boxShadow: `0 2px 12px ${GREEN_SHADOW}`, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }}><img src={chartSrc} width={480} height={280} style={{ objectFit: 'contain' }}/></div>)}
+      {showChart && (<div style={{ display: 'flex', flex: 1, backgroundColor: WHITE, borderRadius: CARD_RADIUS, border: `1px solid ${MEDIUM_GREEN}`, boxShadow: `0 2px 12px ${GREEN_SHADOW}`, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', padding: '10px' }}><BarChart data={{ labels: data.entries.map((e) => e.trainerName), values: chartValues }} width={480} height={280} /></div>)}
     </div>
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 40px 4px' }}>
       <span style={{ fontSize: FONT_SIZES.xxl, fontWeight: FONT_WEIGHTS.bold, color: DARK_GREEN, letterSpacing: 3, textShadow: `0 2px 8px ${GREEN_GLOW}` }}>UmaKraft</span>
