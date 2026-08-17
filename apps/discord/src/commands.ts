@@ -98,4 +98,17 @@ export const linkCommand = new SlashCommandBuilder()
   .setDMPermission(false)
   .toJSON();
 
-export const ALL_COMMANDS = [syncCommand, fanCommand, linkCommand];
+// ── /ask — AI chat command (Feature 1: Context & Memory) ─────────────────
+export const askCommand = new SlashCommandBuilder()
+  .setName('ask')
+  .setDescription('Ask the AI assistant a question (remembers this conversation)')
+  .addStringOption(opt =>
+    opt
+      .setName('prompt')
+      .setDescription('Your question or message for the AI')
+      .setRequired(true)
+  )
+  .setDMPermission(false)
+  .toJSON();
+
+export const ALL_COMMANDS = [syncCommand, fanCommand, linkCommand, askCommand];
