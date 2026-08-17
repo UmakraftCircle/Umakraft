@@ -1,0 +1,9 @@
+// ── CORS helper ──
+function corsOrigin(): string {
+  const env = process.env['CORS_ORIGIN'];
+  if (env) return env;
+  // In production, do NOT reflect a wildcard origin. Reflecting '*' permits any
+  // origin to make credentialed/cross-origin requests against the API. Default
+  // to a lock-down value when no explicit CORS_ORIGIN is configured.
+  return process.env['NODE_ENV'] === 'production' ? '' : '*';
+}
