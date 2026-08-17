@@ -24,16 +24,18 @@ export const discordSendMessage: ToolDefinition = {
   },
   handler: async (args) => {
     const message = args['message'];
+    // This integration is intentionally a no-op stub: the platform's Discord
+    // integration lives in the bot gateway (apps/discord), not in this tool. We
+    // do NOT report success, so callers never believe a message was delivered.
     logger.warn(
       'discord-send-message is a stub \u2014 message was NOT sent to Discord. ' +
       'Use the Discord bot gateway (apps/discord) for real Discord integration.'
     );
-    logger.info(`[STUB] Would send to Discord: "${message.slice(0, 100)}"`);
     return {
-      success: true,
+      success: false,
       timestamp: new Date().toISOString(),
       platform: 'discord',
-      warning: 'This tool is a stub. Messages are logged but not sent to Discord.',
+      reason: 'discord-send-message is not implemented; use the Discord bot gateway instead.',
     };
   }
 };

@@ -6,12 +6,9 @@ const logger = createLogger('Turso');
 // ── Singleton client ──────────────────────────────────────
 
 let client: Client | null = null;
-const MAX_CONNECT_ATTEMPTS = 3;
 
 /**
- * Returns the shared Turso client instance with retry logic.
- * Retries are per-invocation, not global — each call to this function
- * can attempt up to MAX_CONNECT_ATTEMPTS if previous ones fail. (audit #20)
+ * Returns the shared Turso client instance (lazily constructed singleton).
  */
 export function getTursoClient(): Client {
   if (client) return client;
@@ -26,21 +23,12 @@ export function getTursoClient(): Client {
     );
   }
 
-  let lastError: Error | undefined;
-
-  for (let attempt = 0; attempt < MAX_CONNECT_ATTEMPTS; attempt++) {
-    try {
-      client = createClient({ url, authToken });
-      logger.info(`Turso client connected to ${url}`);
-      return client;
-    } catch (err: any) {
-      lastError = err;
-      logger.warn(`Turso connection attempt ${attempt + 1}/${MAX_CONNECT_ATTEMPTS} failed: ${err.message}`);
-    }
-  }
-
-  logger.error(`Turso connection failed after ${MAX_CONNECT_ATTEMPTS} attempts: ${lastError?.message}`);
-  throw lastError ?? new Error('Turso connection failed');
+  // createClient() is lazy — it does not open a socket, so wrapping it in a
+  // retry loop cannot actually retry a connection failure. Construct once and
+  // let the first real query surface any connectivity error.
+  client = createClient({ url, authToken });
+  logger.info(`Turso client configured for ${url}`);
+  return client;
 }
 
 /**
