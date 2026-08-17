@@ -1,8 +1,6 @@
-import {
-  ChatInputCommandInteraction,
-  SlashCommandBuilder,
-} from 'discord.js';
-import { createLogger, ToolRegistry } from '@ai-agent-platform/shared';
+import { ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js';
+import { createLogger } from '@ai-agent-platform/shared';
+import { ToolRegistry } from '@ai-agent-platform/core';
 import { createProvider } from '@ai-agent-platform/ai';
 import { ToolCallingAgent } from '@ai-agent-platform/core';
 import { conversationMemoryStore } from '@ai-agent-platform/integrations';
