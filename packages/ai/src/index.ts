@@ -60,3 +60,4 @@ export * from './daily-achievement-service.js';
 export * from './local-brain.js';
 export * from './local-provider.js';
 export * from './compare-summary-service.js';
+export * from './agent-system.js';
