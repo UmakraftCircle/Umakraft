@@ -20,6 +20,14 @@ export function failureMessage(err: unknown): string {
     return '⚠️ The bot cannot connect to its database (Turso). A server admin needs to set the `TURSO_URL` and `TURSO_AUTH_TOKEN` environment variables and restart the bot.';
   }
 
+  // Tool-call configuration mismatch — the model emitted a native tool-call
+  // token but no native tools were registered (Groq/OpenAI 400 `tool_use_failed`).
+  // This is a CONFIG error, not a transient one: retrying the same request cannot
+  // fix it, so surface it as such (do not loop).
+  if (/tool_use_failed|tool choice is none|json_validate_failed|model called a tool/i.test(msg)) {
+    return '⚠️ The AI model tried to call a tool in a way the provider does not support for /ask. A server admin may need to check the model/tool configuration.';
+  }
+
   // Provider-level failures
   if (/(401|403|unauthorized|invalid api)/i.test(msg)) {
     return '⚠️ The AI provider rejected the request (invalid or expired API key). A server admin should verify the `GROQ_API_KEY`.';
