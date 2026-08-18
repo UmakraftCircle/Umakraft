@@ -42,7 +42,12 @@ export async function handleAsk(interaction: ChatInputCommandInteraction): Promi
     const aiService = buildAIService();
 
     const agent = new ToolCallingAgent(aiService, ToolRegistry.getInstance());
-    const answer = await agent.run(userId, question, context);
+    const answer = await agent.run(userId, question, context, {
+      maxToolCalls: 4,
+      toolTimeoutMs: 8_000,
+      generateTimeoutMs: 20_000,
+      overallTimeoutMs: 90_000,
+    });
 
     // Feature 1: persist the exchange for future context.
     await conversationMemoryStore.append({ userId, channelId, role: 'user', content: question });
