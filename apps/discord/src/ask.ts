@@ -5,6 +5,7 @@ import { buildAIService } from './bootstrap.js';
 import { ToolCallingAgent } from '@ai-agent-platform/core';
 import { conversationMemoryStore } from '@ai-agent-platform/integrations';
 import { askTools } from './ask-tools.js';
+import { failureMessage } from './errors.js';
 
 const logger = createLogger('AskHandler');
 
@@ -56,7 +57,7 @@ export async function handleAsk(interaction: ChatInputCommandInteraction): Promi
     await interaction.editReply(answer);
   } catch (err: any) {
     logger.error(`/ask error: ${err?.message ?? err}`);
-    await interaction.editReply('Sorry, something went wrong while answering. Please try again.');
+    await interaction.editReply(failureMessage(err));
   }
 }
 
