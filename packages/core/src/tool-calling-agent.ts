@@ -5,10 +5,15 @@ import { z } from 'zod';
 
 const logger = createLogger('ToolCallingAgent');
 
-/** Structured output the model returns on each reasoning step. */
+/** 
+ * Structured output the model returns on each reasoning step.
+ * We deliberately use "action" and "parameters" instead of "tool"/"args" or "name"/"arguments"
+ * to prevent Groq/OpenAI API gateways from intercepting the output as an unregistered
+ * native function call (which triggers the "Tool choice is none, but model called a tool" 400 error).
+ */
 const DecisionSchema = z.object({
-  tool: z.string().optional(),
-  args: z.record(z.any()).optional(),
+  action: z.string().optional(),
+  parameters: z.record(z.any()).optional(),
   answer: z.string().optional(),
 });
 
@@ -16,14 +21,10 @@ type Decision = z.infer<typeof DecisionSchema>;
 
 export interface ToolCallingAgentOptions {
   maxToolCalls?: number;
-  /** Hard cap on web-search (search_web) calls, separately from generic tool calls. */
   maxWebSearches?: number;
   toolTimeoutMs?: number;
-  /** Per-model-generation timeout (the LLM call itself). */
   generateTimeoutMs?: number;
-  /** Hard wall-clock cap on the whole run(). */
   overallTimeoutMs?: number;
-  /** Max bytes of a single tool result to append to the transcript (0 = unlimited). */
   maxResultBytes?: number;
 }
 
@@ -38,7 +39,6 @@ export const DEFAULT_AGENT_OPTIONS = {
 
 const WEB_SEARCH_SLUG = 'search_web';
 
-/** Wrap a promise with a timeout that rejects (and clears the timer) on expiry. */
 function withTimeout<T>(p: Promise<T>, ms: number, label = 'operation'): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
@@ -51,7 +51,6 @@ function byteLen(s: string): number {
   return Buffer.byteLength(s, 'utf8');
 }
 
-/** Truncate a string to at most `maxBytes` UTF-8 bytes without splitting a codepoint. */
 function truncate(s: string, maxBytes: number): string {
   if (maxBytes <= 0 || byteLen(s) <= maxBytes) return s;
   let out = s.slice(0, maxBytes);
@@ -59,14 +58,6 @@ function truncate(s: string, maxBytes: number): string {
   return out + '…[truncated]';
 }
 
-/**
- * The condensed, binding version of the `/ask` web-research policy
- * (full prose: docs/ask-web-research-policy.md). Keep this tight — the code-level
- * limits (maxToolCalls / maxWebSearches / truncation / timeouts) enforce the rest.
- *
- * Also carries the topic gate: off-topic questions are answered with the
- * reserved [[OFFTOPIC]] marker, which the handler turns into a polite redirect.
- */
 function buildSystemPrompt(toolList: string, maxWebSearches: number): string {
   return `
 You are a helpful assistant for the Umakraft Discord server, an Uma Musume fan community.
@@ -80,7 +71,7 @@ SCOPE
   nothing else: [[OFFTOPIC]]
 
 OUTPUT FORMAT — the only thing you ever emit is ONE JSON object, no prose.
-- To call a tool, output exactly: {"tool": "<slug>", "args": {...}}
+- To call a tool, output exactly: {"action": "<slug>", "parameters": {...}}
 - To answer, output exactly: {"answer": "<final text>"}
 
 Available tools (read-only):
@@ -91,7 +82,7 @@ HOW TO BEHAVE
    research. Do not modify files, send messages, or perform any action unless explicitly asked.
 2. Whenever you produce data, call a tool FIRST rather than guessing. You may use at most
    ${maxWebSearches} web searches (search_web) in this conversation.
-3. Call a tool by responding ONLY with JSON: {"tool": "<slug>", "args": {...}}.
+3. Call a tool by responding ONLY with JSON: {"action": "<slug>", "parameters": {...}}.
    When you have enough information, respond with JSON: {"answer": "<final text>"}.
 4. Stop as soon as the question is answered or sufficient reliable evidence is gathered.
    Do not enter an open-ended search loop. If evidence conflicts, state the conflict.
@@ -116,19 +107,6 @@ export interface AgentRunTrace {
   usedWebSearch: boolean;
 }
 
-/**
- * Feature 2: a controlled, model-driven tool-calling loop.
- *
- * Each iteration the model decides (via structured output) whether to invoke
- * a read-only allow-listed tool or to produce a final answer. Tools are
- * executed strictly through the existing ToolRegistry, which performs
- * argument validation and secret redaction, so the model can never run
- * arbitrary code/sql/shell/network.
- *
- * Timeouts are enforced at three levels (tool / generation / whole run), and
- * scope is enforced with hard caps (maxToolCalls, maxWebSearches) plus
- * result truncation so untrusted tool output cannot balloon or bias context.
- */
 export class ToolCallingAgent {
   constructor(
     private aiService: AIService,
@@ -145,7 +123,6 @@ export class ToolCallingAgent {
     return trace.answer;
   }
 
-  /** Like run(), but also reports whether a web search was performed. */
   async runWithTrace(
     userId: string,
     userMessage: string,
@@ -190,7 +167,6 @@ export class ToolCallingAgent {
     for (let i = 0; i <= p.maxToolCalls; i++) {
       const prompt = `${transcript}User ${p.userId} says: ${p.userMessage}`;
 
-      // Generate a valid decision, retrying once if the model emits non-JSON/non-conforming output.
       let parsed: { success: boolean; data?: Decision; error?: any } | null = null;
       for (let attempt = 0; attempt < 2; attempt++) {
         const raw = await withTimeout(
@@ -218,17 +194,17 @@ export class ToolCallingAgent {
       const decision: Decision = parsed.data!;
 
       // Final answer
-      if (decision.answer && !decision.tool) {
+      if (decision.answer && !decision.action) {
         return { answer: decision.answer, usedWebSearch: webSearchCount > 0 };
       }
 
       // Tool call
-      if (decision.tool) {
+      if (decision.action) {
         if (toolCallCount >= p.maxToolCalls) {
           logger.warn(`Tool-call limit (${p.maxToolCalls}) reached; stopping.`);
           return { answer: 'I reached my tool-call limit. Here is what I gathered so far.', usedWebSearch: webSearchCount > 0 };
         }
-        if (decision.tool === WEB_SEARCH_SLUG && webSearchCount >= p.maxWebSearches) {
+        if (decision.action === WEB_SEARCH_SLUG && webSearchCount >= p.maxWebSearches) {
           logger.warn(`Web-search limit (${p.maxWebSearches}) reached; stopping.`);
           return { answer: 'I reached my web-search limit. Here is what I gathered so far.', usedWebSearch: webSearchCount > 0 };
         }
@@ -236,7 +212,7 @@ export class ToolCallingAgent {
         let result;
         try {
           result = await withTimeout(
-            this.registry.execute(decision.tool, decision.args ?? {}),
+            this.registry.execute(decision.action, decision.parameters ?? {}),
             p.toolTimeoutMs,
             'tool execution',
           );
@@ -244,14 +220,13 @@ export class ToolCallingAgent {
           result = { success: false, error: err?.message ?? String(err) };
         }
 
-        if (decision.tool === WEB_SEARCH_SLUG) webSearchCount++;
+        if (decision.action === WEB_SEARCH_SLUG) webSearchCount++;
         toolCallCount++;
         const rendered = truncate(JSON.stringify(result), p.maxResultBytes);
-        transcript += `\nTool ${decision.tool} returned: ${rendered}\n`;
+        transcript += `\nTool ${decision.action} returned: ${rendered}\n`;
         continue;
       }
 
-      // Neither answer nor tool -> treat as no-op answer
       return { answer: 'I could not determine a response. Please rephrase.', usedWebSearch: webSearchCount > 0 };
     }
 
