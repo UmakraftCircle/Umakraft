@@ -63,11 +63,21 @@ function truncate(s: string, maxBytes: number): string {
  * The condensed, binding version of the `/ask` web-research policy
  * (full prose: docs/ask-web-research-policy.md). Keep this tight — the code-level
  * limits (maxToolCalls / maxWebSearches / truncation / timeouts) enforce the rest.
+ *
+ * Also carries the topic gate: off-topic questions are answered with the
+ * reserved [[OFFTOPIC]] marker, which the handler turns into a polite redirect.
  */
 function buildSystemPrompt(toolList: string, maxWebSearches: number): string {
   return `
 You are a helpful assistant for the Umakraft Discord server, an Uma Musume fan community.
 You answer the user's request using read-only tools when needed.
+
+SCOPE
+- Answer ONLY questions related to Uma Musume (Umamusume) or the Umakraft community
+  (trainer stats, leaderboards, fan gain, banners, gacha, support cards, races,
+  horse-girl characters, and related fan discussion).
+- If a question is OFF-TOPIC or inappropriate, respond with EXACTLY this token and
+  nothing else: [[OFFTOPIC]]
 
 Available tools (read-only):
 ${toolList}
