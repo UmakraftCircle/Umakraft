@@ -17,6 +17,26 @@ type Decision = z.infer<typeof DecisionSchema>;
 export interface ToolCallingAgentOptions {
   maxToolCalls?: number;
   toolTimeoutMs?: number;
+  /** Per-model-generation timeout (the LLM call itself). */
+  generateTimeoutMs?: number;
+  /** Hard wall-clock cap on the whole run(). */
+  overallTimeoutMs?: number;
+}
+
+export const DEFAULT_AGENT_OPTIONS = {
+  maxToolCalls: 5,
+  toolTimeoutMs: 10_000,
+  generateTimeoutMs: 20_000,
+  overallTimeoutMs: 90_000,
+} as const;
+
+/** Wrap a promise with a timeout that rejects (and clears the timer) on expiry. */
+function withTimeout<T>(p: Promise<T>, ms: number, label = 'operation'): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    p.then((v) => { clearTimeout(timer); resolve(v); })
+     .catch((e) => { clearTimeout(timer); reject(e); });
+  });
 }
 
 /**
@@ -27,6 +47,11 @@ export interface ToolCallingAgentOptions {
  * executed strictly through the existing ToolRegistry, which performs
  * argument validation and secret redaction, so the model can never run
  * arbitrary code/sql/shell/network.
+ *
+ * Timeouts are enforced at three levels:
+ *  - per tool call (toolTimeoutMs)
+ *  - per model generation (generateTimeoutMs)
+ *  - whole run (overallTimeoutMs)
  */
 export class ToolCallingAgent {
   constructor(
@@ -40,9 +65,22 @@ export class ToolCallingAgent {
     context?: string,
     options: ToolCallingAgentOptions = {},
   ): Promise<string> {
-    const maxToolCalls = options.maxToolCalls ?? 5;
-    const toolTimeoutMs = options.toolTimeoutMs ?? 10_000;
+    const maxToolCalls = options.maxToolCalls ?? DEFAULT_AGENT_OPTIONS.maxToolCalls;
+    const toolTimeoutMs = options.toolTimeoutMs ?? DEFAULT_AGENT_OPTIONS.toolTimeoutMs;
+    const generateTimeoutMs = options.generateTimeoutMs ?? DEFAULT_AGENT_OPTIONS.generateTimeoutMs;
+    const overallTimeoutMs = options.overallTimeoutMs ?? DEFAULT_AGENT_OPTIONS.overallTimeoutMs;
 
+    return withTimeout(this._run({ userId, userMessage, context, maxToolCalls, toolTimeoutMs, generateTimeoutMs }), overallTimeoutMs, 'agent run');
+  }
+
+  private async _run(p: {
+    userId: string;
+    userMessage: string;
+    context?: string;
+    maxToolCalls: number;
+    toolTimeoutMs: number;
+    generateTimeoutMs: number;
+  }): Promise<string> {
     const toolSchemas = this.registry.getDeclarativeSchemas();
     const toolList = toolSchemas
       .map((t) => `- ${t.slug}: ${t.description}`)
@@ -64,10 +102,13 @@ Do not indicate tool calls in your final answer.
     let transcript = context ? `Context from earlier conversation:\n${context}\n\n` : '';
     let toolCallCount = 0;
 
-    for (let i = 0; i <= maxToolCalls; i++) {
-      const prompt = `${transcript}User ${userId} says: ${userMessage}`;
-
-      const raw = await this.aiService.generateStructuredOutput({ system, prompt, schema: DecisionSchema });
+    for (let i = 0; i <= p.maxToolCalls; i++) {
+      const prompt = `${transcript}User ${p.userId} says: ${p.userMessage}`;
+      const raw = await withTimeout(
+        this.aiService.generateStructuredOutput({ system, prompt, schema: DecisionSchema }),
+        p.generateTimeoutMs,
+        'model generation',
+      );
       const parsed = DecisionSchema.safeParse(raw);
 
       if (!parsed.success) {
@@ -84,22 +125,17 @@ Do not indicate tool calls in your final answer.
 
       // Tool call
       if (decision.tool) {
-        if (toolCallCount >= maxToolCalls) {
-          logger.warn(`Tool-call limit (${maxToolCalls}) reached; stopping.`);
+        if (toolCallCount >= p.maxToolCalls) {
+          logger.warn(`Tool-call limit (${p.maxToolCalls}) reached; stopping.`);
           return 'I reached my tool-call limit. Here is what I gathered so far.';
         }
-
-        const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> =>
-          new Promise<T>((resolve, reject) => {
-            const timer = setTimeout(() => reject(new Error('tool timeout')), ms);
-            p.then((v) => { clearTimeout(timer); resolve(v); }).catch((e) => { clearTimeout(timer); reject(e); });
-          });
 
         let result;
         try {
           result = await withTimeout(
             this.registry.execute(decision.tool, decision.args ?? {}),
-            toolTimeoutMs,
+            p.toolTimeoutMs,
+            'tool execution',
           );
         } catch (err: any) {
           result = { success: false, error: err?.message ?? String(err) };
