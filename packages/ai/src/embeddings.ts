@@ -128,6 +128,90 @@ export class MockEmbeddingGenerator extends EmbeddingGenerator {
   }
 }
 
+/**
+ * Local embedding generator backed by `@xenova/transformers` (Transformers.js).
+ *
+ * Runs the `all-MiniLM-L6-v2` sentence-embedding model IN-PROCESS (no Python, no
+ * external API, no key). Produces 384-dim sentence vectors suitable for cosine
+ * similarity. This is used by the `/chat` answer cache to find "similar question"
+ * matches without any third-party embedding service.
+ *
+ * Design notes:
+ * - The `@xenova/transformers` dependency is imported lazily (dynamic import) so
+ *   the native WASM/onnxruntime module is only loaded on first use, and so the
+ *   rest of the platform still builds/starts if it is unavailable.
+ * - Model weights are downloaded to the local cache on first use (free, keyless).
+ * - Embeddings are L2-normalized so cosine similarity == dot product.
+ */
+export class LocalEmbeddingGenerator extends EmbeddingGenerator {
+  private pipelinePromise: Promise<any> | null = null;
+  private readonly modelName: string;
+
+  constructor(modelName: string = 'Xenova/all-MiniLM-L6-v2') {
+    super();
+    this.modelName = modelName;
+  }
+
+  /** Lazily load the Transformers.js pipeline once (shared across calls). */
+  private async pipeline(): Promise<any> {
+    if (!this.pipelinePromise) {
+      this.pipelinePromise = (async () => {
+        let transformers: any;
+        try {
+          transformers = await import('@xenova/transformers');
+        } catch (err: any) {
+          throw new Error(
+            `@xenova/transformers is not installed or failed to load: ${err?.message ?? err}. ` +
+            'Add it to packages/ai dependencies to enable the local /chat embedding model.'
+          );
+        }
+        logger.info(`Loading local embedding model ${this.modelName} (first use)...`);
+        return transformers.pipeline('feature-extraction', this.modelName);
+      })();
+      // If loading failed, allow a retry on a subsequent call instead of caching the rejection forever.
+      this.pipelinePromise.catch(() => {
+        this.pipelinePromise = null;
+      });
+    }
+    return this.pipelinePromise;
+  }
+
+  public override async embed(text: string): Promise<EmbeddingResult> {
+    const results = await this.embedBatch([text]);
+    return results[0];
+  }
+
+  public override async embedBatch(texts: string[]): Promise<EmbeddingResult[]> {
+    if (texts.length === 0) return [];
+    const extractor = await this.pipeline();
+
+    // Transformers.js `feature-extraction` returns a tensor of shape
+    // [batch, tokens, dim]. For sentence embeddings we mean-pool over the token
+    // dimension and L2-normalize. We run per-item to stay robust to tokenizer
+    // quirks and to allow simple token counting.
+    const out: EmbeddingResult[] = [];
+    for (const text of texts) {
+      const output = await extractor(text, { pooling: 'mean', normalize: true });
+      // `output` is a Tensor; `.data` holds the raw Float32Array values.
+      const data: number[] = Array.from(
+        output.data && typeof output.data[Symbol.iterator] === 'function'
+          ? (output.data as Float32Array)
+          : output.tolist
+            ? output.tolist()
+            : []
+      );
+      // If the model already applied mean+normalize, data is the 384-dim vector.
+      const embedding = data.length ? data : Array.from(output.data as Float32Array);
+      out.push({
+        embedding,
+        model: this.modelName,
+        tokens: text.split(/\s+/).filter(Boolean).length,
+      });
+    }
+    return out;
+  }
+}
+
 // ── Cosine similarity ──
 
 export function cosineSimilarity(a: number[], b: number[]): number {
