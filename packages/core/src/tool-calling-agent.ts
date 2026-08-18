@@ -179,7 +179,7 @@ export class ToolCallingAgent {
 
     const system = buildSystemPrompt(toolList, p.maxWebSearches);
 
-    let transcript = context ? `Context from earlier conversation:\n${context}\n\n` : '';
+    let transcript = p.context ? `Context from earlier conversation:\n${p.context}\n\n` : '';
     let toolCallCount = 0;
     let webSearchCount = 0;
 
