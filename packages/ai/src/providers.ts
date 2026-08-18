@@ -45,15 +45,10 @@ async function apiPost(
 
 function isToolUseFailed(err: any): boolean {
   if (!(err instanceof HttpError)) return false;
-  // A 400 with `tool_use_failed` is a CONFIGURATION error (models emitting
-  // native tool-call tokens with no tools registered). Retrying the SAME
-  // request would hit the same 400 forever — it must be surfaced, not retried.
   return err.statusCode === 400 && /tool_use_failed|Tool choice is none|json_validate_failed/.test(err.message);
 }
 
-// Groq model candidates for /ask tool-calling. `openai/gpt-oss-20b` is the smaller
-// sibling of the 120b reasoning model already proven to work on this account, and
-// follows JSON instructions far more reliably. Source of truth: GET /models.
+// Groq model candidates for /ask tool-calling.
 const GROQ_MODEL_CANDIDATES: string[] = [
   'openai/gpt-oss-20b',
   'openai/gpt-oss-120b',
@@ -63,14 +58,47 @@ const GROQ_MODEL_CANDIDATES: string[] = [
   'mixtral-8x7b-32768',
 ];
 
-// Keys that would cause Groq/OpenAI to interpret output as a native tool call.
-// We never register API-level tools; if the model emits these we must reject the
-// response locally rather than let the gateway 400 (or loop).
-const NATIVE_TOOL_KEYS = ['name', 'arguments', 'tool_calls', 'function'];
+// A declarative tool schema (slug/name/description/parameters) that we expose to
+// the model as a NATIVE tool so Groq/OpenAI models can call it via `tool_calls`.
+export interface DeclarativeTool {
+  slug: string;
+  name?: string;
+  description?: string;
+  parameters?: Record<string, { type?: string; description?: string; required?: boolean; enum?: string[] }>;
+}
 
-function hasNativeToolCall(obj: unknown): boolean {
-  if (!obj || typeof obj !== 'object') return false;
-  return NATIVE_TOOL_KEYS.some((k) => k in (obj as Record<string, unknown>));
+const JSON_TYPE_MAP: Record<string, string> = {
+  string: 'string',
+  number: 'number',
+  boolean: 'boolean',
+  object: 'object',
+  array: 'array',
+};
+
+// Convert our declarative tool into an OpenAI/Groq native tool definition.
+function toNativeTool(tool: DeclarativeTool): any {
+  const props: Record<string, any> = {};
+  const required: string[] = [];
+  for (const [key, p] of Object.entries(tool.parameters ?? {})) {
+    const type = JSON_TYPE_MAP[p.type ?? 'string'] ?? 'string';
+    const prop: any = { type };
+    if (p.description) prop.description = p.description;
+    if (p.enum && p.enum.length) prop.enum = p.enum;
+    props[key] = prop;
+    if (p.required) required.push(key);
+  }
+  return {
+    type: 'function',
+    function: {
+      name: tool.slug,
+      description: tool.description ?? tool.name ?? tool.slug,
+      parameters: {
+        type: 'object',
+        properties: props,
+        ...(required.length ? { required } : {}),
+      },
+    },
+  };
 }
 
 export class OpenAIProvider implements AIService {
@@ -117,16 +145,40 @@ export class OpenAIProvider implements AIService {
     if (options.system) messages.push({ role: 'system', content: options.system });
     messages.push({ role: 'user', content: options.prompt });
 
-    const raw = await this.#callWithRetry(messages, { temperature: 0.3 }, { allowRetryOn400: false });
+    const tools: DeclarativeTool[] | undefined = (options as any).tools;
 
+    // Native tool-calling: expose tools + let the model decide (tool_choice auto).
+    if (tools && tools.length > 0) {
+      const nativeTools = tools.map(toNativeTool);
+      const result = await this.#callWithRetryNative(
+        messages,
+        { temperature: 0.3, tools: nativeTools, tool_choice: 'auto' },
+      );
+
+      const message = result.choices?.[0]?.message;
+      // The model chose to call a tool.
+      if (message?.tool_calls && message.tool_calls.length > 0) {
+        const call = message.tool_calls[0];
+        const action = call.function?.name;
+        let parameters: Record<string, any> = {};
+        try {
+          parameters = call.function?.arguments ? JSON.parse(call.function.arguments) : {};
+        } catch {
+          parameters = {};
+        }
+        return { action, parameters };
+      }
+
+      // No tool call — treat content as the answer.
+      const content = message?.content ?? '';
+      return { answer: content };
+    }
+
+    // Legacy JSON path (no tools): parse as before.
+    const raw = await this.#callWithRetry(messages, { temperature: 0.3 }, { allowRetryOn400: false });
     try {
       const parsed = JSON.parse(raw);
-      // Defensive: if the model emitted a native tool-call shape, reject locally
-      // instead of kicking it back to the API (which would 400/loop).
-      if (hasNativeToolCall(parsed)) {
-        logger.warn('Model emitted a native tool-call shape; treating as invalid structured output.');
-        throw new Error('Native tool-call output is not supported in this mode.');
-      }
+      if (hasNativeToolCall(parsed)) throw new Error('native tool-call');
       return parsed;
     } catch {
       const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -171,8 +223,6 @@ export class OpenAIProvider implements AIService {
           { model: this.model, messages, ...extra },
         );
         const content = result.choices[0].message.content;
-        // Groq-specific: if the model called a tool, it lands in `tool_calls`,
-        // and `content` is null. Surface this clearly instead of returning null.
         if (content == null) {
           const tc = result.choices[0]?.message?.tool_calls;
           throw new Error(`Model returned no text content${tc ? ' and attempted a tool call' : ''}.`);
@@ -181,8 +231,6 @@ export class OpenAIProvider implements AIService {
       } catch (err: any) {
         lastError = err;
 
-        // Configuration error (400 tool_use_failed / json_validate_failed) must
-        // NOT be blindly retried — retrying the same request cannot fix it.
         if (isToolUseFailed(err) || (opts.allowRetryOn400 === false && err instanceof HttpError && err.statusCode === 400)) {
           logger.error(`Provider config/validation error (no retry): ${err.message}`);
           throw err;
@@ -204,6 +252,57 @@ export class OpenAIProvider implements AIService {
 
     throw lastError;
   }
+
+  // Native variant: returns the full response object (so we can read `tool_calls`),
+  // with the same key rotation and no-blind-retry-on-config-error semantics.
+  async #callWithRetryNative(
+    messages: any[],
+    extra: Record<string, any>,
+  ): Promise<any> {
+    let lastError: Error = new Error('No keys available for provider call');
+    const triedKeys = new Set<string>();
+
+    for (let attempt = 0; attempt < this.keys.length; attempt++) {
+      const pool = triedKeys.size > 0 ? this.keys.filter((k) => !triedKeys.has(k)) : this.keys;
+      const key = pool[Math.floor(Math.random() * pool.length)];
+      triedKeys.add(key);
+      const keySuffix = key.slice(-6);
+
+      try {
+        return await apiPost(
+          `${this.baseUrl}/v1/chat/completions`,
+          { Authorization: `Bearer ${key}` },
+          { model: this.model, messages, ...extra },
+        );
+      } catch (err: any) {
+        lastError = err;
+        if (isToolUseFailed(err)) {
+          logger.error(`Provider config/validation error (no retry): ${err.message}`);
+          throw err;
+        }
+        const isRateLimit = err instanceof HttpError && err.statusCode === 429;
+        if (isRateLimit && triedKeys.size < this.keys.length) {
+          logger.warn(`Key ...${keySuffix} rate-limited (429), rotating to next key (attempt ${attempt + 2}/${this.keys.length})`);
+          continue;
+        }
+        const isTimeout = err.name === 'AbortError' || err.name === 'TimeoutError';
+        if (isTimeout && triedKeys.size < this.keys.length) {
+          logger.warn(`Key ...${keySuffix} timed out, rotating to next key (attempt ${attempt + 2}/${this.keys.length})`);
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    throw lastError;
+  }
+}
+
+const NATIVE_TOOL_KEYS = ['name', 'arguments', 'tool_calls', 'function'];
+
+function hasNativeToolCall(obj: unknown): boolean {
+  if (!obj || typeof obj !== 'object') return false;
+  return NATIVE_TOOL_KEYS.some((k) => k in (obj as Record<string, unknown>));
 }
 
 export class AnthropicProvider implements AIService {
