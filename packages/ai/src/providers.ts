@@ -243,7 +243,7 @@ export class AnthropicProvider implements AIService {
     try {
       return JSON.parse(raw);
     } catch {
-      const jsonMatch = raw.match(/```(?:json)?\s*([\s\S]*?)\//);
+      const jsonMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
       if (jsonMatch) {
         return JSON.parse(jsonMatch[1].trim());
       }
@@ -295,6 +295,9 @@ export type ProviderType = 'openai' | 'anthropic' | 'groq' | 'local';
  *
  * Groq uses the OpenAI-compatible endpoint with key rotation.
  * Pass multiple keys as comma-separated: `GROQ_API_KEY=key1,key2,key3`
+ *
+ * Default Groq model is `llama-3.3-70b-versatile` — reliable at strict JSON
+ * tool-calling. Override with the `AI_MODEL` env var (Groq model id).
  */
 export function createProvider(type: ProviderType, apiKey: string, model?: string): AIService {
   // Empty key handling: providers throw when constructed with no key. Rather than
@@ -317,12 +320,14 @@ export function createProvider(type: ProviderType, apiKey: string, model?: strin
       return new OpenAIProvider(apiKey, model);
     case 'anthropic':
       return new AnthropicProvider(apiKey, model);
-    case 'groq':
+    case 'groq': {
+      const defaultModel = process.env['AI_MODEL'] || 'llama-3.3-70b-versatile';
       return new OpenAIProvider(
         apiKey,
-        model || 'openai/gpt-oss-120b',
+        model || defaultModel,
         'https://api.groq.com/openai'
       );
+    }
     case 'local': {
       // Local Qwen brain via node-llama-cpp. No API key needed — it runs
       // on the host's own model file (auto-downloaded on first use).
