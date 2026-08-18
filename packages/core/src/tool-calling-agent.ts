@@ -97,6 +97,11 @@ FACTS, SOURCES, AND OUTPUT
 `.trim();
 }
 
+export interface AgentRunTrace {
+  answer: string;
+  usedWebSearch: boolean;
+}
+
 /**
  * Feature 2: a controlled, model-driven tool-calling loop.
  *
@@ -122,6 +127,17 @@ export class ToolCallingAgent {
     context?: string,
     options: ToolCallingAgentOptions = {},
   ): Promise<string> {
+    const trace = await this.runWithTrace(userId, userMessage, context, options);
+    return trace.answer;
+  }
+
+  /** Like run(), but also reports whether a web search was performed. */
+  async runWithTrace(
+    userId: string,
+    userMessage: string,
+    context?: string,
+    options: ToolCallingAgentOptions = {},
+  ): Promise<AgentRunTrace> {
     const maxToolCalls = options.maxToolCalls ?? DEFAULT_AGENT_OPTIONS.maxToolCalls;
     const maxWebSearches = options.maxWebSearches ?? DEFAULT_AGENT_OPTIONS.maxWebSearches;
     const toolTimeoutMs = options.toolTimeoutMs ?? DEFAULT_AGENT_OPTIONS.toolTimeoutMs;
@@ -145,7 +161,7 @@ export class ToolCallingAgent {
     toolTimeoutMs: number;
     generateTimeoutMs: number;
     maxResultBytes: number;
-  }): Promise<string> {
+  }): Promise<AgentRunTrace> {
     const toolSchemas = this.registry.getDeclarativeSchemas();
     const toolList = toolSchemas
       .map((t) => `- ${t.slug}: ${t.description}`)
@@ -168,25 +184,25 @@ export class ToolCallingAgent {
 
       if (!parsed.success) {
         logger.error(`Model returned invalid decision: ${parsed.error.message}`);
-        return 'Sorry, I had trouble deciding what to do. Please try again.';
+        return { answer: 'Sorry, I had trouble deciding what to do. Please try again.', usedWebSearch: webSearchCount > 0 };
       }
 
       const decision: Decision = parsed.data;
 
       // Final answer
       if (decision.answer && !decision.tool) {
-        return decision.answer;
+        return { answer: decision.answer, usedWebSearch: webSearchCount > 0 };
       }
 
       // Tool call
       if (decision.tool) {
         if (toolCallCount >= p.maxToolCalls) {
           logger.warn(`Tool-call limit (${p.maxToolCalls}) reached; stopping.`);
-          return 'I reached my tool-call limit. Here is what I gathered so far.';
+          return { answer: 'I reached my tool-call limit. Here is what I gathered so far.', usedWebSearch: webSearchCount > 0 };
         }
         if (decision.tool === WEB_SEARCH_SLUG && webSearchCount >= p.maxWebSearches) {
           logger.warn(`Web-search limit (${p.maxWebSearches}) reached; stopping.`);
-          return 'I reached my web-search limit. Here is what I gathered so far.';
+          return { answer: 'I reached my web-search limit. Here is what I gathered so far.', usedWebSearch: webSearchCount > 0 };
         }
 
         let result;
@@ -208,9 +224,9 @@ export class ToolCallingAgent {
       }
 
       // Neither answer nor tool -> treat as no-op answer
-      return 'I could not determine a response. Please rephrase.';
+      return { answer: 'I could not determine a response. Please rephrase.', usedWebSearch: webSearchCount > 0 };
     }
 
-    return 'I reached the maximum number of steps without a final answer.';
+    return { answer: 'I reached the maximum number of steps without a final answer.', usedWebSearch: webSearchCount > 0 };
   }
 }
