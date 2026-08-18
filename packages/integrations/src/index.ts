@@ -6,6 +6,7 @@ export * from './turso.js';
 export * from './trainer-links.js';
 export * from './conversation-memory.js';
 export * from './web-search.js';
+export * from './ask-response-cache.js';
 export * from './task-state.js';
 export * from './schedule-store.js';
 export * from './automation.js';
@@ -53,7 +54,7 @@ export const databaseStoreResult: ToolDefinition = {
     const planData = args['data'];
     const tasksList = planData.tasks instanceof Map ? Array.from(planData.tasks.values()) : (planData.tasks || []);
 
-    logger.info(`Persisting plan results for plan ${planId} into SQLite database...`);
+    logger.info(`Persisting plan results for plan ${planId} into SQLite database..`);
 
     try {
       const db = await getDatabase();
