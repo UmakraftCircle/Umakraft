@@ -12,6 +12,7 @@ import { renderGainReport, renderLeaderboardReport, renderCompareReport } from '
 import { CreateCompareSummaryService } from '@ai-agent-platform/ai';
 import { handleAsk } from './ask.js';
 import { handleAgent } from './agent.js';
+import { handleChat } from './chat.js';
 import { handleScheduleCreate, handleMyTasks, handleUnschedule } from './autonomous.js';
 
 const logger = createLogger('Discord-Handlers');
@@ -449,6 +450,8 @@ export async function routeCommand(interaction: ChatInputCommandInteraction) {
       await handleCompare(interaction);
     } else if (commandName === 'ask') {
       await handleAsk(interaction);
+    } else if (commandName === 'chat') {
+      await handleChat(interaction);
     } else if (commandName === 'agent') {
       await handleAgent(interaction);
     } else if (commandName === 'schedule') {
