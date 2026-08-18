@@ -16,16 +16,19 @@ RUN npm install -g pnpm@9.0.5
 
 WORKDIR /app
 
-# Copy EVERYTHING first so a change to any file invalidates all subsequent
-# layers — this guarantees `pnpm install` + the `sed` main-patch below always
-# re-run, preventing stale-build bugs where source changes were silently ignored.
+# Copy the full workspace first so a change to ANY file invalidates the
+# dependency-install layer and the main-patch below (prevents stale builds).
 COPY . .
 
 RUN pnpm install --no-frozen-lockfile
 
-# Patch "main" to run TypeScript via tsx (replaces ./dist/*.js → ./src/*.ts).
+# Patch "main" to run TypeScript via tsx (replaces ./dist/index.js → ./src/index.ts).
 RUN find packages apps -maxdepth 4 -name package.json \
     -exec sed -i 's|"main": "./dist/index.js"|"main": "./src/index.ts"|g' {} \;
+
+# Ensure the health server entrypoint is at /app/health.cjs (COPY . . puts it
+# at /app/railway/health.cjs, so move it inline).
+RUN cp /app/railway/health.cjs /app/health.cjs
 
 # ── Runtime ──
 ENV NODE_ENV=production
