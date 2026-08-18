@@ -95,7 +95,7 @@ export class OpenAIProvider implements AIService {
     return this.model;
   }
 
-  // ── generate ────────────────────────────────────────────
+  // ── generate ──
 
   public async generate(options: GenerateOptions): Promise<string> {
     const messages: any[] = [];
@@ -105,27 +105,43 @@ export class OpenAIProvider implements AIService {
     return this.#callWithRetry(messages, { temperature: 0.7 });
   }
 
-  // ── generateStructuredOutput ─────────────────────────────
+  // ── generateStructuredOutput ──
 
   public async generateStructuredOutput(options: GenerateOptions): Promise<any> {
     const messages: any[] = [];
     if (options.system) messages.push({ role: 'system', content: options.system });
     messages.push({ role: 'user', content: options.prompt });
 
-    const raw = await this.#callWithRetry(messages, {
-      temperature: 0.3,
-      response_format: { type: 'json_object' },
-    });
+    // NOTE: we deliberately do NOT send `response_format: { type: 'json_object' }`.
+    // Providers like Groq apply strict JSON-schema validation on that flag and
+    // 400 with `json_validate_failed` when a reasoning model (e.g. gpt-oss-120b)
+    // emits an empty/partial generation. We parse JSON ourselves below instead,
+    // and the agent loop retries on parse failure.
+    const raw = await this.#callWithRetry(messages, { temperature: 0.3 });
 
     try {
       return JSON.parse(raw);
     } catch {
+      // Fall back to extracting the first JSON object/array if the model wrapped
+      // the output in markdown fences or prose.
+      const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (fence) {
+        try {
+          return JSON.parse(fence[1].trim());
+        } catch { /* fall through */ }
+      }
+      const objectMatch = raw.match(/\{[\s\S]*\}/);
+      if (objectMatch) {
+        try {
+          return JSON.parse(objectMatch[0]);
+        } catch { /* fall through */ }
+      }
       logger.warn(`Failed to parse structured output as JSON. Raw: ${raw.slice(0, 200)}`);
       throw new Error('Structured output was not valid JSON.');
     }
   }
 
-  // ── Internal: call with key rotation & rate-limit retry ─
+  // ── Internal: call with key rotation & rate-limit retry ──
 
   async #callWithRetry(
     messages: any[],
@@ -156,7 +172,6 @@ export class OpenAIProvider implements AIService {
 
         // Rate limit (429) → try next key if available
         const isRateLimit = err instanceof HttpError && err.statusCode === 429;
-
         if (isRateLimit && triedKeys.size < this.keys.length) {
           logger.warn(
             `Key ...${keySuffix} rate-limited (429), rotating to next key ` +
@@ -167,7 +182,6 @@ export class OpenAIProvider implements AIService {
 
         // Network timeout / abort → retry with different key
         const isTimeout = err.name === 'AbortError' || err.name === 'TimeoutError';
-
         if (isTimeout && triedKeys.size < this.keys.length) {
           logger.warn(
             `Key ...${keySuffix} timed out, rotating to next key ` +
@@ -202,7 +216,7 @@ export class AnthropicProvider implements AIService {
     return this.model;
   }
 
-  // ── generate ────────────────────────────────────────────
+  // ── generate ──
 
   public async generate(options: GenerateOptions): Promise<string> {
     return this.#callWithRetry({
@@ -213,7 +227,7 @@ export class AnthropicProvider implements AIService {
     });
   }
 
-  // ── generateStructuredOutput ─────────────────────────────
+  // ── generateStructuredOutput ──
 
   public async generateStructuredOutput(options: GenerateOptions): Promise<any> {
     const systemPrompt = (options.system || '') +
@@ -229,7 +243,7 @@ export class AnthropicProvider implements AIService {
     try {
       return JSON.parse(raw);
     } catch {
-      const jsonMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+      const jsonMatch = raw.match(/```(?:json)?\s*([\s\S]*?)\//);
       if (jsonMatch) {
         return JSON.parse(jsonMatch[1].trim());
       }
@@ -238,7 +252,7 @@ export class AnthropicProvider implements AIService {
     }
   }
 
-  // ── Internal: call with retry on 429/timeout ────────────
+  // ── Internal: call with retry on 429/timeout ──
 
   async #callWithRetry(body: any, attempt: number = 0): Promise<string> {
     const maxAttempts = 3;
