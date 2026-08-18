@@ -4,8 +4,6 @@ import { LocalProvider } from './local-provider.js';
 
 const logger = createLogger('Providers');
 
-// ── Custom HTTP error with status code ──
-
 class HttpError extends Error {
   public statusCode: number;
   constructor(statusCode: number, message: string) {
@@ -15,9 +13,7 @@ class HttpError extends Error {
   }
 }
 
-// ── Shared HTTP client (with timeout) ──
-
-const DEFAULT_TIMEOUT_MS = 30_000; // 30 seconds
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 async function apiPost(
   url: string,
@@ -47,21 +43,17 @@ async function apiPost(
   }
 }
 
-// ── Groq model candidates ──
-// Groq periodically rotates and renames models (e.g. gpt-oss-* retired). To stop
-// hard-coding one fragile id, try an ordered list of known-good chat models. The
-// definitive source of truth is GET https://api.groq.com/openai/v1/models.
-
-/** LLM chat models usable for /ask tool-calling, most-preferred first. */
+// Groq model candidates for /ask tool-calling. `openai/gpt-oss-20b` is the smaller
+// sibling of the 120b reasoning model already proven to work on this account, and
+// follows JSON instructions far more reliably. Source of truth: GET /models.
 const GROQ_MODEL_CANDIDATES: string[] = [
-  'llama-3.3-70b-versatile',
+  'openai/gpt-oss-20b',
+  'openai/gpt-oss-120b',
   'llama-3.1-8b-instant',
-  'llama-3.1-70b-versatile',
+  'llama-3.3-70b-versatile',
   'llama3-70b-8192',
   'mixtral-8x7b-32768',
 ];
-
-// ── OpenAI Provider (also used for OpenAI-compatible APIs like Groq) ──
 
 export class OpenAIProvider implements AIService {
   private model: string;
@@ -107,8 +99,6 @@ export class OpenAIProvider implements AIService {
     if (options.system) messages.push({ role: 'system', content: options.system });
     messages.push({ role: 'user', content: options.prompt });
 
-    // Deliberately NOT sending response_format json_object (Groq strict-validates
-    // it and 400s on empty generations). We parse JSON ourselves below.
     const raw = await this.#callWithRetry(messages, { temperature: 0.3 });
 
     try {
@@ -159,8 +149,6 @@ export class OpenAIProvider implements AIService {
     throw lastError;
   }
 }
-
-// ── Anthropic Provider ──
 
 export class AnthropicProvider implements AIService {
   private model: string;
@@ -232,19 +220,8 @@ export class AnthropicProvider implements AIService {
   }
 }
 
-// ── Factory ──
-
 export type ProviderType = 'openai' | 'anthropic' | 'groq' | 'local';
 
-/**
- * Create an AI provider instance.
- *
- * Groq model resolution order:
- *   1. `AI_MODEL` env var (explicit override)
- *   2. the `model` argument (call sites)
- *   3. `GROQ_MODEL` env var (legacy alias)
- *   4. first candidate from GROQ_MODEL_CANDIDATES
- */
 export function createProvider(type: ProviderType, apiKey: string, model?: string): AIService {
   if (type !== 'local') {
     const trimmed = Array.isArray(apiKey) ? apiKey : String(apiKey).trim();
