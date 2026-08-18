@@ -7,6 +7,7 @@ export * from './trainer-links.js';
 export * from './conversation-memory.js';
 export * from './web-search.js';
 export * from './ask-response-cache.js';
+export * from './moderation-log.js';
 export * from './task-state.js';
 export * from './schedule-store.js';
 export * from './automation.js';
