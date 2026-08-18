@@ -11,15 +11,15 @@ export const logger = createLogger('Discord-Bot');
 /**
  * Build the AI service used by `/ask` and `/agent` from env.
  *
- * Provider selection is explicit and env-driven:
- *   - AI_PROVIDER=local  → the on-host Qwen brain (no API key needed)
- *   - AI_PROVIDER=groq   → Groq, using GROQ_API_KEY (default)
- *   - AI_PROVIDER=openai → OpenAI, using OPENAI_API_KEY
- *   - AI_PROVIDER=anthropic → Anthropic, using ANTHROPIC_API_KEY
+ * Groq is the main provider. Provider selection is explicit and env-driven:
+ *    - AI_PROVIDER=local     → the on-host Qwen brain (no API key needed)
+ *    - AI_PROVIDER=openai    → OpenAI, using OPENAI_API_KEY
+ *    - AI_PROVIDER=anthropic → Anthropic, using ANTHROPIC_API_KEY
+ *    - otherwise (default)   → Groq, using GROQ_API_KEY
  *
- * Falls back to groq/openai when AI_PROVIDER is unset, preserving the prior
- * behavior. createProvider throws a clear error if the selected provider has
- * no key (the caller surfaces it), so there is no silent mock fallback.
+ * Groq is ALWAYS the fallback when AI_PROVIDER is unset or unrecognised.
+ * `createProvider` throws a clear error if the selected provider has no key
+ * (the caller surfaces it), so there is no silent mock fallback.
  */
 export function buildAIService(): AIService {
   const provider = (process.env['AI_PROVIDER'] || 'groq').toLowerCase();
@@ -34,10 +34,8 @@ export function buildAIService(): AIService {
     return createProvider('anthropic', process.env['ANTHROPIC_API_KEY'] || '');
   }
 
-  // Default (groq), or explicit 'groq'
-  const groqKey = process.env['GROQ_API_KEY'];
-  if (groqKey) return createProvider('groq', groqKey);
-  return createProvider('openai', process.env['OPENAI_API_KEY'] || '');
+  // Default and unrecognised → Groq (main provider).
+  return createProvider('groq', process.env['GROQ_API_KEY'] || '');
 }
 
 export function registerAllTools(): void {
