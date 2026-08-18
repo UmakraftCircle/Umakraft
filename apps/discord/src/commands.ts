@@ -1,6 +1,7 @@
 import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
 import { askCommand } from './ask.js';
 import { agentCommand } from './agent.js';
+import { chatCommand } from './chat.js';
 import { scheduleCommand, myTasksCommand, unscheduleCommand } from './autonomous.js';
 
 export const syncCommand = new SlashCommandBuilder()
@@ -70,4 +71,4 @@ export const compareCommand = new SlashCommandBuilder()
   .setDMPermission(false)
   .toJSON();
 
-export const ALL_COMMANDS = [syncCommand, fanCommand, linkCommand, compareCommand, askCommand, agentCommand, scheduleCommand, myTasksCommand, unscheduleCommand];
+export const ALL_COMMANDS = [syncCommand, fanCommand, linkCommand, compareCommand, askCommand, chatCommand, agentCommand, scheduleCommand, myTasksCommand, unscheduleCommand];
