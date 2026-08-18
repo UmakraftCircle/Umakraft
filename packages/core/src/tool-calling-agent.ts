@@ -79,6 +79,10 @@ SCOPE
 - If a question is OFF-TOPIC or inappropriate, respond with EXACTLY this token and
   nothing else: [[OFFTOPIC]]
 
+OUTPUT FORMAT — the only thing you ever emit is ONE JSON object, no prose.
+- To call a tool, output exactly: {"tool": "<slug>", "args": {...}}
+- To answer, output exactly: {"answer": "<final text>"}
+
 Available tools (read-only):
 ${toolList}
 
@@ -185,19 +189,33 @@ export class ToolCallingAgent {
 
     for (let i = 0; i <= p.maxToolCalls; i++) {
       const prompt = `${transcript}User ${p.userId} says: ${p.userMessage}`;
-      const raw = await withTimeout(
-        this.aiService.generateStructuredOutput({ system, prompt, schema: DecisionSchema }),
-        p.generateTimeoutMs,
-        'model generation',
-      );
-      const parsed = DecisionSchema.safeParse(raw);
 
-      if (!parsed.success) {
-        logger.error(`Model returned invalid decision: ${parsed.error.message}`);
+      // Generate a valid decision, retrying once if the model emits non-JSON/non-conforming output.
+      let parsed: { success: boolean; data?: Decision; error?: any } | null = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const raw = await withTimeout(
+          this.aiService.generateStructuredOutput({ system, prompt, schema: DecisionSchema }),
+          p.generateTimeoutMs,
+          'model generation',
+        );
+        const result = DecisionSchema.safeParse(raw);
+        if (result.success) {
+          parsed = result;
+          break;
+        }
+        if (attempt === 0) {
+          logger.warn('Model produced non-conforming decision; retrying once.');
+        } else {
+          parsed = result;
+        }
+      }
+
+      if (!parsed || !parsed.success) {
+        logger.error(`Model returned invalid decision: ${parsed?.error?.message ?? 'unknown'}`);
         return { answer: 'Sorry, I had trouble deciding what to do. Please try again.', usedWebSearch: webSearchCount > 0 };
       }
 
-      const decision: Decision = parsed.data;
+      const decision: Decision = parsed.data!;
 
       // Final answer
       if (decision.answer && !decision.tool) {
