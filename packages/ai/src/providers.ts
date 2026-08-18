@@ -48,7 +48,6 @@ function isToolUseFailed(err: any): boolean {
   return err.statusCode === 400 && /tool_use_failed|Tool choice is none|json_validate_failed/.test(err.message);
 }
 
-// Groq model candidates for /ask tool-calling.
 const GROQ_MODEL_CANDIDATES: string[] = [
   'openai/gpt-oss-20b',
   'openai/gpt-oss-120b',
@@ -58,8 +57,6 @@ const GROQ_MODEL_CANDIDATES: string[] = [
   'mixtral-8x7b-32768',
 ];
 
-// A declarative tool schema (slug/name/description/parameters) that we expose to
-// the model as a NATIVE tool so Groq/OpenAI models can call it via `tool_calls`.
 export interface DeclarativeTool {
   slug: string;
   name?: string;
@@ -75,7 +72,6 @@ const JSON_TYPE_MAP: Record<string, string> = {
   array: 'array',
 };
 
-// Convert our declarative tool into an OpenAI/Groq native tool definition.
 function toNativeTool(tool: DeclarativeTool): any {
   const props: Record<string, any> = {};
   const required: string[] = [];
@@ -145,18 +141,24 @@ export class OpenAIProvider implements AIService {
     if (options.system) messages.push({ role: 'system', content: options.system });
     messages.push({ role: 'user', content: options.prompt });
 
-    const tools: DeclarativeTool[] | undefined = (options as any).tools;
+    const tools: DeclarativeTool[] | undefined = options.tools;
 
-    // Native tool-calling: expose tools + let the model decide (tool_choice auto).
     if (tools && tools.length > 0) {
       const nativeTools = tools.map(toNativeTool);
-      const result = await this.#callWithRetryNative(
-        messages,
-        { temperature: 0.3, tools: nativeTools, tool_choice: 'auto' },
+      const toolNames = nativeTools.map((t) => t.function.name);
+
+      // Defensive invariant: if tools are present, tool_choice MUST be "auto"
+      // (never "none"), otherwise Groq will 400 with tool_use_failed.
+      const extra = { temperature: 0.3, tools: nativeTools, tool_choice: 'auto' };
+
+      // Log the FINAL outbound config (no secrets / headers / user data).
+      logger.info(
+        `[structured-native] model=${this.model} tool_choice=${extra.tool_choice} tools=[${toolNames.join(', ')}]`,
       );
 
+      const result = await this.#callWithRetryNative(messages, extra);
+
       const message = result.choices?.[0]?.message;
-      // The model chose to call a tool.
       if (message?.tool_calls && message.tool_calls.length > 0) {
         const call = message.tool_calls[0];
         const action = call.function?.name;
@@ -166,15 +168,17 @@ export class OpenAIProvider implements AIService {
         } catch {
           parameters = {};
         }
+        logger.info(`[structured-native] model chose tool: ${action}`);
         return { action, parameters };
       }
 
-      // No tool call — treat content as the answer.
       const content = message?.content ?? '';
       return { answer: content };
     }
 
-    // Legacy JSON path (no tools): parse as before.
+    // No tools: JSON path. Log outbound config for observability.
+    logger.info(`[structured-json] model=${this.model} tool_choice=none tools=[]`);
+
     const raw = await this.#callWithRetry(messages, { temperature: 0.3 }, { allowRetryOn400: false });
     try {
       const parsed = JSON.parse(raw);
@@ -253,8 +257,6 @@ export class OpenAIProvider implements AIService {
     throw lastError;
   }
 
-  // Native variant: returns the full response object (so we can read `tool_calls`),
-  // with the same key rotation and no-blind-retry-on-config-error semantics.
   async #callWithRetryNative(
     messages: any[],
     extra: Record<string, any>,
