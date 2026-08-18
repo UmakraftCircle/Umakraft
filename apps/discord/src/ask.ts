@@ -3,13 +3,19 @@ import { createLogger } from '@ai-agent-platform/shared';
 import { ToolRegistry } from '@ai-agent-platform/core';
 import { buildAIService } from './bootstrap.js';
 import { ToolCallingAgent } from '@ai-agent-platform/core';
-import { conversationMemoryStore, askResponseCache } from '@ai-agent-platform/integrations';
+import { conversationMemoryStore, askResponseCache, moderationLogStore } from '@ai-agent-platform/integrations';
 import { askTools } from './ask-tools.js';
 import { failureMessage } from './errors.js';
+import { matchBlocked, buildRelevanceAllowlist, hasRelevance, isOffTopicAnswer } from './guard.js';
 
 const logger = createLogger('AskHandler');
 
 let registered = false;
+
+const REDIRECT_MESSAGE =
+  'I can only help with Uma Musume / Umakraft topics (trainer stats, leaderboards, banners, gacha, support cards, races, and horse-girl characters). Could you rephrase your question around those?';
+const REJECT_MESSAGE =
+  'I can\'t help with that. Please keep questions on Uma Musume / Umakraft topics.';
 
 /** Normalize a question for use as a cache key (lowercase + collapse whitespace). */
 function normalizeQuestion(q: string): string {
@@ -40,6 +46,26 @@ export async function handleAsk(interaction: ChatInputCommandInteraction): Promi
 
     const normalized = normalizeQuestion(question);
 
+    // ── Layer 1: blocklist (improper content / injection) — hard reject. ──
+    if (matchBlocked(question)) {
+      await interaction.editReply(REJECT_MESSAGE);
+      return;
+    }
+
+    // ── Layer 3: keyword allowlist (soft pre-filter) — zero matches → redirect. ──
+    const registry = ToolRegistry.getInstance();
+    const allowlist = buildRelevanceAllowlist(registry.getDeclarativeSchemas());
+    if (!hasRelevance(normalized, allowlist)) {
+      logger.info(`/ask off-topic (no keyword match): "${question.slice(0, 60)}"`);
+      try {
+        await moderationLogStore.append(userId, channelId, question);
+      } catch (logErr: any) {
+        logger.warn(`moderation log write skipped: ${logErr?.message ?? logErr}`);
+      }
+      await interaction.editReply(REDIRECT_MESSAGE);
+      return;
+    }
+
     // Cache read: reuse a previously cached web-research answer for the same question.
     try {
       const cached = await askResponseCache.get(normalized);
@@ -51,7 +77,6 @@ export async function handleAsk(interaction: ChatInputCommandInteraction): Promi
         return;
       }
     } catch (cacheErr: any) {
-      // Cache read is best-effort; fall through to a live answer on any failure.
       logger.warn(`/ask cache read skipped: ${cacheErr?.message ?? cacheErr}`);
     }
 
@@ -64,7 +89,7 @@ export async function handleAsk(interaction: ChatInputCommandInteraction): Promi
     // Build an AI service from env (honours AI_PROVIDER=local|groq|openai|anthropic).
     const aiService = buildAIService();
 
-    const agent = new ToolCallingAgent(aiService, ToolRegistry.getInstance());
+    const agent = new ToolCallingAgent(aiService, registry);
     const trace = await agent.runWithTrace(userId, question, context, {
       maxToolCalls: 4,
       toolTimeoutMs: 8_000,
@@ -72,6 +97,18 @@ export async function handleAsk(interaction: ChatInputCommandInteraction): Promi
       overallTimeoutMs: 90_000,
     });
     const answer = trace.answer;
+
+    // ── Layer 2: model topic gate — [[OFFTOPIC]] marker → redirect + log. ──
+    if (isOffTopicAnswer(answer)) {
+      logger.info(`/ask off-topic (model marker): "${question.slice(0, 60)}"`);
+      try {
+        await moderationLogStore.append(userId, channelId, question);
+      } catch (logErr: any) {
+        logger.warn(`moderation log write skipped: ${logErr?.message ?? logErr}`);
+      }
+      await interaction.editReply(REDIRECT_MESSAGE);
+      return;
+    }
 
     // Persist to cache only if the answer required a web search.
     if (trace.usedWebSearch) {
