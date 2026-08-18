@@ -38,6 +38,15 @@ export function failureMessage(err: unknown): string {
     return '⚠️ The agent tried to use a tool that is not available. This is likely a configuration issue — a server admin should check the tool registry.';
   }
 
+  // Code bugs (ReferenceError / TypeError / etc.) — log LOUDLY with stack, but keep
+  // the user-facing message generic so no internals leak.
+  if (err instanceof ReferenceError || err instanceof TypeError) {
+    logger.error(
+      `Code bug in /ask: ${err.name}: ${err.message}\n${err.stack ?? 'no stack'}`
+    );
+    return '⚠️ Sorry, an internal error occurred while answering. Please try again.';
+  }
+
   // Fallback: keep it generic to avoid leaking internals, but log the real error.
   logger.error(`Unclassified error: ${msg}`);
   return '⚠️ Sorry, something went wrong while answering. Please try again.';
