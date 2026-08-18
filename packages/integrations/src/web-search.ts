@@ -4,16 +4,20 @@ import { getTursoClient } from './turso.js';
 const logger = createLogger('WebSearch');
 
 /**
- * Feature 3: AnySearch web research + Turso result cache.
+ * Feature 3: Tavily web research + Turso result cache.
  *
- * - AnySearch endpoint: POST https://api.anysearch.com/v1/search
- * - Auth:  Authorization: Bearer ${ANYSEARCH_API_KEY} (optional; anonymous is rate-limited)
- * - Body:  { query, max_results (1-20), tag?, ... }
- * - Result: { code, data: { results: [{ title, url, snippet, content }], metadata } }
+ * - Tavily endpoint: POST https://api.tavily.com/search
+ * - Auth: Authorization: Bearer ${TAVILY_API_KEY}
+ * - Body: { query, max_results (1-20), ... }
+ * - Result: { results: [{ title, url, content }], ... }
+ *
+ * Supports multiple keys via a single comma-separated TAVILY_API_KEY env var
+ * (e.g. "key1,key2,key3"). Requests rotate/fall back across the key pool on
+ * failure (401/403/429, network error) so one dead or rate-limited key does
+ * not break search.
  */
 
-const ANYSEARCH_BASE_URL = 'https://api.anysearch.com';
-const ANYSEARCH_ENDPOINT = `${ANYSEARCH_BASE_URL}/v1/search`;
+const TAVILY_ENDPOINT = 'https://api.tavily.com/search';
 const DEFAULT_MAX_RESULTS = 10;
 const MAX_RESULTS = 20;
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -107,6 +111,23 @@ function isSafeUrl(url: string): boolean {
   }
 }
 
+/**
+ * Read the comma-separated TAVILY_API_KEY env var into a deduped, trimmed pool.
+ * Tolerant to stray whitespace/newlines around commas.
+ */
+function readTavilyKeys(): string[] {
+  const raw = process.env['TAVILY_API_KEY'] || '';
+  const seen = new Set<string>();
+  const keys: string[] = [];
+  for (const part of raw.split(',')) {
+    const key = part.trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    keys.push(key);
+  }
+  return keys;
+}
+
 function normalizeResult(r: Rm): SearchResult | null {
   if (!r || !isSafeUrl(r.url || '')) return null;
   return {
@@ -191,15 +212,30 @@ class TursoWebSearchCache implements WebSearchCacheStore {
 
 const cache = new TursoWebSearchCache();
 
-export class AnySearchClient {
-  private apiKey: string;
-  constructor(apiKey?: string) {
-    this.apiKey = apiKey || process.env['ANYSEARCH_API_KEY'] || '';
+/** Raw shape of a single Tavily result (kept minimal; only mapped fields are used). */
+interface TavilyRawResult {
+  title?: string;
+  url?: string;
+  content?: string;
+}
+
+interface TavilyRawResponse {
+  results?: TavilyRawResult[];
+  response_time?: number;
+}
+
+export class TavilyClient {
+  private apiKeys: string[];
+  constructor(apiKeys?: string[]) {
+    this.apiKeys = apiKeys && apiKeys.length ? apiKeys : readTavilyKeys();
   }
 
   /**
    * Search the web. Returns normalized results, served from cache when fresh.
    * Time-sensitive queries use a short TTL and bypass stale cache.
+   *
+   * On failure, rotates through the available API keys (falling back on 401/403/429
+   * or a network error) so a single dead or rate-limited key does not break search.
    */
   async search(query: string, options: { maxResults?: number; bypassCache?: boolean; tag?: string } = {}): Promise<SearchResponse> {
     const cleanQuery = query.trim();
@@ -222,38 +258,64 @@ export class AnySearchClient {
 
     await limiter.acquire();
 
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (this.apiKey) headers['Authorization'] = `Bearer ${this.apiKey}`;
+    if (this.apiKeys.length === 0) {
+      logger.error('Tavily search skipped: TAVILY_API_KEY is not set (provide a comma-separated list of keys).');
+      return { results: [], totalResults: 0, searchTimeMs: 0, fromCache: false, retrievedAt: new Date().toISOString(), cacheExpiresAt: null };
+    }
 
     const body: Record<string, any> = { query: cleanQuery, max_results: maxResults };
     if (options.tag) body['tag'] = options.tag;
 
-    let data: any;
-    try {
-      const res = await fetch(ANYSEARCH_ENDPOINT, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      });
+    let data: TavilyRawResponse | null = null;
+    let lastError: any = null;
 
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        throw new Error(`AnySearch ${res.status}: ${text.slice(0, 200)}`);
-      }
+    for (const apiKey of this.apiKeys) {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
 
-      data = await res.json();
-      if (data?.code !== 0) {
-        throw new Error(`AnySearch error code ${data?.code}: ${data?.message || 'unknown'}`);
+      try {
+        const res = await fetch(TAVILY_ENDPOINT, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        });
+
+        if (!res.ok) {
+          const text = await res.text().catch(() => '');
+          const msg = `Tavily ${res.status}: ${text.slice(0, 200)}`;
+          lastError = new Error(msg);
+          // Retryable auth/rate-limit errors → advance to next key.
+          if (res.status === 401 || res.status === 403 || res.status === 429) {
+            logger.warn(`Tavily key failed (${res.status}), rotating to next key`);
+            continue;
+          }
+          throw lastError;
+        }
+
+        data = (await res.json()) as TavilyRawResponse;
+        break;
+      } catch (err: any) {
+        lastError = err;
+        logger.warn(`Tavily request failed for "${cleanQuery.slice(0, 60)}" (key rotating): ${err?.message || err}`);
+        // Network timeout / transport error → advance to next key.
+        continue;
       }
-    } catch (err: any) {
-      logger.error(`AnySearch request failed for "${cleanQuery.slice(0, 60)}": ${err?.message || err}`);
+    }
+
+    if (!data) {
+      logger.error(`All Tavily keys failed for "${cleanQuery.slice(0, 60)}": ${lastError?.message || 'unknown error'}`);
       // Graceful failure: return empty results rather than throwing.
       return { results: [], totalResults: 0, searchTimeMs: 0, fromCache: false, retrievedAt: new Date().toISOString(), cacheExpiresAt: null };
     }
 
-    const rawResults: Rm[] = data?.data?.results || [];
-    const metadata = data?.data?.metadata || {};
+    const rawResults: Rm[] = (data.results || []).map((r) => ({
+      title: r.title ?? '',
+      url: r.url ?? '',
+      snippet: r.content ?? '',
+      content: r.content ?? '',
+    }));
+
     const results = rawResults
       .map(normalizeResult)
       .filter((r): r is SearchResult => r !== null);
@@ -261,8 +323,8 @@ export class AnySearchClient {
     const cacheTtl = timeSensitive ? TIME_SENSITIVE_CACHE_TTL_MS : CACHE_TTL_MS;
     const response: SearchResponse = {
       results,
-      totalResults: metadata.total_results ?? results.length,
-      searchTimeMs: metadata.search_time_ms ?? 0,
+      totalResults: results.length,
+      searchTimeMs: data.response_time ?? 0,
       fromCache: false,
       retrievedAt: new Date().toISOString(),
       cacheExpiresAt: new Date(Date.now() + cacheTtl).toISOString(),
@@ -279,7 +341,7 @@ export class AnySearchClient {
   }
 }
 
-export const anySearchClient = new AnySearchClient();
+export const tavilyClient = new TavilyClient();
 
 export const searchWebTool = {
   slug: 'search_web',
@@ -292,7 +354,7 @@ export const searchWebTool = {
   handler: async (args: Record<string, any>) => {
     const query = String(args['query'] || '');
     const maxResults = args['maxResults'] === undefined ? undefined : Number(args['maxResults']);
-    const response = await anySearchClient.search(query, { maxResults });
+    const response = await tavilyClient.search(query, { maxResults });
     return {
       query,
       totalResults: response.totalResults,
