@@ -15,6 +15,11 @@ export function failureMessage(err: unknown): string {
     return '⚠️ This bot is not configured with an AI provider yet. A server admin needs to set the `GROQ_API_KEY` (or `OPENAI_API_KEY`) environment variable and restart the bot.';
   }
 
+  // Missing / invalid Turso database config (conversation memory)
+  if (/turso/i.test(msg)) {
+    return '⚠️ The bot cannot connect to its database (Turso). A server admin needs to set the `TURSO_URL` and `TURSO_AUTH_TOKEN` environment variables and restart the bot.';
+  }
+
   // Provider-level failures
   if (/(401|403|unauthorized|invalid api)/i.test(msg)) {
     return '⚠️ The AI provider rejected the request (invalid or expired API key). A server admin should verify the `GROQ_API_KEY`.';
