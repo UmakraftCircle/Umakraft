@@ -44,3 +44,228 @@ importers:
       typescript:
         specifier: ^5.4.5
         version: 5.9.3
+
+  apps/api:
+    dependencies:
+      '@ai-agent-platform/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
+      '@ai-agent-platform/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@ai-agent-platform/fan-tracker':
+        specifier: workspace:*
+        version: link:../../packages/domains/fan-tracker
+      '@ai-agent-platform/integrations':
+        specifier: workspace:*
+        version: link:../../packages/integrations
+      '@ai-agent-platform/pr-monitor':
+        specifier: workspace:*
+        version: link:../../packages/domains/pr-monitor
+      '@ai-agent-platform/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      '@ai-agent-platform/tools':
+        specifier: workspace:*
+        version: link:../../packages/tools
+    devDependencies:
+      typescript:
+        specifier: ^5.4.5
+        version: 5.9.3
+
+  apps/cli:
+    dependencies:
+      '@ai-agent-platform/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
+      '@ai-agent-platform/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@ai-agent-platform/fan-tracker':
+        specifier: workspace:*
+        version: link:../../packages/domains/fan-tracker
+      '@ai-agent-platform/integrations':
+        specifier: workspace:*
+        version: link:../../packages/integrations
+      '@ai-agent-platform/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      '@ai-agent-platform/tools':
+        specifier: workspace:*
+        version: link:../../packages/tools
+    devDependencies:
+      typescript:
+        specifier: ^5.4.5
+        version: 5.9.3
+
+  apps/discord:
+    dependencies:
+      '@ai-agent-platform/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
+      '@ai-agent-platform/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@ai-agent-platform/fan-tracker':
+        specifier: workspace:*
+        version: link:../../packages/domains/fan-tracker
+      '@ai-agent-platform/image-report':
+        specifier: workspace:*
+        version: link:../image-report
+      '@ai-agent-platform/integrations':
+        specifier: workspace:*
+        version: link:../../packages/integrations
+      '@ai-agent-platform/pr-monitor':
+        specifier: workspace:*
+        version: link:../../packages/domains/pr-monitor
+      '@ai-agent-platform/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      '@ai-agent-platform/tools':
+        specifier: workspace:*
+        version: link:../../packages/tools
+      discord.js:
+        specifier: ^14.15.3
+        version: 14.27.0
+      node-cron:
+        specifier: ^3.0.3
+        version: 3.0.3
+    devDependencies:
+      '@types/node-cron':
+        specifier: ^3.0.11
+        version: 3.0.11
+      typescript:
+        specifier: ^5.4.5
+        version: 5.9.3
+
+  apps/image-report:
+    dependencies:
+      '@ai-agent-platform/fan-tracker':
+        specifier: workspace:*
+        version: link:../../packages/domains/fan-tracker
+      '@ai-agent-platform/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      '@resvg/resvg-js':
+        specifier: ^2.6.2
+        version: 2.6.2
+      react:
+        specifier: ^19.0.1
+        version: 19.2.8
+      satori:
+        specifier: ^0.12.1
+        version: 0.12.2
+    devDependencies:
+      '@types/node':
+        specifier: ^22.14.0
+        version: 22.20.1
+      typescript:
+        specifier: ^5.5.0
+        version: 5.9.3
+
+  packages/ai:
+    dependencies:
+      '@ai-agent-platform/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@xenova/transformers':
+        specifier: ^2.17.2
+        version: 2.17.2
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
+    optionalDependencies:
+      node-llama-cpp:
+        specifier: ^3.0.0
+        version: 3.20.0(typescript@5.9.3)
+    devDependencies:
+      typescript:
+        specifier: ^5.4.5
+        version: 5.9.3
+
+  packages/core:
+    dependencies:
+      '@ai-agent-platform/ai':
+        specifier: workspace:*
+        version: link:../ai
+      '@ai-agent-platform/integrations':
+        specifier: workspace:*
+        version: link:../integrations
+      '@ai-agent-platform/shared':
+        specifier: workspace:*
+        version: link:../shared
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
+    devDependencies:
+      typescript:
+        specifier: ^5.4.5
+        version: 5.9.3
+
+  packages/domains/fan-tracker:
+    dependencies:
+      '@ai-agent-platform/core':
+        specifier: workspace:*
+        version: link:../../core
+      '@ai-agent-platform/shared':
+        specifier: workspace:*
+        version: link:../../shared
+    devDependencies:
+      typescript:
+        specifier: ^5.4.5
+        version: 5.9.3
+
+  packages/domains/pr-monitor:
+    dependencies:
+      '@ai-agent-platform/core':
+        specifier: workspace:*
+        version: link:../../core
+      '@ai-agent-platform/shared':
+        specifier: workspace:*
+        version: link:../../shared
+    devDependencies:
+      typescript:
+        specifier: ^5.4.5
+        version: 5.9.3
+
+  packages/integrations:
+    dependencies:
+      '@ai-agent-platform/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@libsql/client':
+        specifier: ^0.14.0
+        version: 0.14.0
+      better-sqlite3:
+        specifier: ^13.0.2
+        version: 13.0.3
+      sqlite3:
+        specifier: ^5.1.7
+        version: 5.1.7
+    devDependencies:
+      '@types/better-sqlite3':
+        specifier: ^7.6.13
+        version: 7.6.13
+      typescript:
+        specifier: ^5.4.5
+        version: 5.9.3
+
+  packages/shared:
+    dependencies:
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
+    devDependencies:
+      typescript:
+        specifier: ^5.4.5
+        version: 5.9.3
+
+  packages/tools:
+    dependencies:
+      '@ai-agent-platform/shared':
+        specifier: workspace:*
+        version: link:../shared
+    devDependencies:
+      typescript:
+        specifier: ^5.4.5
+        version: 5.9.3
