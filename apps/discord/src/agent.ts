@@ -35,7 +35,12 @@ export async function handleAgent(interaction: ChatInputCommandInteraction): Pro
     } else if (result.status === 'timeout' || result.status === 'failed') {
       // Fall back to a single conversational answer so the user still gets something.
       const agent = new ToolCallingAgent(aiService, registry);
-      const answer = await agent.run(userId, goal);
+      const answer = await agent.run(userId, goal, undefined, {
+        maxToolCalls: 4,
+        toolTimeoutMs: 8_000,
+        generateTimeoutMs: 20_000,
+        overallTimeoutMs: 90_000,
+      });
       await interaction.editReply(
         `${answer}\n\n*(${result.status}: ${result.errors.slice(0, 2).join('; ') || 'hit limits'})*`
       );
