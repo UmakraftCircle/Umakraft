@@ -43,6 +43,14 @@ async function apiPost(
   }
 }
 
+function isToolUseFailed(err: any): boolean {
+  if (!(err instanceof HttpError)) return false;
+  // A 400 with `tool_use_failed` is a CONFIGURATION error (models emitting
+  // native tool-call tokens with no tools registered). Retrying the SAME
+  // request would hit the same 400 forever — it must be surfaced, not retried.
+  return err.statusCode === 400 && /tool_use_failed|Tool choice is none|json_validate_failed/.test(err.message);
+}
+
 // Groq model candidates for /ask tool-calling. `openai/gpt-oss-20b` is the smaller
 // sibling of the 120b reasoning model already proven to work on this account, and
 // follows JSON instructions far more reliably. Source of truth: GET /models.
@@ -55,6 +63,16 @@ const GROQ_MODEL_CANDIDATES: string[] = [
   'mixtral-8x7b-32768',
 ];
 
+// Keys that would cause Groq/OpenAI to interpret output as a native tool call.
+// We never register API-level tools; if the model emits these we must reject the
+// response locally rather than let the gateway 400 (or loop).
+const NATIVE_TOOL_KEYS = ['name', 'arguments', 'tool_calls', 'function'];
+
+function hasNativeToolCall(obj: unknown): boolean {
+  if (!obj || typeof obj !== 'object') return false;
+  return NATIVE_TOOL_KEYS.some((k) => k in (obj as Record<string, unknown>));
+}
+
 export class OpenAIProvider implements AIService {
   private model: string;
   private keys: string[];
@@ -63,15 +81,15 @@ export class OpenAIProvider implements AIService {
   constructor(
     apiKey: string | string[],
     model: string = 'gpt-4o-mini',
-    baseUrl: string = 'https://api.openai.com'
+    baseUrl: string = 'https://api.openai.com',
   ) {
     this.model = model;
-    this.baseUrl = baseUrl.replace(/\/+$/, '');
+    this.baseUrl = baseUrl.replace(/\/$/, '');
 
     if (Array.isArray(apiKey)) {
       this.keys = apiKey.filter(Boolean);
     } else {
-      this.keys = apiKey.split(',').map(k => k.trim()).filter(Boolean);
+      this.keys = apiKey.split(',').map((k) => k.trim()).filter(Boolean);
     }
 
     if (this.keys.length === 0) {
@@ -99,26 +117,49 @@ export class OpenAIProvider implements AIService {
     if (options.system) messages.push({ role: 'system', content: options.system });
     messages.push({ role: 'user', content: options.prompt });
 
-    const raw = await this.#callWithRetry(messages, { temperature: 0.3 });
+    const raw = await this.#callWithRetry(messages, { temperature: 0.3 }, { allowRetryOn400: false });
 
     try {
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      // Defensive: if the model emitted a native tool-call shape, reject locally
+      // instead of kicking it back to the API (which would 400/loop).
+      if (hasNativeToolCall(parsed)) {
+        logger.warn('Model emitted a native tool-call shape; treating as invalid structured output.');
+        throw new Error('Native tool-call output is not supported in this mode.');
+      }
+      return parsed;
     } catch {
       const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-      if (fence) { try { return JSON.parse(fence[1].trim()); } catch {} }
+      if (fence) {
+        try {
+          const parsed = JSON.parse(fence[1].trim());
+          if (hasNativeToolCall(parsed)) throw new Error('native tool-call');
+          return parsed;
+        } catch {}
+      }
       const objectMatch = raw.match(/\{[\s\S]*\}/);
-      if (objectMatch) { try { return JSON.parse(objectMatch[0]); } catch {} }
+      if (objectMatch) {
+        try {
+          const parsed = JSON.parse(objectMatch[0]);
+          if (hasNativeToolCall(parsed)) throw new Error('native tool-call');
+          return parsed;
+        } catch {}
+      }
       logger.warn(`Failed to parse structured output as JSON. Raw: ${raw.slice(0, 200)}`);
       throw new Error('Structured output was not valid JSON.');
     }
   }
 
-  async #callWithRetry(messages: any[], extra: Record<string, any>): Promise<string> {
+  async #callWithRetry(
+    messages: any[],
+    extra: Record<string, any>,
+    opts: { allowRetryOn400?: boolean } = {},
+  ): Promise<string> {
     let lastError: Error = new Error('No keys available for provider call');
     const triedKeys = new Set<string>();
 
     for (let attempt = 0; attempt < this.keys.length; attempt++) {
-      const pool = triedKeys.size > 0 ? this.keys.filter(k => !triedKeys.has(k)) : this.keys;
+      const pool = triedKeys.size > 0 ? this.keys.filter((k) => !triedKeys.has(k)) : this.keys;
       const key = pool[Math.floor(Math.random() * pool.length)];
       triedKeys.add(key);
       const keySuffix = key.slice(-6);
@@ -127,11 +168,26 @@ export class OpenAIProvider implements AIService {
         const result = await apiPost(
           `${this.baseUrl}/v1/chat/completions`,
           { Authorization: `Bearer ${key}` },
-          { model: this.model, messages, ...extra }
+          { model: this.model, messages, ...extra },
         );
-        return result.choices[0].message.content;
+        const content = result.choices[0].message.content;
+        // Groq-specific: if the model called a tool, it lands in `tool_calls`,
+        // and `content` is null. Surface this clearly instead of returning null.
+        if (content == null) {
+          const tc = result.choices[0]?.message?.tool_calls;
+          throw new Error(`Model returned no text content${tc ? ' and attempted a tool call' : ''}.`);
+        }
+        return content;
       } catch (err: any) {
         lastError = err;
+
+        // Configuration error (400 tool_use_failed / json_validate_failed) must
+        // NOT be blindly retried — retrying the same request cannot fix it.
+        if (isToolUseFailed(err) || (opts.allowRetryOn400 === false && err instanceof HttpError && err.statusCode === 400)) {
+          logger.error(`Provider config/validation error (no retry): ${err.message}`);
+          throw err;
+        }
+
         const isRateLimit = err instanceof HttpError && err.statusCode === 429;
         if (isRateLimit && triedKeys.size < this.keys.length) {
           logger.warn(`Key ...${keySuffix} rate-limited (429), rotating to next key (attempt ${attempt + 2}/${this.keys.length})`);
@@ -211,7 +267,7 @@ export class AnthropicProvider implements AIService {
       if (isRetryable && attempt < maxAttempts - 1) {
         const wait = 200 * Math.pow(2, attempt) + Math.random() * 100;
         logger.warn(`Anthropic ${this.model}: ${err.message}. Retrying (${attempt + 2}/${maxAttempts}) in ${Math.round(wait)}ms...`);
-        await new Promise(r => setTimeout(r, wait));
+        await new Promise((r) => setTimeout(r, wait));
         return this.#callWithRetry(body, attempt + 1);
       }
 
