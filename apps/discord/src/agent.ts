@@ -4,6 +4,7 @@ import { ToolRegistry, AgentRunner, ToolCallingAgent } from '@ai-agent-platform/
 import { buildAIService } from './bootstrap.js';
 import { taskStateStore } from '@ai-agent-platform/integrations';
 import { ensureAskToolsRegistered } from './ask.js';
+import { failureMessage } from './errors.js';
 
 const logger = createLogger('AgentHandler');
 
@@ -49,7 +50,7 @@ export async function handleAgent(interaction: ChatInputCommandInteraction): Pro
     }
   } catch (err: any) {
     logger.error(`/agent error: ${err?.message ?? err}`);
-    await interaction.editReply('Sorry, something went wrong while planning that task.');
+    await interaction.editReply(failureMessage(err));
   }
 }
 
