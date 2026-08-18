@@ -6,6 +6,9 @@ export interface GenerateOptions {
   system?: string;
   prompt: string;
   schema?: any;
+  // Optional declarative tool schemas exposed to the provider as NATIVE tools
+  // (enables `tool_choice: auto` tool-calling for Groq/OpenAI models).
+  tools?: any[];
 }
 
 export abstract class AIService {
