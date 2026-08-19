@@ -232,15 +232,18 @@ export class MilestoneMessageService {
   private caches: Record<MilestoneTier, TierCache>;
   private primaryAI: AIService | null;
   private fallbackAI: AIService | null;
+  private brainAI: AIService | null;
   private prompts: PromptLibrary;
 
   constructor(
     primaryAI: AIService | null,
     prompts: PromptLibrary,
     fallbackAI: AIService | null = null,
+    brainAI: AIService | null = null,
   ) {
     this.primaryAI = primaryAI;
     this.fallbackAI = fallbackAI;
+    this.brainAI = brainAI;
     this.prompts = prompts;
 
     this.caches = {} as Record<MilestoneTier, TierCache>;
@@ -298,7 +301,19 @@ export class MilestoneMessageService {
       }
     }
 
-    // Tiers 3-5: Cache → Sole → Bootstrap
+    // Tier 3: Local brain (supervisor) retries once before cache
+    if (this.brainAI) {
+      try {
+        const msg = await this.#generateViaAI(this.brainAI, info, trainerName, fanCount, serverName);
+        cache.set(`${prefix}${Date.now()}`, msg);
+        logger.info(`Milestone [${tier}] recovered by local brain for ${trainerName}`);
+        return msg;
+      } catch (err: any) {
+        logger.warn(`Milestone [${tier}] brain recovery failed: ${err.message}. Going to cache...`);
+      }
+    }
+
+    // Tiers 4-5: Cache → Sole → Bootstrap
     return this.#fallbackMilestone(tier);
   }
 

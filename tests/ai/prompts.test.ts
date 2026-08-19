@@ -191,47 +191,6 @@ describe('PromptLibrary template rendering', () => {
     });
   });
 
-  // ── race-commentary (vars-direct pattern) ────────────────
-
-  describe('race-commentary', () => {
-    const vars = {
-      day: '15',
-      totalDays: '31',
-      racerPositions: '1. SpeChan — 2800m — 45.2M fans',
-      dynamicEvents: '⚡ OVERTAKE: SpeChan passed CurrenChan on the backstretch!',
-      serverName: 'TestServer',
-    };
-
-    before(() => { lib = new PromptLibrary(); });
-
-    it('renders without error', () => {
-      assert.ok(lib.render('race-commentary', vars));
-    });
-
-    it('injects actual racer data into the prompt', () => {
-      const u = lib.render('race-commentary', vars)!.user;
-      assert.ok(u.includes('15'), 'day not injected');
-      assert.ok(u.includes('31'), 'totalDays not injected');
-      assert.ok(u.includes('SpeChan'), 'racer name not injected');
-      assert.ok(u.includes('OVERTAKE'), 'events not injected');
-    });
-
-    it('has no placeholder patterns at all (vars-direct, no replaceAll needed)', () => {
-      const u = lib.render('race-commentary', vars)!.user;
-      assert.ok(!DOLLARBRACE_RE.test(u), `found placeholder: ${u.match(DOLLARBRACE_RE)}`);
-    });
-
-    it('has no bare-brace {word} patterns', () => {
-      const u = lib.render('race-commentary', vars)!.user;
-      assert.ok(!BAREBRACE_RE.test(u), `bare-brace: ${u.match(BAREBRACE_RE)}`);
-    });
-
-    it('prompt includes the race position details verbatim', () => {
-      const u = lib.render('race-commentary', vars)!.user;
-      assert.ok(u.includes('2800m'), 'race data missing in prompt');
-    });
-  });
-
   // ── new-member-greeting (vars-direct pattern) ────────────
 
   describe('new-member-greeting', () => {
@@ -275,7 +234,6 @@ describe('PromptLibrary template rendering', () => {
       'milestone-message':      { trainerName: 'T', fanCount: '1M', tierTitle: 'T1', tierDescription: 'desc', serverName: 'S' },
       'monthly-achievement':    { trainerName: 'T', monthlyGain: '1M', tierTitle: 'T1', tierDescription: 'desc', serverName: 'S' },
       'daily-reminder':         { trainerData: 'd', serverName: 'S' },
-      'race-commentary':        { day: '1', totalDays: '31', racerPositions: 'p', dynamicEvents: 'e', serverName: 'S' },
       'new-member-greeting':    { memberName: 'N', serverName: 'S', memberCount: '1' },
     };
 

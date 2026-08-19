@@ -1,6 +1,0 @@
-{
-  "name": "UmaKraft Fan Tracker",
-  "description": "Umamusume trainer fan growth and rank tracking dashboard",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

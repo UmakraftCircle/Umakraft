@@ -35,11 +35,16 @@ export class ToolRegistry {
   }
 
   /**
-   * Registers a brand new tool into the registry
+   * Registers a brand new tool into the registry.
+   * Idempotent: if a tool with the same slug is already registered, it is
+   * skipped (no-op) instead of throwing. The shared singleton registry is
+   * populated both at startup (registerAllTools) and per-command
+   * (ensureAskToolsRegistered), so duplicate slugs are expected.
    */
   public register(tool: ToolDefinition): void {
     if (this.tools.has(tool.slug)) {
-      throw new Error(`Tool Registry Error: Tool with slug '${tool.slug}' already exists.`);
+      logger.info(`Tool '${tool.slug}' already registered; skipping.`);
+      return;
     }
     this.tools.set(tool.slug, tool);
     logger.info(`Successfully registered tool: ${tool.slug}`);

@@ -1,4 +1,8 @@
 node_modules
 dist
-.DS_Store
+.turbo
+*.db
 .env
+.env.local
+platform.db
+.test-output

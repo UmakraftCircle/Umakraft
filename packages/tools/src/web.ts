@@ -126,22 +126,39 @@ export const webFetch: ToolDefinition = {
     const url = await validateUrlWithDns(rawUrl);
 
     try {
-      // Use fetch with redirect: 'manual' to validate each hop
-      const response = await fetch(url.href, {
-        redirect: 'follow',
-        signal: AbortSignal.timeout(30_000),
-      });
+      // Validate every redirect hop (scheme + hostname + DNS) BEFORE following,
+      // preventing SSRF via a redirect chain to a private/internal address.
+      let current = url;
+      let response: Response | null = null;
 
-      // Validate final URL after redirects (DNS check + hostname block)
-      if (response.url !== url.href) {
-        await validateUrlWithDns(response.url);
-        logger.info(`Redirected to: ${response.url}`);
+      for (let hop = 0; hop < 5; hop++) {
+        response = await fetch(current.href, {
+          redirect: 'manual',
+          signal: AbortSignal.timeout(30_000),
+        });
+
+        if (response.status >= 300 && response.status < 400) {
+          const location = response.headers.get('location');
+          if (!location) throw new Error(`Redirect (${response.status}) without Location header`);
+          const next = await validateUrlWithDns(new URL(location, current).href);
+          logger.info(`Following redirect to: ${next.href}`);
+          current = next;
+          continue;
+        }
+
+        break;
+      }
+
+      if (!response) throw new Error('No response received');
+      if (response.status >= 300 && response.status < 400) {
+        throw new Error('Too many redirects (max 5)');
       }
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
+      const finalUrl = current;
       const contentType = response.headers.get('content-type') || '';
       let text: string;
 
@@ -170,10 +187,10 @@ export const webFetch: ToolDefinition = {
       const maxLength = 50000;
       const truncated = text.length > maxLength ? text.slice(0, maxLength) + '\n\n[... truncated ...]' : text;
 
-      logger.info(`Fetched ${text.length} characters from ${url.href}`);
+      logger.info(`Fetched ${text.length} characters from ${finalUrl.href}`);
       return {
         success: true,
-        url: url.href,
+        url: finalUrl.href,
         contentType,
         text: truncated,
         length: text.length,

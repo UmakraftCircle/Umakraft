@@ -2,18 +2,26 @@ import {
   ChatInputCommandInteraction,
   AutocompleteInteraction,
   EmbedBuilder,
+  AttachmentBuilder,
   PermissionFlagsBits,
 } from 'discord.js';
 import { fanTrackerAPI, TrainerStats } from '@ai-agent-platform/fan-tracker';
 import { createLogger } from '@ai-agent-platform/shared';
 import { trainerLinkStore, type TrainerLink } from '@ai-agent-platform/integrations';
+import { renderGainReport, renderLeaderboardReport, renderCompareReport } from '@ai-agent-platform/image-report';
+import { CreateCompareSummaryService } from '@ai-agent-platform/ai';
+import { handleAsk } from './ask.js';
+import { handleAgent } from './agent.js';
+import { handleChat } from './chat.js';
+import { handleScheduleCreate, handleMyTasks, handleUnschedule } from './autonomous.js';
 
 const logger = createLogger('Discord-Handlers');
 
-// ── Input sanitization ──
-
 const ALLOWED_PERIODS = new Set(['daily', 'weekly', 'monthly']);
-const ALLOWED_LEADERBOARD_TOPS = new Set([10, 15, 20, 30]);
+const ALLOWED_LEADERBOARD_TOPS = new Set([10, 15, 20, 30, 60]);
+
+// Server owner restriction: this trainer's stats are classified.
+const SERVER_OWNER_TRAINER_ID = '612856830731';
 
 function sanitizePeriod(input: string): 'daily' | 'weekly' | 'monthly' {
   return ALLOWED_PERIODS.has(input) ? (input as 'daily' | 'weekly' | 'monthly') : 'monthly';
@@ -24,7 +32,6 @@ function sanitizeTop(input: number): number {
 }
 
 function sanitizeTrainerInput(input: string): string {
-  // Strip any non-alphanumeric characters except spaces, hyphens, and parentheses
   return input.replace(/[^a-zA-Z0-9\s\-()]/g, '').slice(0, 100);
 }
 
@@ -51,19 +58,19 @@ function formatGain(n: number): string {
 }
 
 function rankEmoji(rank: number | null): string {
-  if (rank === null) return '⚪';
-  if (rank <= 100) return '👑';
-  if (rank <= 500) return '🟢';
-  if (rank <= 2000) return '🔵';
-  if (rank <= 5000) return '🟡';
-  return '⚪';
+  if (rank === null) return '⬐';
+  if (rank <= 100) return '🏅';
+  if (rank <= 500) return '🥈';
+  if (rank <= 2000) return '🥉';
+  if (rank <= 5000) return '🎖';
+  return '⬐';
 }
 
 function getDailyMilestoneTitle(dailyGain: number): string {
-  if (dailyGain >= 20_000_000) return '⭐ Superstar';
-  if (dailyGain >= 15_000_000) return '🌟 Star';
-  if (dailyGain >= 10_000_000) return '🏆 Famous';
-  if (dailyGain >= 7_500_000)  return '🌸 Well-known';
+  if (dailyGain >= 20_000_000) return '🏟 Superstar';
+  if (dailyGain >= 15_000_000) return '🏌 Star';
+  if (dailyGain >= 10_000_000) return '🏆️ Famous';
+  if (dailyGain >= 7_500_000)  return '🏸 Well-known';
   if (dailyGain >= 5_000_000)  return '🚀 First leap';
   return '-';
 }
@@ -71,27 +78,25 @@ function getDailyMilestoneTitle(dailyGain: number): string {
 function getMonthlyMilestoneTitle(monthlyFans: number, existingTier?: string): string {
   if (existingTier && existingTier !== '-') {
     const iconMap: Record<string, string> = {
-      'Legend': '👑 Legend',
-      'Super-Competitive': '⚡ Super-Competitive',
-      'Competitive': '🔥 Competitive',
-      'Casual': '🌱 Casual',
-      'Minimum': '📏 Minimum',
+      'Legend': '🏅 Legend',
+      'Super-Competitive': '⬐ Super-Competitive',
+      'Competitive': '🎖 Competitive',
+      'Casual': '🏁 Casual',
+      'Minimum': '🏆️ Minimum',
     };
     if (iconMap[existingTier]) return iconMap[existingTier];
   }
-  if (monthlyFans >= 200_000_000) return '👑 Legend';
-  if (monthlyFans >= 150_000_000) return '⚡ Super-Competitive';
-  if (monthlyFans >= 100_000_000) return '🔥 Competitive';
-  if (monthlyFans >= 75_000_000)  return '🌱 Casual';
-  if (monthlyFans >= 60_000_000 || monthlyFans >= 50_000_000)  return '📏 Minimum';
+  if (monthlyFans >= 200_000_000) return '🏅 Legend';
+  if (monthlyFans >= 150_000_000) return '⬐ Super-Competitive';
+  if (monthlyFans >= 100_000_000) return '🎖 Competitive';
+  if (monthlyFans >= 75_000_000)  return '🏁 Casual';
+  if (monthlyFans >= 60_000_000)  return '🏆️ Minimum';
   return '-';
 }
 
-// ── /sync ─────────────────────────────────────────────────
-
 export async function handleSync(interaction: ChatInputCommandInteraction) {
   if (!isAdmin(interaction)) {
-    await interaction.reply({ content: '⛔ This command is admin-only.', ephemeral: true });
+    await interaction.reply({ content: '🔒 This command is admin-only.', ephemeral: true });
     return;
   }
 
@@ -99,21 +104,18 @@ export async function handleSync(interaction: ChatInputCommandInteraction) {
 
   fanTrackerAPI.clearCache();
 
-  // Warm cache by fetching all members
   const members = await fanTrackerAPI.fetchAllMembers();
   const linkCount = await trainerLinkStore.count();
 
-  logger.info(`Sync: cleared cache, fetched ${members.length} active members from UmaKraft.`);
+  logger.info(`Sync: cleared cache, fetched ${members.length} active members from Umakraft.`);
 
   await interaction.editReply(
     `✅ **Sync complete!**\n` +
-    `Fetched **${members.length} active members** from UmaKraft.\n` +
+    `Fetched **${members.length} active members** from Umakraft.\n` +
     `Linked Discord users: **${linkCount}**\n` +
     `Top fan: **${members[0]?.trainerName || 'N/A'}** — ${members[0] ? formatFans(members[0].totalFans) : 'N/A'} fans`
   );
 }
-
-// ── /fans gain ────────────────────────────────────────────
 
 export async function handleFansGain(interaction: ChatInputCommandInteraction) {
   const period = sanitizePeriod(interaction.options.getString('period') || 'monthly');
@@ -129,38 +131,25 @@ export async function handleFansGain(interaction: ChatInputCommandInteraction) {
 
   const stats = await fanTrackerAPI.fetchTrainerStats(link.trainerId);
 
-  const total = stats.totalFans > 0 ? `${formatFans(stats.totalFans)} (${stats.totalFans.toLocaleString()})` : '0';
-  const monthly = stats.monthlyFans > 0 ? `+${formatFans(stats.monthlyFans)}` : '-';
-  const weekly = formatGain(stats.weeklyGain);
-  const daily = formatGain(stats.dailyGain);
-  const dailyMilestone = getDailyMilestoneTitle(stats.dailyGain);
-  const monthlyMilestone = getMonthlyMilestoneTitle(stats.monthlyFans, stats.clubRankTier);
-
-  const description = [
-    `👤 **Trainer Name:** ${stats.trainerName}`,
-    `🆔 **Trainer ID:** ${stats.trainerId}`,
-    ``,
-    `🎖️ **Milestones:**`,
-    `• **Daily Milestone:** ${dailyMilestone}`,
-    `• **Monthly Title:** ${monthlyMilestone}`,
-    ``,
-    `📈 **Fan Gain:**`,
-    `• **Daily:** ${daily}`,
-    `• **Weekly:** ${weekly}`,
-    `• **Monthly:** ${monthly}`,
-    `• **Total Fans:** ${total}`,
-  ].join('\n') + (stats.previousCircleName ? `\n\n🔄 Transferred from **${stats.previousCircleName}**` : '');
+  const fileName = 'fan-gain.png';
+  const attachment = new AttachmentBuilder(await renderGainReport({
+    trainerName: stats.trainerName,
+    trainerId: stats.trainerId,
+    dailyGain: stats.dailyGain,
+    weeklyGain: stats.weeklyGain,
+    monthlyFans: stats.monthlyFans,
+    totalFans: stats.totalFans,
+    clubRankTier: stats.clubRankTier,
+    updatedAt: stats.updatedAt,
+  }), { name: fileName });
 
   const embed = new EmbedBuilder()
-    .setTitle(`📊 Fan Gain Statistics`)
+    .setTitle('🏈 Fan Gain Report')
     .setColor(0x57F287)
-    .setDescription(description)
-    .setFooter({ text: `UmaKraft · ${new Date(stats.updatedAt).toLocaleDateString()}` });
+    .setImage(`attachment://${fileName}`);
 
-  await interaction.editReply({ embeds: [embed] });
+  await interaction.editReply({ embeds: [embed], files: [attachment] });
 }
-
-// ── /fans leaderboard ─────────────────────────────────────
 
 export async function handleFansLeaderboard(interaction: ChatInputCommandInteraction) {
   const top = sanitizeTop(interaction.options.getInteger('top') || 10);
@@ -194,69 +183,42 @@ export async function handleFansLeaderboard(interaction: ChatInputCommandInterac
     return;
   }
 
-  const periodLabel = PERIOD_LABELS[period] || 'this month';
-
-  const items = topN.map((s, i) => {
-    const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `**${i + 1}.**`;
-    const dailyMilestone = getDailyMilestoneTitle(s.dailyGain);
-    const monthlyMilestone = getMonthlyMilestoneTitle(s.monthlyFans, s.clubRankTier);
-
-    const dailyGainStr = formatGain(s.dailyGain);
-    const weeklyGainStr = formatGain(s.gain7d ?? s.weeklyGain);
-    const monthlyGainStr = s.monthlyFans > 0 ? `+${formatFans(s.monthlyFans)}` : '-';
-    const totalFansStr = s.totalFans > 0 ? `${formatFans(s.totalFans)}` : '0';
-
-    let mainStat: string;
-    switch (period) {
-      case 'daily':
-        mainStat = `• **Daily Gain:** ${dailyGainStr} | **Monthly:** ${monthlyGainStr}`;
-        break;
-      case 'weekly':
-        mainStat = `• **Weekly Gain:** ${weeklyGainStr} | **Daily:** ${dailyGainStr}`;
-        break;
-      case 'monthly':
-      default:
-        mainStat = `• **Monthly Gain:** ${monthlyGainStr} | **Daily:** ${dailyGainStr}`;
-        break;
-    }
-
-    return [
-      `${medal} **${s.trainerName}** (\`${s.trainerId}\`)`,
-      `• **Daily Milestone:** ${dailyMilestone}`,
-      `• **Monthly Title:** ${monthlyMilestone}`,
-      `${mainStat} | **Total:** ${totalFansStr}`,
-    ].join('\n');
-  });
-
-  const description = items.join('\n\n') +
-    `\n\n*${members.length} members · ${periodLabel}*`;
+  const fileName = 'fan-leaderboard.png';
+  const attachment = new AttachmentBuilder(await renderLeaderboardReport({
+    entries: topN.map((s, i) => ({
+      rank: i + 1,
+      trainerName: s.trainerName,
+      dailyGain: s.dailyGain,
+      weeklyGain: s.weeklyGain,
+      monthlyFans: s.monthlyFans,
+      totalFans: s.totalFans,
+      clubRankTier: s.clubRankTier,
+    })),
+    period,
+    periodLabel: PERIOD_LABELS[period] || 'this month',
+  }), { name: fileName });
 
   const embed = new EmbedBuilder()
-    .setTitle(`🏆 Fan Leaderboard — Top ${topN.length} (${period.toUpperCase()})`)
-    .setDescription(description)
+    .setTitle(`🎺 Fan Leaderboard — Top ${topN.length} (${period.toUpperCase()})`)
     .setColor(0xF1C40F)
-    .setFooter({ text: 'UmaKraft' });
+    .setImage(`attachment://${fileName}`);
 
-  await interaction.editReply({ embeds: [embed] });
+  await interaction.editReply({ embeds: [embed], files: [attachment] });
 }
-
-// ── /link add ─────────────────────────────────────────────
 
 export async function handleLinkAdd(interaction: ChatInputCommandInteraction) {
   if (!isAdmin(interaction)) {
-    await interaction.reply({ content: '⛔ This command is admin-only.', ephemeral: true });
+    await interaction.reply({ content: '🔒 This command is admin-only.', ephemeral: true });
     return;
   }
 
   const user = interaction.options.getUser('user', true);
   const trainerInput = interaction.options.getString('trainer', true);
 
-  // Parse "Name (trainer-XX)" format or "Name (viewer_id)" from autocomplete
   const match = trainerInput.match(/^(.+?)\s*\((\d+)\)$/);
   const trainerId = match ? match[2] : trainerInput;
   const trainerName = match ? match[1] : trainerInput;
 
-  // Validate: trainerId must be numeric
   if (!/^\d+$/.test(trainerId)) {
     await interaction.reply({ content: `⚠️ Invalid trainer. Use autocomplete to select a valid trainer. Got: \`${trainerInput}\``, ephemeral: true });
     return;
@@ -271,7 +233,7 @@ export async function handleLinkAdd(interaction: ChatInputCommandInteraction) {
   });
 
   const verb = existing ? 'Updated' : 'Linked';
-  logger.info(`${verb} Discord user ${user.tag} → trainer ${trainerName} (${trainerId})`);
+  logger.info(`${verb} Discord user ${user.tag} ↔ trainer ${trainerName} (${trainerId})`);
 
   await interaction.reply(
     `✅ **${verb}!**\n` +
@@ -279,11 +241,9 @@ export async function handleLinkAdd(interaction: ChatInputCommandInteraction) {
   );
 }
 
-// ── /link remove ──────────────────────────────────────────
-
 export async function handleLinkRemove(interaction: ChatInputCommandInteraction) {
   if (!isAdmin(interaction)) {
-    await interaction.reply({ content: '⛔ This command is admin-only.', ephemeral: true });
+    await interaction.reply({ content: '🔒 This command is admin-only.', ephemeral: true });
     return;
   }
 
@@ -302,29 +262,145 @@ export async function handleLinkRemove(interaction: ChatInputCommandInteraction)
   );
 }
 
-// ── /link list ────────────────────────────────────────────
-
 export async function handleLinkList(interaction: ChatInputCommandInteraction) {
   const links = await trainerLinkStore.getAll();
 
   if (links.length === 0) {
-    await interaction.reply('📭 No Discord ↔ trainer links configured yet. Admins can use `/link add`.');
+    await interaction.reply('📋 No Discord ↔ trainer links configured yet. Admins can use `/link add`.');
     return;
   }
 
-  const lines = links.map(l =>
-    `• <@${l.discordUserId}> → **${l.trainerName}** (${l.trainerId}) — linked <t:${Math.floor(new Date(l.linkedAt).getTime() / 1000)}:R>`
+  const lines = links.map((l) =>
+    `• <@${l.discordUserId}> ↔ **${l.trainerName}** (${l.trainerId}) — linked <t:${Math.floor(new Date(l.linkedAt).getTime() / 1000)}:R>`
   );
 
   const embed = new EmbedBuilder()
-    .setTitle(`🔗 Trainer Links (${links.length})`)
+    .setTitle(`📋 Trainer Links (${links.length})`)
     .setDescription(lines.join('\n'))
     .setColor(0x5865F2);
 
   await interaction.reply({ embeds: [embed] });
 }
 
-// ── Autocomplete: /link add trainer ───────────────────────
+async function resolveTrainerByInput(input: string): Promise<TrainerStats | null> {
+  const members = await fanTrackerAPI.fetchAllMembers();
+  const clean = input.trim();
+  const byId = members.find((m) => m.trainerId === clean);
+  if (byId) return byId;
+  const m = clean.match(/^(.+?)\s*\((\d+)\)$/);
+  if (m) {
+    const byParenId = members.find((x) => x.trainerId === m[2]);
+    if (byParenId) return byParenId;
+  }
+  const byName = members.find((x) => x.trainerName.toLowerCase() === clean.toLowerCase());
+  return byName ?? null;
+}
+
+function gainForPeriod(stats: TrainerStats, period: 'daily' | 'weekly' | 'monthly'): number {
+  switch (period) {
+    case 'daily': return stats.dailyGain;
+    case 'weekly': return stats.weeklyGain;
+    case 'monthly': return stats.monthlyFans;
+    default: return stats.monthlyFans;
+  }
+}
+
+export async function handleCompare(interaction: ChatInputCommandInteraction) {
+  const periodRaw = interaction.options.getString('period');
+  if (!periodRaw || !ALLOWED_PERIODS.has(periodRaw)) {
+    await interaction.reply({ content: '⚠️ Invalid period. Must be `daily`, `weekly`, or `monthly`.', ephemeral: true });
+    return;
+  }
+  const period = periodRaw as 'daily' | 'weekly' | 'monthly';
+
+  await interaction.deferReply();
+
+  const t1Input = interaction.options.getString('trainer1');
+  const t2Input = interaction.options.getString('trainer2');
+
+  let trainer1: TrainerStats | null = null;
+  let trainer2: TrainerStats | null = null;
+
+  const ownLink = await trainerLinkStore.getByDiscordUser(interaction.user.id);
+
+  if (t1Input) {
+    trainer1 = await resolveTrainerByInput(t1Input);
+  } else if (ownLink) {
+    trainer1 = await fanTrackerAPI.fetchTrainerStats(ownLink.trainerId);
+  }
+
+  if (t2Input) {
+    trainer2 = await resolveTrainerByInput(t2Input);
+  } else if (ownLink) {
+    trainer2 = await fanTrackerAPI.fetchTrainerStats(ownLink.trainerId);
+  }
+
+  if (!trainer1 || !trainer2) {
+    await interaction.editReply('⚠️ Could not resolve one or both trainers. Use autocomplete to select valid trainers.');
+    return;
+  }
+
+  // Server owner restriction — check BEFORE any stat retrieval/render.
+  if (trainer1.trainerId === SERVER_OWNER_TRAINER_ID || trainer2.trainerId === SERVER_OWNER_TRAINER_ID) {
+    await interaction.editReply('classified information');
+    return;
+  }
+
+  const g1 = gainForPeriod(trainer1, period);
+  const g2 = gainForPeriod(trainer2, period);
+
+  const summaryService = CreateCompareSummaryService();
+  const { summary } = await summaryService.generate({
+    trainer1Id: trainer1.trainerId,
+    trainer1Name: trainer1.trainerName,
+    trainer1Gain: g1,
+    trainer2Id: trainer2.trainerId,
+    trainer2Name: trainer2.trainerName,
+    trainer2Gain: g2,
+    period,
+  });
+
+  const fileName = 'fan-compare.png';
+  const attachment = new AttachmentBuilder(await renderCompareReport({
+    period,
+    periodLabel: PERIOD_LABELS[period] || 'this month',
+    trainer1: {
+      trainerId: trainer1.trainerId,
+      trainerName: trainer1.trainerName,
+      gain: g1,
+      totalFans: trainer1.totalFans,
+      clubRankTier: trainer1.clubRankTier,
+    },
+    trainer2: {
+      trainerId: trainer2.trainerId,
+      trainerName: trainer2.trainerName,
+      gain: g2,
+      totalFans: trainer2.totalFans,
+      clubRankTier: trainer2.clubRankTier,
+    },
+    summary,
+    updatedAt: new Date().toISOString(),
+  }), { name: fileName });
+
+  const embed = new EmbedBuilder()
+    .setTitle(`⚔️ Fan Comparison (${period.toUpperCase()})`)
+    .setColor(0x4CAF72)
+    .setImage(`attachment://${fileName}`);
+
+  await interaction.editReply({ embeds: [embed], files: [attachment] });
+}
+
+async function resolveAutocompleteChoices(query: string) {
+  const members = await fanTrackerAPI.fetchAllMembers();
+  const q = query.toLowerCase().trim();
+  return members
+    .filter((m) => m.trainerName.toLowerCase().includes(q) || m.trainerId.includes(q))
+    .slice(0, 25)
+    .map((m) => ({
+      name: `${m.trainerName} (${m.trainerId}) · ${formatFans(m.totalFans)} fans`,
+      value: `${m.trainerName} (${m.trainerId})`,
+    }));
+}
 
 export async function handleTrainerAutocomplete(interaction: AutocompleteInteraction) {
   const focused = interaction.options.getFocused(true);
@@ -333,27 +409,26 @@ export async function handleTrainerAutocomplete(interaction: AutocompleteInterac
   const query = focused.value.toLowerCase().trim();
 
   try {
-    const members = await fanTrackerAPI.fetchAllMembers();
-
-    const filtered = members
-      .filter(m =>
-        m.trainerName.toLowerCase().includes(query) ||
-        m.trainerId.includes(query)
-      )
-      .slice(0, 25)
-      .map(m => ({
-        name: `${m.trainerName} (${m.trainerId}) · ${formatFans(m.totalFans)} fans`,
-        value: `${m.trainerName} (${m.trainerId})`,
-      }));
-
+    const filtered = await resolveAutocompleteChoices(query);
     await interaction.respond(filtered);
   } catch {
-    // Fallback: return empty if API fails
     await interaction.respond([]);
   }
 }
 
-// ── Router ────────────────────────────────────────────────
+export async function handleCompareAutocomplete(interaction: AutocompleteInteraction) {
+  const focused = interaction.options.getFocused(true);
+  if (focused.name !== 'trainer1' && focused.name !== 'trainer2') return;
+
+  const query = focused.value.toLowerCase().trim();
+
+  try {
+    const filtered = await resolveAutocompleteChoices(query);
+    await interaction.respond(filtered);
+  } catch {
+    await interaction.respond([]);
+  }
+}
 
 export async function routeCommand(interaction: ChatInputCommandInteraction) {
   const { commandName } = interaction;
@@ -371,12 +446,26 @@ export async function routeCommand(interaction: ChatInputCommandInteraction) {
       else if (subcommand === 'remove') await handleLinkRemove(interaction);
       else if (subcommand === 'list') await handleLinkList(interaction);
       else await interaction.reply({ content: 'Unknown subcommand.', ephemeral: true });
+    } else if (commandName === 'compare') {
+      await handleCompare(interaction);
+    } else if (commandName === 'ask') {
+      await handleAsk(interaction);
+    } else if (commandName === 'chat') {
+      await handleChat(interaction);
+    } else if (commandName === 'agent') {
+      await handleAgent(interaction);
+    } else if (commandName === 'schedule') {
+      await handleScheduleCreate(interaction);
+    } else if (commandName === 'mytasks') {
+      await handleMyTasks(interaction);
+    } else if (commandName === 'unschedule') {
+      await handleUnschedule(interaction);
     }
   } catch (error: any) {
     logger.error(`Handler error for /${commandName} ${subcommand || ''}: ${error.message}`);
-    const fallback = { content: '❌ An error occurred while processing your command.', ephemeral: true };
+    const fallback = { content: '⚠️ An error occurred while processing your command.', ephemeral: true };
     if (interaction.deferred || interaction.replied) {
-      await interaction.editReply('❌ An error occurred while processing your command.');
+      await interaction.editReply('⚠️ An error occurred while processing your command.');
     } else {
       await interaction.reply(fallback);
     }

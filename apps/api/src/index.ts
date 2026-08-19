@@ -80,8 +80,11 @@ async function savePlanStore(): Promise<void> {
 // ── CORS helper ──
 function corsOrigin(): string {
   const env = process.env['CORS_ORIGIN'];
-  if (env !== undefined) return env;
-  return process.env['NODE_ENV'] === 'development' ? '*' : '*';
+  if (env) return env;
+  // In production, do NOT reflect a wildcard origin. Reflecting '*' permits any
+  // origin to make credentialed/cross-origin requests against the API. Default
+  // to a lock-down value when no explicit CORS_ORIGIN is configured.
+  return process.env['NODE_ENV'] === 'production' ? '' : '*';
 }
 
 // ── JSON helpers ──
@@ -473,9 +476,18 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      // Ownership check: only the creator can execute
-      if (authCtx.apiKey && planOwners.has(planId)) {
-        const ownerHash = planOwners.get(planId);
+      // Ownership check: only the creator can execute.
+      // A plan is owned iff it was created with an API key; execution must then
+      // come from the same key. If the plan has an owner but the caller has no
+      // (matching) key, reject — closing the gap where auth could be disabled or
+      // omitted. Plans created without auth remain unowned and are allowed only
+      // in unauthenticated dev deployments.
+      const ownerHash = planOwners.get(planId);
+      if (ownerHash) {
+        if (!authCtx.apiKey) {
+          jsonResponse(res, 401, { error: 'Unauthorized: API key required to execute this plan' });
+          return;
+        }
         const callerHash = crypto.createHash('sha256').update(authCtx.apiKey).digest('hex');
         if (ownerHash !== callerHash) {
           jsonResponse(res, 403, { error: 'Forbidden: you are not the owner of this plan' });

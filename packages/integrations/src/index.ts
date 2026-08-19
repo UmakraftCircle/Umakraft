@@ -1,6 +1,24 @@
 import { ToolDefinition, createLogger } from '@ai-agent-platform/shared';
 import { getDatabase } from './database.js';
 
+export * from './database.js';
+export * from './turso.js';
+export * from './trainer-links.js';
+export * from './conversation-memory.js';
+export * from './chat-memory.js';
+export * from './chat-cache.js';
+export * from './chat-session.js';
+export * from './chat-helpers.js';
+export * from './web-search.js';
+export * from './ask-response-cache.js';
+export * from './moderation-log.js';
+export * from './task-state.js';
+export * from './schedule-store.js';
+export * from './automation.js';
+export * from './confirmation-store.js';
+export * from './notification-store.js';
+export * from './action-controller.js';
+
 const logger = createLogger('Integrations');
 
 export const discordSendMessage: ToolDefinition = {
@@ -8,24 +26,22 @@ export const discordSendMessage: ToolDefinition = {
   name: 'Discord: Send Message',
   description: 'Sends a chat notification message to a specific Discord channel.',
   parameters: {
-    message: {
-      type: 'string',
-      description: 'The plain-text message content to broadcast',
-      required: true
-    }
+    message: { type: 'string', description: 'The plain-text message content to broadcast', required: true }
   },
   handler: async (args) => {
     const message = args['message'];
+    // This integration is intentionally a no-op stub: the platform's Discord
+    // integration lives in the bot gateway (apps/discord), not in this tool. We
+    // do NOT report success, so callers never believe a message was delivered.
     logger.warn(
-      'discord-send-message is a stub — message was NOT sent to Discord. ' +
+      'discord-send-message is a stub \u2014 message was NOT sent to Discord. ' +
       'Use the Discord bot gateway (apps/discord) for real Discord integration.'
     );
-    logger.info(`[STUB] Would send to Discord: "${message.slice(0, 100)}"`);
     return {
-      success: true,
+      success: false,
       timestamp: new Date().toISOString(),
       platform: 'discord',
-      warning: 'This tool is a stub. Messages are logged but not sent to Discord.',
+      reason: 'discord-send-message is not implemented; use the Discord bot gateway instead.',
     };
   }
 };
@@ -35,28 +51,19 @@ export const databaseStoreResult: ToolDefinition = {
   name: 'SQLite DB: Store Result',
   description: 'Saves execution results and run logs into the local persistent SQLite database.',
   parameters: {
-    planId: {
-      type: 'string',
-      description: 'The unique ID of the executed plan',
-      required: true
-    },
-    data: {
-      type: 'object',
-      description: 'The full ExecutionPlan object to save to the database',
-      required: true
-    }
+    planId: { type: 'string', description: 'The unique ID of the executed plan', required: true },
+    data: { type: 'object', description: 'The full ExecutionPlan object to save to the database', required: true }
   },
   handler: async (args) => {
     const planId = args['planId'];
     const planData = args['data'];
     const tasksList = planData.tasks instanceof Map ? Array.from(planData.tasks.values()) : (planData.tasks || []);
 
-    logger.info(`Persisting plan results for plan ${planId} into SQLite database...`);
+    logger.info(`Persisting plan results for plan ${planId} into SQLite database..`);
 
     try {
       const db = await getDatabase();
 
-      // Wrap all writes in a single transaction
       let planStatus = 'completed';
       if (tasksList.some((t: any) => t.status === 'failed')) {
         planStatus = 'failed';
@@ -65,9 +72,7 @@ export const databaseStoreResult: ToolDefinition = {
       }
 
       const persist = db.transaction(() => {
-
-      // 1. Insert or update the Execution Plan
-      db.prepare(`
+        db.prepare(`
         INSERT INTO execution_plans (id, intent, model_used, created_at, estimated_steps, status)
         VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
@@ -81,8 +86,7 @@ export const databaseStoreResult: ToolDefinition = {
         planStatus
       );
 
-      // 2. Insert or update individual Tasks
-      const taskStmt = db.prepare(`
+        const taskStmt = db.prepare(`
         INSERT INTO tasks (id, plan_id, name, tool_slug, arguments, dependencies, status, result, error, retry_count, max_retries)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id, plan_id) DO UPDATE SET
@@ -91,25 +95,24 @@ export const databaseStoreResult: ToolDefinition = {
           error = excluded.error,
           retry_count = excluded.retry_count
       `);
-      for (const task of tasksList) {
-        taskStmt.run(
-          task.id,
-          planId,
-          task.name,
-          task.toolSlug,
-          JSON.stringify(task.arguments || {}),
-          JSON.stringify(task.dependencies || []),
-          task.status,
-          task.result ? JSON.stringify(task.result) : null,
-          task.error || null,
-          task.retryCount || 0,
-          task.maxRetries || 3
-        );
-      }
+        for (const task of tasksList) {
+          taskStmt.run(
+            task.id,
+            planId,
+            task.name,
+            task.toolSlug,
+            JSON.stringify(task.arguments || {}),
+            JSON.stringify(task.dependencies || []),
+            task.status,
+            task.result ? JSON.stringify(task.result) : null,
+            task.error || null,
+            task.retryCount || 0,
+            task.maxRetries || 3
+          );
+        }
+      });
 
-      }); // end transaction
-
-      persist(); // execute transaction
+      persist();
 
       logger.info(`Successfully stored plan ${planId} and ${tasksList.length} tasks in SQLite platform.db!`);
       return {
@@ -127,6 +130,3 @@ export const databaseStoreResult: ToolDefinition = {
 };
 
 export const allIntegrations = [discordSendMessage, databaseStoreResult];
-export * from './database.js';
-export * from './turso.js';
-export * from './trainer-links.js';

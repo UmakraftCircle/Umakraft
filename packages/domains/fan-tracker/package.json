@@ -2,7 +2,7 @@
   "name": "@ai-agent-platform/fan-tracker",
   "version": "1.0.0",
   "private": true,
-  "main": "./src/index.ts",
+  "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "type": "module",
   "scripts": {

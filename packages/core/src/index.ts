@@ -8,3 +8,5 @@ export * from './memory-store.js';
 export * from './repo-indexer.js';
 export * from './cache-store.js';
 export * from './knowledge-graph.js';
+export * from './tool-calling-agent.js';
+export * from './agent-runner.js';

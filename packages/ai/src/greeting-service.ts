@@ -105,23 +105,26 @@ export class GreetingService {
   private cache: GreetingCache;
   private primaryAI: AIService | null;
   private fallbackAI: AIService | null;
+  private brainAI: AIService | null;
   private prompts: PromptLibrary;
   private recentlySent = new Set<string>();
 
   /**
-   * @param primaryAI   Primary Groq model (e.g. llama-3.3-70b-versatile).
+   * @param primaryAI   Primary Groq model (e.g. openai/gpt-oss-120b).
    *                     Pass null to operate in cache-only fallback mode.
    * @param prompts     PromptLibrary with a registered 'new-member-greeting' template.
-   * @param fallbackAI  Optional fallback model (e.g. mixtral-8x7b-32768).
+   * @param fallbackAI  Optional fallback model (e.g. openai/gpt-oss-20b).
    *                     Used when the primary is rate-limited before falling back to cache.
    */
   constructor(
     primaryAI: AIService | null,
     prompts: PromptLibrary,
     fallbackAI: AIService | null = null,
+    brainAI: AIService | null = null,
   ) {
     this.primaryAI = primaryAI;
     this.fallbackAI = fallbackAI;
+    this.brainAI = brainAI;
     this.prompts = prompts;
     this.cache = new GreetingCache();
 
@@ -149,8 +152,8 @@ export class GreetingService {
    * Generate (or retrieve) a welcome greeting for a new server member.
    *
    * Strategy (5-tier fallback pyramid):
-   *   1. Try primary Groq model (e.g. llama-3.3-70b-versatile).
-   *   2. On primary rate-limit → try fallback model (e.g. mixtral-8x7b-32768).
+   *   1. Try primary Groq model (e.g. openai/gpt-oss-120b).
+   *   2. On primary rate-limit → try fallback model (e.g. openai/gpt-oss-20b).
    *   3. On success → cache it for future fallback, return it.
    *   4. On failure (rate-limit, network, etc.) → fall back to cached pool.
    *   5. Empty cache → bootstrap pre-written pool.
@@ -184,7 +187,19 @@ export class GreetingService {
       }
     }
 
-    // ── Tiers 3-5: Cache → Sole → Bootstrap ──
+    // ── Tier 3: Local brain (supervisor) retries once before cache ──
+    if (this.brainAI) {
+      try {
+        const greeting = await this.#generateViaAI(this.brainAI, memberName, serverName, memberCount);
+        this.#cacheGreeting(greeting);
+        logger.info(`Greeting recovered by local brain (${this.brainAI.getCurrentModel()})`);
+        return greeting;
+      } catch (err: any) {
+        logger.warn(`Local brain recovery failed: ${err.message}. Falling back to cache.`);
+      }
+    }
+
+    // ── Tiers 4-5: Cache → Sole → Bootstrap ──
     return this.#fallbackGreeting();
   }
 
