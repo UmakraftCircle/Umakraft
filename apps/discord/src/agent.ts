@@ -6,6 +6,7 @@ import { taskStateStore } from '@ai-agent-platform/integrations';
 import { ensureAskToolsRegistered } from './ask.js';
 import { allSkillTools } from '@ai-agent-platform/skills';
 import { failureMessage } from './errors.js';
+import { replyWithEmbed } from './embed-reply.js';
 
 const logger = createLogger('AgentHandler');
 
@@ -54,7 +55,7 @@ export async function handleAgent(interaction: ChatInputCommandInteraction): Pro
     const result = await runner.run(userId, goal, { guildId, channelId });
 
     if (result.status === 'completed') {
-      await interaction.editReply(result.answer);
+      await replyWithEmbed(interaction, result.answer);
     } else if (result.status === 'timeout' || result.status === 'failed') {
       // Fall back to a single conversational answer so the user still gets something.
       // domainGuard is OFF — this is general conversation, not Uma-only.
@@ -66,9 +67,8 @@ export async function handleAgent(interaction: ChatInputCommandInteraction): Pro
         overallTimeoutMs: 90_000,
         domainGuard: false,
       });
-      await interaction.editReply(
-        `${answer}\n\n*(${result.status}: ${result.errors.slice(0, 2).join('; ') || 'hit limits'})*`
-      );
+      const hint = `*(${result.status}: ${result.errors.slice(0, 2).join('; ') || 'hit limits'})*`;
+      await replyWithEmbed(interaction, `${answer}\n\n${hint}`);
     } else {
       await interaction.editReply('This task was cancelled.');
     }
