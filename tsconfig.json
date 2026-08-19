@@ -21,6 +21,7 @@
       "@ai-agent-platform/integrations": ["./packages/integrations/src/index.ts"],
       "@ai-agent-platform/fan-tracker": ["./packages/domains/fan-tracker/src/index.ts"],
       "@ai-agent-platform/pr-monitor": ["./packages/domains/pr-monitor/src/index.ts"],
+      "@ai-agent-platform/umamusume": ["./packages/domains/umamusume/src/index.ts"],
       "@ai-agent-platform/image-report": ["./apps/image-report/src/index.tsx"]
     },
     "composite": true,
@@ -39,6 +40,7 @@
     { "path": "./packages/skills" },
     { "path": "./packages/domains/fan-tracker" },
     { "path": "./packages/domains/pr-monitor" },
+    { "path": "./packages/domains/umamusume" },
     { "path": "./apps/api" },
     { "path": "./apps/cli" }
   ]
