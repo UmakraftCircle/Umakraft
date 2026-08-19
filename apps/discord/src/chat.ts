@@ -12,6 +12,7 @@ import {
   buildContextTurns,
 } from '@ai-agent-platform/integrations';
 import { LocalEmbeddingGenerator } from '@ai-agent-platform/ai';
+import { allSkillTools } from '@ai-agent-platform/skills';
 import { buildAIService } from './bootstrap.js';
 import { failureMessage } from './errors.js';
 import { matchBlocked } from './guard.js';
@@ -151,6 +152,9 @@ export async function handleChat(interaction: ChatInputCommandInteraction): Prom
       const aiService = buildAIService();
       const registry = ToolRegistry.getInstance();
       registry.register(searchWebTool);
+      for (const tool of allSkillTools) {
+        registry.register(tool);
+      }
       const agent = new ToolCallingAgent(aiService, registry);
       reply = await agent.run(userId, message, context, {
         maxToolCalls: 3,
