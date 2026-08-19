@@ -4,6 +4,7 @@ import { ToolRegistry, AgentRunner, ToolCallingAgent } from '@ai-agent-platform/
 import { buildAIService } from './bootstrap.js';
 import { taskStateStore } from '@ai-agent-platform/integrations';
 import { ensureAskToolsRegistered } from './ask.js';
+import { allSkillTools } from '@ai-agent-platform/skills';
 import { failureMessage } from './errors.js';
 
 const logger = createLogger('AgentHandler');
@@ -12,7 +13,23 @@ const logger = createLogger('AgentHandler');
  * Feature 4: `/agent` — the multi-step planning & execution entry point.
  * Uses AgentRunner (Planner + TaskManager) with deferred reply so Discord
  * never hangs. Falls back to the conversational ToolCallingAgent on timeout.
+ *
+ * Registers the read-only `/ask` tools (via ensureAskToolsRegistered) plus the
+ * full skill toolset (allSkillTools), so a plan can reach for any skill.
  */
+
+/** Register the skill tools into the shared registry exactly once. */
+let skillsRegistered = false;
+function ensureSkillToolsRegistered(): void {
+  if (skillsRegistered) return;
+  const registry = ToolRegistry.getInstance();
+  for (const tool of allSkillTools) {
+    registry.register(tool);
+  }
+  skillsRegistered = true;
+  logger.info(`Registered ${allSkillTools.length} skill tools for /agent`);
+}
+
 export async function handleAgent(interaction: ChatInputCommandInteraction): Promise<void> {
   const goal = interaction.options.getString('goal', true).trim();
   const userId = interaction.user.id;
@@ -23,6 +40,7 @@ export async function handleAgent(interaction: ChatInputCommandInteraction): Pro
 
   try {
     ensureAskToolsRegistered();
+    ensureSkillToolsRegistered();
 
     const aiService = buildAIService();
 
