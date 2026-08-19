@@ -10,37 +10,36 @@ metadata:
 
 # Continuous Learning Instincts (Zaro)
 
-An advanced learning system that turns Zaro sessions into reusable knowledge through atomic **instincts** — small learned behaviors with confidence scores, persisted in the workspace.
+An advanced learning system that turns Zaro sessions into reusable knowledge through atomic **instincts** — small learned behaviors with confidence scores, persisted in the workspace [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:12].
 
-This is a rework of the Claude-Code "continuous-learning-instincts-v2" concept for the Zaro agent platform. Instead of Claude Code hooks and `~/.claude/` files, it uses Zaro-native primitives: scheduled tasks with file-watch triggers, workspace memory, `.table` files, and task topics.
+This is a rework of the Claude-Code "continuous-learning-instincts-v2" concept for the Zaro agent platform. Instead of Claude Code hooks and `~/.claude/` files, it uses Zaro-native primitives: scheduled tasks with file-watch triggers, workspace memory, `.table` files, and task topics [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:14].
 
 ## What Changed from the Claude-Code Version
 
 | Concern | Claude Code (v2.1) | Zaro (this skill) |
 |---|---|---|
-| Observation trigger | `PreToolUse`/`PostToolUse` hooks + `observe.sh` | `schedule_task` with `watch_paths` + `cron` |
-| Storage | `~/.claude/homunculus/` (localhost) | Workspace memory (`/.nexus/memory/`) + workspace files |
-| Project detection | git remote URL / repo path | Workspace folder / `MEMORY.md` project entries |
-| Commands | `/instinct-status`, `/evolve`, … | Agent `prompt` instructions + scheduled runs |
-| Evolution target | Claude skills/commands/agents | Zaro skills, `schedule_task` jobs, `manage_task_topic` |
-| Structured data | JSONL files + YAML | `.table` files (SQL-queried) |
-| CLI | `instinct-cli.py` | Zaro agent tools (no CLI) |
+| Observation trigger | `PreToolUse`/`PostToolUse` hooks + `observe.sh` | `schedule_task` with `watch_paths` + `cron` [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:19] |
+| Storage | `~/.claude/homunculus/` (localhost) | Workspace memory (`/.nexus/memory/`) + workspace files [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:20] |
+| Project detection | git remote URL / repo path | Workspace folder / `MEMORY.md` project entries [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:21] |
+| Commands | `/instinct-status`, `/evolve`, … | Agent `prompt` instructions + scheduled runs [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:22] |
+| Evolution target | Claude skills/commands/agents | Zaro skills, `schedule_task` jobs, `manage_task_topic` [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:23] |
+| Structured data | JSONL files + YAML | `.table` files (SQL-queried) [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:24] |
+| CLI | `instinct-cli.py` | Zaro agent tools (no CLI) [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:25] |
 
 ## When to Activate
 
 Activate this skill when:
-
-- Configuring automatic learning / behavior extraction in the Zaro workspace
-- Reviewing, exporting, or promoting learned instincts
-- Evolving instincts into reusable skills, scheduled tasks, or task topics
-- Distinguishing project-scoped vs global instincts
-- Setting up self-improving agent workflows
+- Configuring automatic learning / behavior extraction in the Zaro workspace [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:29]
+- Reviewing, exporting, or promoting learned instincts [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:30]
+- Evolving instincts into reusable skills, scheduled tasks, or task topics [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:31]
+- Distinguishing project-scoped vs global instincts [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:32]
+- Setting up self-improving agent workflows [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:33]
 
 ## Core Concepts
 
 ### 1. Instincts (atomic learned behaviors)
 
-An instinct is a single, confidence-scored behavior:
+An instinct is a single, confidence-scored behavior [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:37]:
 
 ```yaml
 ---
@@ -63,16 +62,15 @@ Use functional patterns over classes when appropriate.
 ```
 
 Properties:
-
-- **Atomic** — one trigger, one action
-- **Confidence-weighted** — 0.3 (tentative) → 0.9 (nearly certain)
-- **Domain-tagged** — code-style, testing, git, debugging, workflow, etc.
-- **Evidence-based** — tracks the observations that produced it
-- **Scope-aware** — `project` by default, or `global`
+- **Atomic** — one trigger, one action [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:59]
+- **Confidence-weighted** — 0.3 (tentative) → 0.9 (nearly certain) [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:60]
+- **Domain-tagged** — code-style, testing, git, debugging, workflow, etc. [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:61]
+- **Evidence-based** — tracks the observations that produced it [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:62]
+- **Scope-aware** — `project` by default, or `global` [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:63]
 
 ### 2. Where instincts live (Zaro storage model)
 
-Zaro has no local filesystem for the user. Everything is in the workspace:
+Zaro has no local filesystem for the user. Everything is in the workspace [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:67]:
 
 **Personal memory (manual, read-only system entries):**
 ```text
@@ -84,7 +82,7 @@ Zaro has no local filesystem for the user. Everything is in the workspace:
 /.nexus/memory/instincts/instincts.table
 ```
 
-A `.table` file with `fields` + `data`. Recommended schema:
+A `.table` file with `fields` + `data` [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:81]. Recommended schema:
 
 ```json
 {
@@ -107,12 +105,12 @@ A `.table` file with `fields` + `data`. Recommended schema:
 
 | Score | Meaning | Behavior |
 |---:|---|---|
-| 0.3 | Tentative | Suggested, not enforced |
-| 0.5 | Moderate | Applied when relevant |
-| 0.7 | Strong | Automatically approved |
-| 0.9 | Nearly certain | Core behavior |
+| 0.3 | Tentative | Suggested, not enforced [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:104] |
+| 0.5 | Moderate | Applied when relevant [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:105] |
+| 0.7 | Strong | Automatically approved [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:106] |
+| 0.9 | Nearly certain | Core behavior [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:107] |
 
-Confidence **increases** with repeated observations and non-corrections; **decreases** on explicit correction, long absence, or contradictory evidence.
+Confidence **increases** with repeated observations and non-corrections; **decreases** on explicit correction, long absence, or contradictory evidence [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:109].
 
 ## Architecture (Zaro-flavored)
 
@@ -138,11 +136,11 @@ Evolved artifacts: workspace skills / scheduled tasks / task topics
 
 ### Step 1 — Create the instinct registry
 
-Create `/.nexus/memory/instincts/instincts.table` (empty schema above). Zaro reads rows with SQL; nothing else is required.
+Create `/.nexus/memory/instincts/instincts.table` (empty schema above) [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:129]. Zaro reads rows with SQL; nothing else is required [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:129].
 
 ### Step 2 — Schedule the observation agent
 
-Use `schedule_task` to create an observation job. Combine `cron` and `watch_paths` in a single task so it fires both on a schedule and on file changes:
+Use `schedule_task` to create an observation job [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:133]. Combine `cron` and `watch_paths` in a single task so it fires both on a schedule and on file changes [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:133]:
 
 ```text
 name: instinct-observe
@@ -161,7 +159,7 @@ prompt: >
 
 ### Step 3 — Schedule the evolve agent
 
-A second job that promotes validated instincts into durable artifacts:
+A second job that promotes validated instincts into durable artifacts [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:151]:
 
 ```text
 name: instinct-evolve
@@ -176,57 +174,57 @@ prompt: >
 
 ### Step 4 — Enroll instincts into memory
 
-Promote `global` instincts (security practices, general best practices) into personal memory (`MEMORY.md`) or rules so they load on every session by default.
+Promote `global` instincts (security practices, general best practices) into personal memory (`MEMORY.md`) or rules so they load on every session by default [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:165].
 
 ## Project vs Global Scope Decision
 
 | Pattern type | Scope |
 |---|---|
-| Language/framework rules | project |
-| File structure preferences | project |
-| Code style | project |
-| Error-handling strategy for a codebase | project |
-| Security practices | global |
-| General best practices | global |
-| Tool workflow preferences | global |
-| Git practices | global |
+| Language/framework rules | project [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:171] |
+| File structure preferences | project [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:172] |
+| Code style | project [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:173] |
+| Error-handling strategy for a codebase | project [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:174] |
+| Security practices | global [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:175] |
+| General best practices | global [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:176] |
+| Tool workflow preferences | global [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:177] |
+| Git practices | global [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:178] |
 
 ## Promotion: project → global
 
-An instinct is promoted to `global` when it appears with high confidence (>= 0.8) across two or more projects. The evolve agent flags these; promotion is applied by updating the `scope` field.
+An instinct is promoted to `global` when it appears with high confidence (>= 0.8) across two or more projects [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:182]. The evolve agent flags these; promotion is applied by updating the `scope` field [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:182].
 
 ## Evolving into Zaro artifacts
 
 | Instinct cluster | Best Zaro target |
 |---|---|
-| Repeated workflow steps | `schedule_task` (a recurring job) |
-| Multi-agent pipeline pattern | `manage_task_topic` |
-| Reusable domain expertise | workspace skill / memory topic |
-| Coding conventions | rules file under `/.nexus/memory/.../rules/` |
+| Repeated workflow steps | `schedule_task` (a recurring job) [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:188] |
+| Multi-agent pipeline pattern | `manage_task_topic` [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:189] |
+| Reusable domain expertise | workspace skill / memory topic [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:190] |
+| Coding conventions | rules file under `/.nexus/memory/.../rules/` [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:191] |
 
 ## Why file-watch + schedule instead of hooks
 
-Zaro has no deterministic per-tool "hooks." The equivalent is a `schedule_task` with `watch_paths`, which reliably fires on file changes (debounced) and on a cron schedule. This gives deterministic observation without leaking every intermediate tool call.
+Zaro has no deterministic per-tool "hooks." The equivalent is a `schedule_task` with `watch_paths`, which reliably fires on file changes (debounced) and on a cron schedule [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:195]. This gives deterministic observation without leaking every intermediate tool call [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:195].
 
 ## Safety & Scope Rules
 
-- Instincts are **suggestions curated by the agent**, not auto-applied code changes.
-- Raw code/conversation content is never copied into the registry — only summarized patterns.
-- Observation and evolve are read-mostly agents; the only writes are to `instincts.table` (and, on approval, promoted artifacts).
-- Promotions and skill/task creation must respect the coding-agent scope rules: **inspect and report freely, modify only what is approved.**
+- Instincts are **suggestions curated by the agent**, not auto-applied code changes [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:199].
+- Raw code/conversation content is never copied into the registry — only summarized patterns [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:200].
+- Observation and evolve are read-mostly agents; the only writes are to `instincts.table` (and, on approval, promoted artifacts) [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:201].
+- Promotions and skill/task creation must respect the coding-agent scope rules: **inspect and report freely, modify only what is approved** [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:202].
 
 ## Verification Checklist
 
-- [ ] Instinct registry `.table` exists with the schema above.
-- [ ] Observation job uses `watch_paths` (+ optional `cron`) in a single task.
-- [ ] Evolve job runs on a separate, lower-frequency schedule.
-- [ ] Confidence values are 0.3–0.9 and evidence-based.
-- [ ] Scope is set correctly (project vs global).
-- [ ] No raw user content leaked into the registry.
-- [ ] Evolved artifacts are proposed and approved before creation.
+- [ ] Instinct registry `.table` exists with the schema above [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:206].
+- [ ] Observation job uses `watch_paths` (+ optional `cron`) in a single task [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:207].
+- [ ] Evolve job runs on a separate, lower-frequency schedule [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:208].
+- [ ] Confidence values are 0.3–0.9 and evidence-based [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:209].
+- [ ] Scope is set correctly (project vs global) [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:210].
+- [ ] No raw user content leaked into the registry [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:211].
+- [ ] Evolved artifacts are proposed and approved before creation [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:212].
 
 ## Core Principle
 
-> **Learn once, scope correctly, promote only what is proven.**
+> **Learn once, scope correctly, promote only what is proven.** [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:216]
 
-Zaro learns from workspace activity, stores decisions as queryable instincts, and evolves only high-confidence clusters into durable skills and automations — without auto-modifying project code.
+Zaro learns from workspace activity, stores decisions as queryable instincts, and evolves only high-confidence clusters into durable skills and automations — without auto-modifying project code [citation:/.nexus/skills/continuous-learning-instincts-zaro.md:218].
