@@ -16,6 +16,7 @@ import { allSkillTools } from '@ai-agent-platform/skills';
 import { buildAIService } from './bootstrap.js';
 import { failureMessage } from './errors.js';
 import { safetyGuard } from './guard.js';
+import { replyWithEmbed } from './embed-reply.js';
 
 const logger = createLogger('ChatHandler');
 
@@ -186,7 +187,7 @@ export async function handleChat(interaction: ChatInputCommandInteraction): Prom
     await conversationMemoryStore.append({ userId, channelId, role: 'user', content: message });
     await conversationMemoryStore.append({ userId, channelId, role: 'assistant', content: reply });
 
-    await interaction.editReply(reply.slice(0, 2000));
+    await replyWithEmbed(interaction, reply);
   } catch (err: any) {
     logger.error(`/chat error: ${err?.message ?? err}`);
     await interaction.editReply(failureMessage(err));

@@ -8,6 +8,7 @@ import { askTools } from './ask-tools.js';
 import { allSkillTools } from '@ai-agent-platform/skills';
 import { failureMessage } from './errors.js';
 import { safetyGuard, buildRelevanceAllowlist, hasRelevance, isOffTopicAnswer } from './guard.js';
+import { replyWithEmbed } from './embed-reply.js';
 
 const logger = createLogger('AskHandler');
 
@@ -77,7 +78,7 @@ export async function handleAsk(interaction: ChatInputCommandInteraction): Promi
         logger.info(`/ask cache hit for "${question.slice(0, 60)}"`);
         await conversationMemoryStore.append({ userId, channelId, role: 'user', content: question });
         await conversationMemoryStore.append({ userId, channelId, role: 'assistant', content: cached });
-        await interaction.editReply(cached);
+        await replyWithEmbed(interaction, cached);
         return;
       }
     } catch (cacheErr: any) {
@@ -129,7 +130,7 @@ export async function handleAsk(interaction: ChatInputCommandInteraction): Promi
     await conversationMemoryStore.append({ userId, channelId, role: 'user', content: question });
     await conversationMemoryStore.append({ userId, channelId, role: 'assistant', content: answer });
 
-    await interaction.editReply(answer);
+    await replyWithEmbed(interaction, answer);
   } catch (err: any) {
     logger.error(`/ask error: ${err?.message ?? err}`);
     await interaction.editReply(failureMessage(err));
