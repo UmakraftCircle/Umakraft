@@ -10,55 +10,89 @@ metadata:
 
 ## Use Cases
 
-- Measure performance impact before/after a PR
-- Establish a baseline
-- Investigate "feels slower" reports
-- Ensure targets met before release
-- Compare technology stacks
+- Measure performance impact before and after a PR
+- Establish a performance baseline for a project
+- Investigate user reports that the application "feels slower"
+- Ensure performance targets are met before release
+- Compare performance across different technology stacks
 
-> **Platform note:** The original skill referenced ECC browser MCP and `/benchmark` slash-commands. In Zaro: browser tools for page metrics, `http_fetch` for API benchmarks, workspace files (e.g. `/benchmarks/*.json`) for storage. Methodology below is kept intact.
+> **Platform note:** The original skill was written around ECC-specific
+> browser MCP and `/benchmark` slash-commands and `.ecc/benchmarks/` storage.
+> Those are illustrative. In Zaro the equivalents are: browser tools for page
+> metrics, `http_fetch` for API benchmarks, and workspace files (e.g.
+> `/benchmarks/*.json`) rather than `.ecc/`. The measurement methodology below
+> is kept intact.
 
-## Mode 1: Page Performance
+## How It Works
 
-1. Navigate to each URL.
-2. Measure Web Vitals: LCP (<2.5s), CLS (<0.1), INP (<200ms), FCP (<1.8s), TTFB (<800ms).
-3. Measure resource sizes: page weight (<1MB), JS bundle (<200KB gzip), CSS, images, third-party scripts.
-4. Count network requests.
-5. Check render-blocking resources.
+### Mode 1: Page Performance
 
-## Mode 2: API Performance
+Use browser automation to measure real-browser metrics:
 
-1. Make 100 requests per endpoint (`http_fetch`).
-2. Measure p50/p95/p99 latency, response size, status.
-3. Load test: 10 concurrent requests.
-4. Compare against SLA targets.
+1. Navigate to each target URL.
+2. Measure Core Web Vitals and related metrics:
+   - LCP (Largest Contentful Paint) — target < 2.5s
+   - CLS (Cumulative Layout Shift) — target < 0.1
+   - INP (Interaction to Next Paint) — target < 200ms
+   - FCP (First Contentful Paint) — target < 1.8s
+   - TTFB (Time to First Byte) — target < 800ms
+3. Measure resource sizes:
+   - Total page weight (target < 1MB)
+   - JS bundle size (target < 200KB gzipped)
+   - CSS size
+   - Image weight
+   - Third-party script weight
+4. Count the number of network requests.
+5. Check for render-blocking resources.
 
-## Mode 3: Build Performance
+### Mode 2: API Performance
 
-Cold build, HMR, test suite time, type-check, lint, Docker build.
+Benchmark API endpoints:
 
-## Mode 4: Before/After Comparison
+1. Make 100 requests to each endpoint (via `http_fetch`).
+2. Measure: p50, p95, and p99 latency.
+3. Track: response size and status code.
+4. Load test: 10 concurrent requests.
+5. Compare results against SLA targets.
+
+### Mode 3: Build Performance
+
+Measure development feedback-loop efficiency:
+
+1. Cold build time
+2. Hot reload (HMR) time
+3. Test suite execution time
+4. TypeScript check time
+5. Lint time
+6. Docker build time
+
+### Mode 4: Before/After Comparison
+
+Run benchmarks before and after a change to measure its impact. In Zaro, this is done by saving baseline JSON and diffing:
 
 ```text
-benchmark baseline    # save metrics to /benchmarks/baseline-<date>.json
-# ... change ...
-benchmark compare     # diff against baseline
+benchmark baseline    # save current metrics to /benchmarks/baseline-<date>.json
+# ... make changes ...
+benchmark compare     # compare against the baseline
 ```
 
 Example output:
+
 ```text
 | Metric | Before | After | Delta | Verdict |
+|--------|--------|-------|-------|---------|
 | LCP | 1.2s | 1.4s | +200ms | WARNING |
 | Bundle | 180KB | 175KB | -5KB | ✓ BETTER |
+| Build | 12s | 14s | +2s | WARNING |
 ```
 
 ## Output
 
-Store baseline JSON in the workspace (e.g. `/benchmarks/`), tracked by Git.
+Store baseline data as JSON in the workspace (e.g. `/benchmarks/`). Track the files with Git so the team can share and review performance baselines.
 
 ## Integration
 
-- **CI:** run compare on every PR (e.g. a Zaro `schedule_task` triggered by file changes on benchmark-critical paths).
+- **CI:** run the compare step on every PR (e.g. a Zaro `schedule_task` triggered by file changes on the benchmark-critical paths, or wired into the repo's CI workflow).
 - **Post-deployment:** pair with canary/monitoring.
 - **Pre-release:** pair with a browser-QA checklist.
 

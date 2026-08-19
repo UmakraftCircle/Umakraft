@@ -9,7 +9,7 @@ metadata:
 
 Build resilient applications with robust error handling strategies that gracefully handle failures and provide excellent debugging experiences.
 
-> **Note:** This skill is platform- and language-agnostic. It applies equally whether the code is written by a human or an AI coding agent (including Zaro).
+> **Note:** This skill is platform- and language-agnostic. It applies equally whether the code is written by a human or an AI coding agent (including Zaro). The patterns below are universal engineering guidance, not tied to any specific editor, CLI, or agent runtime.
 
 ## When to Use This Skill
 
@@ -39,9 +39,16 @@ Build resilient applications with robust error handling strategies that graceful
 
 ### 2. Error Categories
 
-**Recoverable Errors:** Network timeouts, missing files, invalid user input, API rate limits.
+**Recoverable Errors:**
+- Network timeouts
+- Missing files
+- Invalid user input
+- API rate limits
 
-**Unrecoverable Errors:** Out of memory, stack overflow, programming bugs (null pointer, etc.).
+**Unrecoverable Errors:**
+- Out of memory
+- Stack overflow
+- Programming bugs (null pointer, etc.)
 
 ## Language-Specific Patterns
 
@@ -58,12 +65,15 @@ class ApplicationError(Exception):
         self.timestamp = datetime.utcnow()
 
 class ValidationError(ApplicationError):
+    """Raised when validation fails."""
     pass
 
 class NotFoundError(ApplicationError):
+    """Raised when resource not found."""
     pass
 
 class ExternalServiceError(ApplicationError):
+    """Raised when external service fails."""
     def __init__(self, message: str, service: str, **kwargs):
         super().__init__(message, **kwargs)
         self.service = service
@@ -94,7 +104,12 @@ from typing import TypeVar, Callable
 
 T = TypeVar('T')
 
-def retry(max_attempts=3, backoff_factor=2.0, exceptions=(Exception,)):
+def retry(
+    max_attempts: int = 3,
+    backoff_factor: float = 2.0,
+    exceptions: tuple = (Exception,)
+):
+    """Retry decorator with exponential backoff."""
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @wraps(func)
         def wrapper(*args, **kwargs) -> T:
@@ -137,8 +152,13 @@ type Result<T, E = Error> =
     | { ok: true; value: T }
     | { ok: false; error: E };
 
-function Ok<T>(value: T): Result<T, never> { return { ok: true, value }; }
-function Err<E>(error: E): Result<never, E> { return { ok: false, error }; }
+function Ok<T>(value: T): Result<T, never> {
+    return { ok: true, value };
+}
+
+function Err<E>(error: E): Result<never, E> {
+    return { ok: false, error };
+}
 ```
 
 **Async Error Handling:**
@@ -170,7 +190,7 @@ fn read_file(path: &str) -> Result<String, io::Error> {
 
 ### Go Error Handling
 
-Use explicit error returns, wrapping with `%w`, and `errors.Is` / `errors.As`.
+Use explicit error returns, wrapping with `%w`, and `errors.Is` / `errors.As` for structured inspection.
 
 ```go
 func getUser(id string) (*User, error) {
@@ -186,24 +206,49 @@ func getUser(id string) (*User, error) {
 
 ### Pattern 1: Circuit Breaker
 
-Three states: **CLOSED** (normal), **OPEN** (reject while failing), **HALF_OPEN** (limited test). Use failure thresholds, recovery timeouts, and success thresholds.
+Prevent cascading failures in distributed systems.
+
+A circuit breaker typically has three states:
+
+- **CLOSED** — normal operation
+- **OPEN** — requests are rejected while the dependency is failing
+- **HALF_OPEN** — limited requests test whether the dependency has recovered
+
+Use failure thresholds, recovery timeouts, and success thresholds to control state transitions.
 
 ### Pattern 2: Error Aggregation
+
+Collect multiple validation errors instead of failing on the first error.
 
 ```typescript
 class ErrorCollector {
     private errors: Error[] = [];
-    add(error: Error): void { this.errors.push(error); }
-    hasErrors(): boolean { return this.errors.length > 0; }
-    getErrors(): Error[] { return [...this.errors]; }
+
+    add(error: Error): void {
+        this.errors.push(error);
+    }
+
+    hasErrors(): boolean {
+        return this.errors.length > 0;
+    }
+
+    getErrors(): Error[] {
+        return [...this.errors];
+    }
+
     throw(): never {
         if (this.errors.length === 1) throw this.errors[0];
-        throw new AggregateError(this.errors, `${this.errors.length} errors occurred`);
+        throw new AggregateError(
+            this.errors,
+            `${this.errors.length} errors occurred`
+        );
     }
 }
 ```
 
 ### Pattern 3: Graceful Degradation
+
+Provide fallback functionality when failures occur.
 
 ```python
 def with_fallback(primary, fallback):
@@ -216,27 +261,36 @@ def with_fallback(primary, fallback):
 
 ## Best Practices
 
-1. **Fail Fast** — Validate input early.
-2. **Preserve Context** — Include stack traces, metadata, timestamps.
-3. **Meaningful Messages** — Explain what happened and how to fix it.
+1. **Fail Fast** — Validate input early and fail quickly.
+2. **Preserve Context** — Include useful stack traces, metadata, and timestamps.
+3. **Meaningful Messages** — Explain what happened and how it can be fixed.
 4. **Log Appropriately** — Log unexpected errors without spamming expected failures.
-5. **Handle at the Right Level** — Catch where it can be meaningfully handled.
-6. **Clean Up Resources** — `try/finally`, context managers, `defer`.
+5. **Handle at the Right Level** — Catch errors where they can be meaningfully handled.
+6. **Clean Up Resources** — Use `try/finally`, context managers, `defer`, or equivalents.
 7. **Don't Swallow Errors** — Log, return, or re-throw intentionally.
-8. **Use Type-Safe Errors** — Prefer typed errors where supported.
-9. **Retry Selectively** — Retry transient failures, not permanent ones.
+8. **Use Type-Safe Errors** — Prefer typed errors where the language supports them.
+9. **Retry Selectively** — Retry transient failures, not permanent failures.
 10. **Use Backoff and Jitter** — Avoid synchronized retry storms.
-11. **Protect Sensitive Data** — Never expose secrets in errors/logs.
+11. **Protect Sensitive Data** — Never expose secrets or sensitive information in errors/logs.
 
 ## Common Pitfalls
 
-- **Catching Too Broadly** — `except Exception` hides bugs.
+- **Catching Too Broadly** — `except Exception` can hide programming bugs.
 - **Empty Catch Blocks** — Silently swallowing errors.
-- **Duplicate Logging** — Logging + re-throwing at every layer.
-- **Missing Cleanup** — Forgetting to close resources.
-- **Poor Error Messages** — `"Error occurred"` lacks context.
-- **Overusing Error Codes** — Prefer structured/typed errors.
-- **Ignoring Async Errors** — Unhandled rejections become incidents.
+- **Duplicate Logging** — Logging and re-throwing at every layer creates noisy logs.
+- **Missing Cleanup** — Forgetting to close files, connections, or other resources.
+- **Poor Error Messages** — Messages such as `"Error occurred"` lack actionable context.
+- **Overusing Error Codes** — Prefer structured errors or typed results where appropriate.
+- **Ignoring Async Errors** — Unhandled promise rejections and task failures can become incidents.
 - **Retrying Non-Retryable Errors** — Only retry transient failures.
 - **Retry Storms** — Use exponential backoff and jitter.
-- **Leaking Sensitive Data** — Keep secrets out of errors/logs.
+- **Leaking Sensitive Data** — Keep credentials, tokens, and private data out of errors and logs.
+
+## Resources
+
+- `references/exception-hierarchy-design.md` — Designing error class hierarchies
+- `references/error-recovery-strategies.md` — Recovery patterns for different scenarios
+- `references/async-error-handling.md` — Handling errors in concurrent code
+- `assets/error-handling-checklist.md` — Review checklist for error handling
+- `assets/error-message-guide.md` — Writing helpful error messages
+- `scripts/error-analyzer.py` — Analyze error patterns in logs
