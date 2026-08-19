@@ -1,5 +1,5 @@
 import { createLogger } from '@ai-agent-platform/shared';
-import { AIService, AGENT_SYSTEM_PROMPT } from '@ai-agent-platform/ai';
+import { AIService, buildSystemPrompt } from '@ai-agent-platform/ai';
 import { ToolRegistry } from './tool-registry.js';
 import { z } from 'zod';
 
@@ -29,9 +29,18 @@ export interface ToolCallingAgentOptions {
   /**
    * Optional text prepended to the canonical agent system prompt. Used by
    * command-specific voices (e.g. `/chat`'s Trainer persona) to layer a persona
-   * on top of the shared `AGENT_SYSTEM_PROMPT` without replacing it.
+   * on top of the shared core without replacing it.
    */
   systemPromptPrefix?: string;
+  /**
+   * When true, the Uma Musume domain block (including the [[OFFTOPIC]] off-topic
+   * gate) is appended to the system prompt, restricting the conversation to the
+   * Uma Musume / Umakraft domain. Used by `/ask`.
+   *
+   * When false (default), only the shared safety/identity core is used, so the
+   * agent is a general-conversation assistant. Used by `/chat` and `/agent`.
+   */
+  domainGuard?: boolean;
 }
 
 export const DEFAULT_AGENT_OPTIONS = {
@@ -64,15 +73,16 @@ function truncate(s: string, maxBytes: number): string {
   return out + '…[truncated]';
 }
 
-function buildSystemPrompt(
+function buildSystemPromptMsg(
   toolList: string,
   maxWebSearches: number,
+  domainGuard: boolean,
   systemPromptPrefix?: string,
 ): string {
   const prefix = systemPromptPrefix ? `${systemPromptPrefix}\n\n` : '';
   return (
     prefix +
-    `${AGENT_SYSTEM_PROMPT}
+    `${buildSystemPrompt(domainGuard)}
 
 TOOLS
 - Use the provided tools to gather real data instead of guessing. You may call a tool,
@@ -119,6 +129,7 @@ export class ToolCallingAgent {
     const generateTimeoutMs = options.generateTimeoutMs ?? DEFAULT_AGENT_OPTIONS.generateTimeoutMs;
     const overallTimeoutMs = options.overallTimeoutMs ?? DEFAULT_AGENT_OPTIONS.overallTimeoutMs;
     const maxResultBytes = options.maxResultBytes ?? DEFAULT_AGENT_OPTIONS.maxResultBytes;
+    const domainGuard = options.domainGuard ?? false;
 
     return withTimeout(
       this._run({
@@ -130,6 +141,7 @@ export class ToolCallingAgent {
         toolTimeoutMs,
         generateTimeoutMs,
         maxResultBytes,
+        domainGuard,
         systemPromptPrefix: options.systemPromptPrefix,
       }),
       overallTimeoutMs,
@@ -146,6 +158,7 @@ export class ToolCallingAgent {
     toolTimeoutMs: number;
     generateTimeoutMs: number;
     maxResultBytes: number;
+    domainGuard: boolean;
     systemPromptPrefix?: string;
   }): Promise<AgentRunTrace> {
     const toolSchemas = this.registry.getDeclarativeSchemas();
@@ -153,7 +166,7 @@ export class ToolCallingAgent {
       .map((t) => `- ${t.slug}: ${t.description}`)
       .join('\n');
 
-    const system = buildSystemPrompt(toolList, p.maxWebSearches, p.systemPromptPrefix);
+    const system = buildSystemPromptMsg(toolList, p.maxWebSearches, p.domainGuard, p.systemPromptPrefix);
 
     let transcript = p.context ? `Context from earlier conversation:\n${p.context}\n\n` : '';
     let toolCallCount = 0;

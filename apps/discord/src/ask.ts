@@ -7,7 +7,7 @@ import { conversationMemoryStore, askResponseCache, moderationLogStore } from '@
 import { askTools } from './ask-tools.js';
 import { allSkillTools } from '@ai-agent-platform/skills';
 import { failureMessage } from './errors.js';
-import { matchBlocked, buildRelevanceAllowlist, hasRelevance, isOffTopicAnswer } from './guard.js';
+import { safetyGuard, buildRelevanceAllowlist, hasRelevance, isOffTopicAnswer } from './guard.js';
 
 const logger = createLogger('AskHandler');
 
@@ -50,8 +50,8 @@ export async function handleAsk(interaction: ChatInputCommandInteraction): Promi
 
     const normalized = normalizeQuestion(question);
 
-    // ── Layer 1: blocklist (improper content / injection) — hard reject. ──
-    if (matchBlocked(question)) {
+    // ── Layer 1: safety guard (blocklist — improper content / injection) — hard reject. ──
+    if (safetyGuard(question)) {
       await interaction.editReply(REJECT_MESSAGE);
       return;
     }
@@ -99,6 +99,7 @@ export async function handleAsk(interaction: ChatInputCommandInteraction): Promi
       toolTimeoutMs: 8_000,
       generateTimeoutMs: 20_000,
       overallTimeoutMs: 90_000,
+      domainGuard: true,
     });
     const answer = trace.answer;
 

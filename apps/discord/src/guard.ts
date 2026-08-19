@@ -3,20 +3,23 @@ import { createLogger } from '@ai-agent-platform/shared';
 const logger = createLogger('AskGuard');
 
 /**
- * Relevance guard for `/ask`.
+ * Guards for the Discord agent commands.
  *
- * Layer 1  — deterministic blocklist (improper content + prompt injection).
- *            Hard-reject BEFORE any LLM call, log, or cache.
- * Layer 3  — keyword allowlist (soft pre-filter). Zero matches → likely off-topic,
- *            so the handler may skip the LLM. It is NOT the final authority
- *            (the model's [[OFFTOPIC]] rule is).
+ * Layer 1 — `safetyGuard` (deterministic blocklist): improper content + prompt
+ *           injection. Hard-reject BEFORE any LLM call, log, or cache. This is the
+ *           ONLY guard applied to general-conversation commands (/chat, /agent).
+ * Layer 2 — model [[OFFTOPIC]] gate: the model returns the marker when it judges a
+ *           question off-domain; only the domain-restricted prompt (via
+ *           `domainGuard: true`) instructs the model to do so.
+ * Layer 3 — `hasRelevance` keyword allowlist (soft pre-filter). Zero matches →
+ *           likely off-domain. Only meaningful for `/ask`.
  */
 
 /** Reserved marker the model returns when it judges a question off-topic. */
 export const OFFTOPIC_MARKER = '[[OFFTOPIC]]';
 
 // ──────────────────────────────────────────────────────────────────────
-// Layer 1 — Blocklist (improper content + prompt injection)
+// Layer 1 — Safety guard / blocklist (improper content + prompt injection)
 // ──────────────────────────────────────────────────────────────────────
 
 const BLOCKED_PATTERNS: RegExp[] = [
@@ -53,8 +56,11 @@ const BLOCKED_PATTERNS: RegExp[] = [
   /(https?:\/\/\S+\s?){5,}/i,  // link flood
 ];
 
-/** Return true if the text matches any blocked (improper/injection) pattern. */
-export function matchBlocked(text: string): boolean {
+/**
+ * Safety guard: return true if the text matches any blocked (improper/injection)
+ * pattern. This is the only deterministic guard applied to every command.
+ */
+export function safetyGuard(text: string): boolean {
   for (const re of BLOCKED_PATTERNS) {
     if (re.test(text)) {
       logger.warn('Blocked content matched');
@@ -63,6 +69,9 @@ export function matchBlocked(text: string): boolean {
   }
   return false;
 }
+
+/** @deprecated Use `safetyGuard` instead. Kept for back-compat. */
+export const matchBlocked = safetyGuard;
 
 // ──────────────────────────────────────────────────────────────────────
 // Layer 3 — Keyword allowlist (soft relevance pre-filter)
