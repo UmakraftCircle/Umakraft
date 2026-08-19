@@ -67,7 +67,6 @@ async function validateUrlWithDns(raw: string): Promise<URL> {
 
 function stripHtml(html: string, contentType: string): string {
   if (contentType.includes('application/json')) {
-    // caller handles JSON; here just return raw text
     return html;
   }
   if (contentType.includes('text/html')) {
@@ -116,7 +115,16 @@ async function fetchApprovedSource(urlStr: string, maxLength = 30000): Promise<a
 
   if (!response) throw new Error('No response received');
   if (response.status >= 300 && response.status < 400) throw new Error('Too many redirects (max 5)');
-  if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  if (!response.ok) {
+    // Graceful handling: some approved lore/community sources (notably
+    // umamusume.fandom.com) block non-browser agents with HTTP 403. Surface a
+    // clear reason and let the caller fall back to the next source instead of
+    // treating it as an unhelpful generic failure.
+    const detail = response.status === 403
+      ? `HTTP 403 Forbidden — source may block non-browser agents`
+      : `HTTP ${response.status}: ${response.statusText}`;
+    throw new Error(detail);
+  }
 
   const contentType = response.headers.get('content-type') || '';
   let text: string;
@@ -151,7 +159,8 @@ export const umamusumeDataMiner: ToolDefinition = {
     'Retrieves Umamusume: Pretty Derby information strictly from approved sources ' +
     '(uma.guide primary, gametora secondary, fandom for lore, reddit for community). ' +
     'Classifies the request, routes it to the highest-priority approved source, fetches it, ' +
-    'and returns trimmed text plus source metadata. Never scrapes unrelated websites.',
+    'and returns trimmed text plus source metadata. Falls back to uma.guide character data ' +
+    'when the lore source is unavailable. Never scrapes unrelated websites.',
   parameters: {
     query: {
       type: 'string',
