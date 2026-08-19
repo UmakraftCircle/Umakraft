@@ -23,6 +23,7 @@ export const AI_EMBED_COLOR = 0x5865f2;
  */
 export function splitForEmbeds(text: string, limit: number = EMBED_DESCRIPTION_LIMIT): string[] {
   const trimmed = text.trim();
+  if (trimmed.length === 0) return [];
   if (trimmed.length <= limit) return [trimmed];
 
   const chunks: string[] = [];
@@ -66,12 +67,25 @@ export function buildAnswerEmbeds(
 /**
  * Edit an already-deferred interaction reply with one or more embeds carrying
  * the AI answer. Splits long answers across multiple embeds automatically.
+ *
+ * Guard: if the answer is empty/whitespace-only, fall back to a plain text
+ * content reply instead of sending an empty embed (which Discord drops) so the
+ * Trainer never gets a silently-empty response.
  */
 export async function replyWithEmbed(
   interaction: ChatInputCommandInteraction,
   answer: string,
   color: number = AI_EMBED_COLOR,
 ): Promise<void> {
-  const embeds = buildAnswerEmbeds(answer, color);
+  const embeds = buildAnswerEmbeds(answer ?? '', color);
+
+  if (embeds.length === 0) {
+    await interaction.editReply({
+      content:
+        "🐎 Trainer, I came back empty-hooved on that one — could you try asking again?",
+    });
+    return;
+  }
+
   await interaction.editReply({ embeds });
 }
