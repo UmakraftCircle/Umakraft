@@ -15,12 +15,12 @@ import { LocalEmbeddingGenerator } from '@ai-agent-platform/ai';
 import { allSkillTools } from '@ai-agent-platform/skills';
 import { buildAIService } from './bootstrap.js';
 import { failureMessage } from './errors.js';
-import { matchBlocked } from './guard.js';
+import { safetyGuard } from './guard.js';
 
 const logger = createLogger('ChatHandler');
 
 /**
- * `/chat` — a personalized, memory-aware conversation entry point.
+ * `/chat` — a personalized, memory-aware, GENERAL conversation entry point.
  *
  * Lifecycle:
  *   - `Speak` opens (or resets) a session. A new `Speak` OVERWRITES the previous
@@ -31,9 +31,10 @@ const logger = createLogger('ChatHandler');
  * reply style), reuses cached answers for similar questions (semantic similarity),
  * and optionally reaches for Tavily web search when a question needs current info.
  *
- * The agent runs on the canonical `AGENT_SYSTEM_PROMPT` (shared with `/ask`); the
- * small persona block below is layered on top of it via `systemPromptPrefix`, and
- * the Trainer's known facts are appended per-turn.
+ * Scope: general conversation. Unlike `/ask` (which is Uma Musume-only), `/chat`
+ * is safety-only: it applies `safetyGuard` (the deterministic blocklist) and does
+ * NOT enable the domain guard, so it may discuss any ordinary topic. Uma Musume
+ * remains the persona/voice, not a topic restriction.
  *
  * `chat.ts` is the orchestration layer only — it calls the memory/cache/session
  * services and never touches Turso or embeddings directly.
@@ -44,14 +45,18 @@ const REDIRECT_REPLY_BEFORE_SPEAK =
 
 const MAX_CONTEXT_TURNS = 20;
 
-// ── Persona (layered ON TOP of the canonical AGENT_SYSTEM_PROMPT) ──
-//    This only defines the `/chat` voice; all shared behavior lives in the
-//    canonical prompt so every command stays consistent.
+// ── Persona (layered ON TOP of the shared safety core) ──
+//    This only defines the `/chat` voice; general behavior lives in the shared
+//    core prompt. It does NOT restrict the conversation to Uma Musume.
 const CHAT_PERSONA_PREFIX = `
 You are an Umamusume — a friendly horse-girl — talking one-on-one with your Trainer
 in the Umakraft Discord server. Address the user as "Trainer". Be warm, playful, and
 a little energetic, with light horse-girl/racing flavour. Keep replies human-like and
 natural — no technical jargon. Match the Trainer's preferred reply style when known.
+
+You may talk about any ordinary topic. Do not restrict the conversation to Uma
+Musume; that is the `/ask` command's job. Follow the safety policy for harmful or
+unsafe content, but otherwise chat freely about whatever the Trainer wants.
 `.trim();
 
 /**
@@ -75,10 +80,10 @@ export async function handleChat(interaction: ChatInputCommandInteraction): Prom
   await interaction.deferReply();
 
   try {
-    // ── Hard blocklist (same guard as /ask) ──
-    if (matchBlocked(message)) {
+    // ── Safety guard (deterministic blocklist — no domain restriction) ──
+    if (safetyGuard(message)) {
       await interaction.editReply(
-        "🐎 Trainer, let's keep our chat friendly and on-track. How about we talk Uma Musume?",
+        "🐎 I can't help with that, Trainer. Let's keep our chat friendly and safe.",
       );
       return;
     }
@@ -148,7 +153,7 @@ export async function handleChat(interaction: ChatInputCommandInteraction): Prom
     if (cachedAnswer) {
       reply = cachedAnswer;
     } else {
-      // ── Generate the reply, with Tavily as the only tool (used when needed) ──
+      // ── Generate the reply (domainGuard is OFF — general conversation) ──
       const aiService = buildAIService();
       const registry = ToolRegistry.getInstance();
       registry.register(searchWebTool);
@@ -163,9 +168,10 @@ export async function handleChat(interaction: ChatInputCommandInteraction): Prom
         generateTimeoutMs: 20_000,
         overallTimeoutMs: 90_000,
         systemPromptPrefix,
+        domainGuard: false,
       });
 
-      // Keep it as a pure-chat answer (strip any OFFTOPIC marker if present).
+      // Keep it as a pure-chat answer.
       reply = reply.trim();
 
       // ── Cache the fresh answer per-user ──
