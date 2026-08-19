@@ -4,11 +4,7 @@
     "experimentalDecorators": true,
     "useDefineForClassFields": false,
     "module": "ESNext",
-    "lib": [
-      "ES2022",
-      "DOM",
-      "DOM.Iterable"
-    ],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "skipLibCheck": true,
     "moduleResolution": "bundler",
     "isolatedModules": true,
@@ -16,33 +12,16 @@
     "allowJs": true,
     "jsx": "react-jsx",
     "paths": {
-      "@/*": [
-        "./*"
-      ],
-      "@ai-agent-platform/shared": [
-        "./packages/shared/src/index.ts"
-      ],
-      "@ai-agent-platform/ai": [
-        "./packages/ai/src/index.ts"
-      ],
-      "@ai-agent-platform/core": [
-        "./packages/core/src/index.ts"
-      ],
-      "@ai-agent-platform/tools": [
-        "./packages/tools/src/index.ts"
-      ],
-      "@ai-agent-platform/integrations": [
-        "./packages/integrations/src/index.ts"
-      ],
-      "@ai-agent-platform/fan-tracker": [
-        "./packages/domains/fan-tracker/src/index.ts"
-      ],
-      "@ai-agent-platform/pr-monitor": [
-        "./packages/domains/pr-monitor/src/index.ts"
-      ],
-      "@ai-agent-platform/image-report": [
-        "./apps/image-report/src/index.tsx"
-      ]
+      "@/*": ["./*"],
+      "@ai-agent-platform/shared": ["./packages/shared/src/index.ts"],
+      "@ai-agent-platform/ai": ["./packages/ai/src/index.ts"],
+      "@ai-agent-platform/core": ["./packages/core/src/index.ts"],
+      "@ai-agent-platform/tools": ["./packages/tools/src/index.ts"],
+      "@ai-agent-platform/skills": ["./packages/skills/src/index.ts"],
+      "@ai-agent-platform/integrations": ["./packages/integrations/src/index.ts"],
+      "@ai-agent-platform/fan-tracker": ["./packages/domains/fan-tracker/src/index.ts"],
+      "@ai-agent-platform/pr-monitor": ["./packages/domains/pr-monitor/src/index.ts"],
+      "@ai-agent-platform/image-report": ["./apps/image-report/src/index.tsx"]
     },
     "composite": true,
     "declaration": true,
@@ -52,32 +31,15 @@
   },
   "files": [],
   "references": [
-    {
-      "path": "./packages/shared"
-    },
-    {
-      "path": "./packages/ai"
-    },
-    {
-      "path": "./packages/integrations"
-    },
-    {
-      "path": "./packages/core"
-    },
-    {
-      "path": "./packages/tools"
-    },
-    {
-      "path": "./packages/domains/fan-tracker"
-    },
-    {
-      "path": "./packages/domains/pr-monitor"
-    },
-    {
-      "path": "./apps/api"
-    },
-    {
-      "path": "./apps/cli"
-    }
+    { "path": "./packages/shared" },
+    { "path": "./packages/ai" },
+    { "path": "./packages/integrations" },
+    { "path": "./packages/core" },
+    { "path": "./packages/tools" },
+    { "path": "./packages/skills" },
+    { "path": "./packages/domains/fan-tracker" },
+    { "path": "./packages/domains/pr-monitor" },
+    { "path": "./apps/api" },
+    { "path": "./apps/cli" }
   ]
 }

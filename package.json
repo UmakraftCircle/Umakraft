@@ -19,6 +19,7 @@
     "@ai-agent-platform/integrations": "workspace:*",
     "@ai-agent-platform/pr-monitor": "workspace:*",
     "@ai-agent-platform/shared": "workspace:*",
+    "@ai-agent-platform/skills": "workspace:*",
     "@ai-agent-platform/tools": "workspace:*",
     "turbo": "^2.0.4",
     "typescript": "^5.4.5",

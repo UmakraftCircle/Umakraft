@@ -14,6 +14,7 @@
     "@ai-agent-platform/core": "workspace:*",
     "@ai-agent-platform/ai": "workspace:*",
     "@ai-agent-platform/tools": "workspace:*",
+    "@ai-agent-platform/skills": "workspace:*",
     "@ai-agent-platform/integrations": "workspace:*",
     "@ai-agent-platform/fan-tracker": "workspace:*",
     "@ai-agent-platform/pr-monitor": "workspace:*",
