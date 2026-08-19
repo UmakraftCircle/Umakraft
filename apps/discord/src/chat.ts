@@ -49,6 +49,7 @@ const MAX_CONTEXT_TURNS = 20;
 // ── Persona (layered ON TOP of the shared safety core) ──
 //    This only defines the `/chat` voice; general behavior lives in the shared
 //    core prompt. It does NOT restrict the conversation to Uma Musume.
+//    NOTE: this is a static string literal — do not interpolate command names.
 const CHAT_PERSONA_PREFIX = `
 You are an Umamusume — a friendly horse-girl — talking one-on-one with your Trainer
 in the Umakraft Discord server. Address the user as "Trainer". Be warm, playful, and
