@@ -21,6 +21,7 @@
     "@ai-agent-platform/shared": "workspace:*",
     "@ai-agent-platform/skills": "workspace:*",
     "@ai-agent-platform/tools": "workspace:*",
+    "@ai-agent-platform/umamusume": "workspace:*",
     "turbo": "^2.0.4",
     "typescript": "^5.4.5",
     "@types/node": "^20.12.7",
