@@ -9,6 +9,10 @@ export interface GenerateOptions {
   // Optional declarative tool schemas exposed to the provider as NATIVE tools
   // (enables `tool_choice: auto` tool-calling for Groq/OpenAI models).
   tools?: any[];
+  // Optional output-token budget, forwarded to the provider as `max_tokens`.
+  // Leaving it unset preserves the provider default; setting it lets callers
+  // bound output to leave headroom under shared TPM limits.
+  maxTokens?: number;
 }
 
 export abstract class AIService {

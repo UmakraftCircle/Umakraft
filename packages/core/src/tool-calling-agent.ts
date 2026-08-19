@@ -27,6 +27,18 @@ export interface ToolCallingAgentOptions {
   overallTimeoutMs?: number;
   maxResultBytes?: number;
   /**
+   * Soft cap on the combined token size (system + conversation context +
+   * accumulated tool transcript) sent to the model, estimated chars/4. When the
+   * request would exceed it, older context/transcript is trimmed first. Kept well
+   * below the Groq 8000 TPM limit to leave headroom for output tokens.
+   */
+  inputTokenBudget?: number;
+  /**
+   * Max tokens budgeted for the MODEL OUTPUT. Mirrors the `max_tokens` sent to
+   * the provider. Sized to leave headroom under the shared 8000 TPM limit.
+   */
+  outputTokenBudget?: number;
+  /**
    * Optional text prepended to the canonical agent system prompt. Used by
    * command-specific voices (e.g. `/chat`'s Trainer persona) to layer a persona
    * on top of the shared core without replacing it.
@@ -49,10 +61,37 @@ export const DEFAULT_AGENT_OPTIONS = {
   toolTimeoutMs: 10_000,
   generateTimeoutMs: 20_000,
   overallTimeoutMs: 90_000,
-  maxResultBytes: 64 * 1024,
+  maxResultBytes: 8 * 1024,
+  // Groq TPM is 8000; budget ~6000 input tokens + ~1500 output tokens leaves
+  // headroom for the provider's tool-schema serialization overhead.
+  inputTokenBudget: 6000,
+  outputTokenBudget: 1500,
 } as const;
 
 const WEB_SEARCH_SLUG = 'search_web';
+
+/**
+ * Rough token estimate (chars / 4). Good enough for budget gating and logging;
+ * deliberately conservative so we stay safely under provider limits without a
+ * tokenizer dependency.
+ */
+function estimateTokens(s: string): number {
+  return Math.ceil(s.length / 4);
+}
+
+/** Detect Groq 413 / TPM "request too large" errors from thrown provider errors. */
+function isTokenLimitError(err: any): boolean {
+  if (!err) return false;
+  const msg = (err?.message ?? String(err)).toLowerCase();
+  const status = err?.statusCode ?? err?.status;
+  if (status === 413) return true;
+  return (
+    /request too large/.test(msg) ||
+    /tokens per minute/.test(msg) ||
+    /rate_limit_exceeded/.test(msg) ||
+    (/413/.test(msg) && /(token|limit|too large)/.test(msg))
+  );
+}
 
 function withTimeout<T>(p: Promise<T>, ms: number, label = 'operation'): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -73,12 +112,28 @@ function truncate(s: string, maxBytes: number): string {
   return out + '…[truncated]';
 }
 
+/**
+ * Compact an already-truncated tool result bytes-string into a tighter,
+ * token-budgeted form. Preserves the leading (most relevant) content — tool
+ * results are shaped with the decision-relevant fields first, so a head-keep is
+ * safe. Used when a single large result would otherwise dominate the request.
+ */
+function compactToolResult(rendered: string, maxTokens: number): string {
+  const maxChars = maxTokens * 4;
+  if (rendered.length <= maxChars) return rendered;
+  const head = rendered.slice(0, Math.floor(maxChars * 0.7));
+  const tail = rendered.slice(-Math.floor(maxChars * 0.3));
+  return `${head}\n…[${estimateTokens(rendered) - maxTokens} tokens elided]…\n${tail}`;
+}
+
 function buildSystemPromptMsg(
-  toolList: string,
   maxWebSearches: number,
   domainGuard: boolean,
   systemPromptPrefix?: string,
 ): string {
+  // Note: tool *descriptions* are carried by the native `tools` schema sent
+  // separately to the provider, so they are NOT duplicated here. This avoids
+  // doubling tool-definition tokens in every request.
   const prefix = systemPromptPrefix ? `${systemPromptPrefix}\n\n` : '';
   return (
     prefix +
@@ -89,9 +144,6 @@ TOOLS
   then use its result to produce a final answer.
 - You may use at most ${maxWebSearches} web searches (search_web) in this conversation.
 - Stop as soon as the question is answered; do not enter an open-ended search loop.
-
-Available tools:
-${toolList}
 `.trim()
   );
 }
@@ -129,6 +181,8 @@ export class ToolCallingAgent {
     const generateTimeoutMs = options.generateTimeoutMs ?? DEFAULT_AGENT_OPTIONS.generateTimeoutMs;
     const overallTimeoutMs = options.overallTimeoutMs ?? DEFAULT_AGENT_OPTIONS.overallTimeoutMs;
     const maxResultBytes = options.maxResultBytes ?? DEFAULT_AGENT_OPTIONS.maxResultBytes;
+    const inputTokenBudget = options.inputTokenBudget ?? DEFAULT_AGENT_OPTIONS.inputTokenBudget;
+    const outputTokenBudget = options.outputTokenBudget ?? DEFAULT_AGENT_OPTIONS.outputTokenBudget;
     const domainGuard = options.domainGuard ?? false;
 
     return withTimeout(
@@ -141,6 +195,8 @@ export class ToolCallingAgent {
         toolTimeoutMs,
         generateTimeoutMs,
         maxResultBytes,
+        inputTokenBudget,
+        outputTokenBudget,
         domainGuard,
         systemPromptPrefix: options.systemPromptPrefix,
       }),
@@ -158,35 +214,126 @@ export class ToolCallingAgent {
     toolTimeoutMs: number;
     generateTimeoutMs: number;
     maxResultBytes: number;
+    inputTokenBudget: number;
+    outputTokenBudget: number;
     domainGuard: boolean;
     systemPromptPrefix?: string;
   }): Promise<AgentRunTrace> {
     const toolSchemas = this.registry.getDeclarativeSchemas();
-    const toolList = toolSchemas
-      .map((t) => `- ${t.slug}: ${t.description}`)
-      .join('\n');
 
-    const system = buildSystemPromptMsg(toolList, p.maxWebSearches, p.domainGuard, p.systemPromptPrefix);
+    const system = buildSystemPromptMsg(p.maxWebSearches, p.domainGuard, p.systemPromptPrefix);
+    const systemTokens = estimateTokens(system);
+    // Reserve budget for the system prompt + native tool schemas; what remains is
+    // available for conversation context and the tool transcript.
+    const schemaTokens = toolSchemas.reduce((sum, t) => sum + estimateTokens(`${t.slug} ${t.description ?? ''}`) + 40, 0);
+    const runtimeBudget = Math.max(0, p.inputTokenBudget - systemTokens - schemaTokens);
 
-    let transcript = p.context ? `Context from earlier conversation:\n${p.context}\n\n` : '';
+    let context = p.context
+      ? `Context from earlier conversation:\n${p.context}\n\n`
+      : '';
     let toolCallCount = 0;
     let webSearchCount = 0;
 
+    // Accumulates tool results across the loop. Trimmed oldest-first so later,
+    // more recent results are preserved.
+    let transcript = '';
+
+    const trimContext = () => {
+      const ctxBudget = Math.floor(runtimeBudget * 0.4);
+      if (context && estimateTokens(context) > ctxBudget) {
+        const before = estimateTokens(context);
+        // Keep the most recent tail of the conversation context.
+        context = context.slice(-ctxBudget * 4);
+        const after = estimateTokens(context);
+        logger.info(
+          `[token-budget] trimmed conversation context by ${before - after} est. tokens (${before}→${after}); context-budget=${ctxBudget}`,
+        );
+      }
+    };
+
+    const trimTranscript = () => {
+      const trBudget = Math.floor(runtimeBudget * 0.5);
+      if (transcript && estimateTokens(transcript) > trBudget) {
+        const before = estimateTokens(transcript);
+        // Drop the OLDEST tool results; keep the newest, most relevant ones.
+        while (transcript && estimateTokens(transcript) > trBudget) {
+          const nl = transcript.indexOf('\n');
+          transcript = nl >= 0 ? transcript.slice(nl + 1) : '';
+        }
+        const after = estimateTokens(transcript);
+        logger.info(
+          `[token-budget] trimmed tool transcript by ${before - after} est. tokens (${before}→${after}); transcript-budget=${trBudget}`,
+        );
+      }
+    };
+
+    const buildPrompt = () => `${transcript}${context}User ${p.userId} says: ${p.userMessage}`;
+
+    const generate = async (systemMsg: string, prompt: string, retryTrimmed: boolean) => {
+      try {
+        return await withTimeout(
+          this.aiService.generateStructuredOutput({
+            system: systemMsg,
+            prompt,
+            schema: DecisionSchema,
+            tools: toolSchemas as any,
+            maxTokens: p.outputTokenBudget,
+          }),
+          p.generateTimeoutMs,
+          'model generation',
+        );
+      } catch (err: any) {
+        if (isTokenLimitError(err) && retryTrimmed) {
+          // 413 / TPM: the request was too large. Retry ONCE with aggressively
+          // trimmed context+transcript. Safe — no tool has executed for this step,
+          // so no duplicate tool execution occurs.
+          logger.warn(
+            `[token-budget] request too large (${err?.message ?? err}); retrying with reduced context`,
+          );
+          trimContext();
+          trimTranscript();
+          const retryPrompt = buildPrompt();
+          return await withTimeout(
+            this.aiService.generateStructuredOutput({
+              system: systemMsg,
+              prompt: retryPrompt,
+              schema: DecisionSchema,
+              tools: toolSchemas as any,
+              maxTokens: p.outputTokenBudget,
+            }),
+            p.generateTimeoutMs,
+            'model generation (retry)',
+          );
+        }
+        // Not token-related (config/tool-use/rate) — surface it.
+        logger.error(`Model generation failed: ${err?.message ?? err}`);
+        throw err;
+      }
+    };
+
     for (let i = 0; i <= p.maxToolCalls; i++) {
-      const prompt = `${transcript}User ${p.userId} says: ${p.userMessage}`;
+      trimContext();
+      trimTranscript();
+      const prompt = buildPrompt();
+
+      const estInput = systemTokens + schemaTokens + estimateTokens(prompt);
+      logger.info(
+        `[token-budget] estimated input=${estInput} tokens (budget=${p.inputTokenBudget}; system=${systemTokens}; tools=${schemaTokens}; body=${estimateTokens(prompt)})`,
+      );
+      if (estInput > p.inputTokenBudget) {
+        logger.warn(
+          `[token-budget] request over budget (${estInput} > ${p.inputTokenBudget}); trimming context/transcript`,
+        );
+        trimContext();
+        trimTranscript();
+      }
 
       let parsed: { success: boolean; data?: Decision; error?: any } | null = null;
       for (let attempt = 0; attempt < 2; attempt++) {
         let raw: any;
         try {
-          raw = await withTimeout(
-            this.aiService.generateStructuredOutput({ system, prompt, schema: DecisionSchema, tools: toolSchemas as any }),
-            p.generateTimeoutMs,
-            'model generation',
-          );
+          raw = await generate(system, prompt, attempt === 0);
         } catch (err: any) {
-          // A config error (tool_use_failed 400, etc.) is NOT retryable — surface it.
-          logger.error(`Model generation failed: ${err?.message ?? err}`);
           throw err;
         }
         const result = DecisionSchema.safeParse(raw);
@@ -237,7 +384,8 @@ export class ToolCallingAgent {
 
         if (decision.action === WEB_SEARCH_SLUG) webSearchCount++;
         toolCallCount++;
-        const rendered = truncate(JSON.stringify(result), p.maxResultBytes);
+        const truncated = truncate(JSON.stringify(result), p.maxResultBytes);
+        const rendered = compactToolResult(truncated, Math.floor(runtimeBudget * 0.4));
         transcript += `\nTool ${decision.action} returned: ${rendered}\n`;
         continue;
       }

@@ -15,6 +15,11 @@ class HttpError extends Error {
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
+/** Rough token estimate (chars/4) used only for logging/budget decisions. */
+function estimateTokens(s: string | undefined): number {
+  return s ? Math.ceil(s.length / 4) : 0;
+}
+
 async function apiPost(
   url: string,
   headers: Record<string, string>,
@@ -133,13 +138,20 @@ export class OpenAIProvider implements AIService {
     const messages: any[] = [];
     if (options.system) messages.push({ role: 'system', content: options.system });
     messages.push({ role: 'user', content: options.prompt });
-    return this.#callWithRetry(messages, { temperature: 0.7 });
+    return this.#callWithRetry(messages, { temperature: 0.7, ...(options.maxTokens ? { max_tokens: options.maxTokens } : {}) });
   }
 
   public async generateStructuredOutput(options: GenerateOptions): Promise<any> {
     const messages: any[] = [];
     if (options.system) messages.push({ role: 'system', content: options.system });
     messages.push({ role: 'user', content: options.prompt });
+
+    const estInput = estimateTokens(options.system) + estimateTokens(options.prompt);
+    if (options.maxTokens) {
+      logger.info(
+        `[token-budget] provider estimated input=${estInput} tokens; max_tokens=${options.maxTokens}`,
+      );
+    }
 
     const tools: DeclarativeTool[] | undefined = options.tools;
 
@@ -149,11 +161,12 @@ export class OpenAIProvider implements AIService {
 
       // Defensive invariant: if tools are present, tool_choice MUST be "auto"
       // (never "none"), otherwise Groq will 400 with tool_use_failed.
-      const extra = { temperature: 0.3, tools: nativeTools, tool_choice: 'auto' };
+      const extra: Record<string, any> = { temperature: 0.3, tools: nativeTools, tool_choice: 'auto' };
+      if (options.maxTokens) extra.max_tokens = options.maxTokens;
 
       // Log the FINAL outbound config (no secrets / headers / user data).
       logger.info(
-        `[structured-native] model=${this.model} tool_choice=${extra.tool_choice} tools=[${toolNames.join(', ')}]`,
+        `[structured-native] model=${this.model} tool_choice=${extra.tool_choice} tools=[${toolNames.join(', ')}] max_tokens=${options.maxTokens ?? 'unset'}`,
       );
 
       const result = await this.#callWithRetryNative(messages, extra);
@@ -177,9 +190,9 @@ export class OpenAIProvider implements AIService {
     }
 
     // No tools: JSON path. Log outbound config for observability.
-    logger.info(`[structured-json] model=${this.model} tool_choice=none tools=[]`);
+    logger.info(`[structured-json] model=${this.model} tool_choice=none tools=[] max_tokens=${options.maxTokens ?? 'unset'}`);
 
-    const raw = await this.#callWithRetry(messages, { temperature: 0.3 }, { allowRetryOn400: false });
+    const raw = await this.#callWithRetry(messages, { temperature: 0.3, ...(options.maxTokens ? { max_tokens: options.maxTokens } : {}) }, { allowRetryOn400: false });
     try {
       const parsed = JSON.parse(raw);
       if (hasNativeToolCall(parsed)) throw new Error('native tool-call');
