@@ -12,6 +12,7 @@
     { "path": "../../packages/tools" },
     { "path": "../../packages/integrations" },
     { "path": "../../packages/domains/fan-tracker" },
-    { "path": "../../packages/domains/pr-monitor" }
+    { "path": "../../packages/domains/pr-monitor" },
+    { "path": "../../packages/domains/umamusume" }
   ]
 }
