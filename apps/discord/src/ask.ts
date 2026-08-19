@@ -5,6 +5,7 @@ import { buildAIService } from './bootstrap.js';
 import { ToolCallingAgent } from '@ai-agent-platform/core';
 import { conversationMemoryStore, askResponseCache, moderationLogStore } from '@ai-agent-platform/integrations';
 import { askTools } from './ask-tools.js';
+import { allSkillTools } from '@ai-agent-platform/skills';
 import { failureMessage } from './errors.js';
 import { matchBlocked, buildRelevanceAllowlist, hasRelevance, isOffTopicAnswer } from './guard.js';
 
@@ -22,15 +23,18 @@ function normalizeQuestion(q: string): string {
   return q.toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
-/** Register read-only /ask tools into the shared registry exactly once. */
+/** Register /ask tools + skill tools into the shared registry exactly once. */
 export function ensureAskToolsRegistered(): void {
   if (registered) return;
   const registry = ToolRegistry.getInstance();
   for (const tool of askTools) {
     registry.register(tool);
   }
+  for (const tool of allSkillTools) {
+    registry.register(tool);
+  }
   registered = true;
-  logger.info(`Registered ${askTools.length} read-only /ask tools`);
+  logger.info(`Registered ${askTools.length} /ask tools + ${allSkillTools.length} skill tools`);
 }
 
 /** Feature 1+2: handle the /ask slash command with a model-driven tool loop. */
