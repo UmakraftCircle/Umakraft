@@ -34,6 +34,8 @@ export interface SourceEntry {
   useFor: string;
   /** Special routing notes / rules. */
   note?: string;
+  /** The data-miner tool may fall back to uma.guide character data when this source fails. */
+  characterFallback?: boolean;
 }
 
 /**
@@ -94,7 +96,7 @@ export const SOURCE_REGISTRY: SourceEntry[] = [
   { key: 'unity-cup-career', priority: 5, url: 'https://uma.guide/guides/unity-cup-career-guide', label: 'Unity Cup Career', useFor: 'Unity Cup career mechanics and strategy.' },
 
   // ── Priority 6 — Lore & Community ──
-  { key: 'fandom-wiki', priority: 6, url: 'https://umamusume.fandom.com/wiki/Umamusume_Wiki', label: 'Umamusume Wiki', useFor: 'Character lore, background, relationships, story info.', note: 'Not authoritative for gameplay mechanics when uma.guide applies.' },
+  { key: 'fandom-wiki', priority: 6, url: 'https://umamusume.fandom.com/wiki/Umamusume_Wiki', label: 'Umamusume Wiki', useFor: 'Character lore, background, relationships, story info.', note: 'Not authoritative for gameplay mechanics when uma.guide applies. May block non-browser agents (HTTP 403); the tool falls back to uma.guide character data.', characterFallback: true },
   { key: 'reddit',       priority: 6, url: 'https://www.reddit.com/r/UmamusumeGame', label: 'r/UmamusumeGame', useFor: 'Community discussion, player experiences, discoveries, strategy discussion.', note: 'Community-sourced only, never authoritative game data.' },
 ];
 
@@ -109,7 +111,9 @@ export const CATEGORY_SOURCE_MAP: Record<RequestCategory, string[]> = {
   guide:        ['guides'],
   tool:         ['deck-builder', 'training-simulator', 'support-compare', 'agenda-planner'],
   event:        ['gametora-events'],
-  lore:         ['fandom-wiki'],
+  // Lore resolves through fandom first, then falls back to uma.guide character data
+  // when fandom is unavailable (e.g. blocks server-side agents with HTTP 403).
+  lore:         ['fandom-wiki', 'characters'],
   community:    ['reddit'],
   comparison:   ['support-compare', 'support-cards'],
   general:      ['guides', 'characters', 'skills', 'tracks', 'support-cards'],
@@ -123,11 +127,16 @@ export function getSource(key: string): SourceEntry | undefined {
  * Classify a free-text request into a RequestCategory using lightweight keyword
  * heuristics. This is a first-pass router; the agent's own planning may override it
  * by passing an explicit `category` argument.
+ *
+ * "who is X" defaults to `character` (gameplay profile) unless an explicit lore
+ * keyword is present — kept in line with "keep uma.guide as the fallback for
+ * character queries when lore isn't specifically requested."
  */
 export function classifyRequest(text: string): RequestCategory {
   const t = text.toLowerCase();
 
-  if (/\b(lore|backstory|background|relationship|story|real.life|who is|rival|irl)\b/.test(t) && !/\b(card|skill|track)\b/.test(t)) return 'lore';
+  // Explicit lore intent → lore (which still falls back to uma.guide characters).
+  if (/\b(lore|backstory|storyline|relationship|real.life|irl racehorse|racehorse|rival story)\b/.test(t)) return 'lore';
   if (/\b(support card|card|deck|training simulator)\b/.test(t)) return 'support-card';
   if (/\b(unique skill|skill)\b/.test(t)) return 'skill';
   if (/\b(track|racecourse|turf|dirt|distance|surface|speed record)\b/.test(t)) return 'track';
@@ -137,7 +146,8 @@ export function classifyRequest(text: string): RequestCategory {
   if (/\b(compare|vs\.|versus|which is better|difference between)\b/.test(t)) return 'comparison';
   if (/\b(reddit|community|players say|discussion|tier list)\b/.test(t)) return 'community';
   if (/\b(mechanic|how does|explain|beginner|banner|gacha|career|sparks|inheritance|stats)\b/.test(t)) return 'game-mechanic';
-  if (/\b(character|umamusume|horse girl|trainer)\b/.test(t)) return 'character';
+  // "who is X", character names, or the general umamusume term → character profile.
+  if (/\b(who is|character|umamusume|horse girl|trainer)\b/.test(t)) return 'character';
 
   return 'general';
 }
