@@ -14,6 +14,10 @@ const logger = createLogger('AgentHandler');
  * Uses AgentRunner (Planner + TaskManager) with deferred reply so Discord
  * never hangs. Falls back to the conversational ToolCallingAgent on timeout.
  *
+ * Scope: general goal execution, subject to safety. The Planner uses its own
+ * domain-agnostic prompt, and the fallback agent runs with `domainGuard: false`,
+ * so `/agent` is NOT restricted to Uma Musume (unlike `/ask`).
+ *
  * Registers the read-only `/ask` tools (via ensureAskToolsRegistered) plus the
  * full skill toolset (allSkillTools), so a plan can reach for any skill.
  */
@@ -53,12 +57,14 @@ export async function handleAgent(interaction: ChatInputCommandInteraction): Pro
       await interaction.editReply(result.answer);
     } else if (result.status === 'timeout' || result.status === 'failed') {
       // Fall back to a single conversational answer so the user still gets something.
+      // domainGuard is OFF — this is general conversation, not Uma-only.
       const agent = new ToolCallingAgent(aiService, registry);
       const answer = await agent.run(userId, goal, undefined, {
         maxToolCalls: 4,
         toolTimeoutMs: 8_000,
         generateTimeoutMs: 20_000,
         overallTimeoutMs: 90_000,
+        domainGuard: false,
       });
       await interaction.editReply(
         `${answer}\n\n*(${result.status}: ${result.errors.slice(0, 2).join('; ') || 'hit limits'})*`
