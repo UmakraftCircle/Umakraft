@@ -2,7 +2,7 @@ import { ToolDefinition, ToolResult, createLogger } from '@ai-agent-platform/sha
 
 const logger = createLogger('ToolRegistry');
 
-// ── Secret redaction ──
+// ══ Secret redaction ══
 
 const SENSITIVE_KEY_PATTERNS = [
   /key/i, /secret/i, /token/i, /password/i, /auth/i, /credential/i,
@@ -51,10 +51,18 @@ export class ToolRegistry {
   }
 
   /**
-   * Returns all registered tools mapped to LLM tool call schemas
+   * Returns registered tools mapped to LLM tool call schemas.
+   * Optionally narrowed to the given slugs so callers can send a scoped
+   * subset to the model (keeps the tool-schema token overhead low — critical
+   * on Groq's 8000 TPM free tier).
    */
-  public getDeclarativeSchemas(): Array<Omit<ToolDefinition, 'handler'>> {
-    return Array.from(this.tools.values()).map(({ handler, ...schema }) => schema);
+  public getDeclarativeSchemas(slugs?: string[]): Array<Omit<ToolDefinition, 'handler'>> {
+    const values = slugs
+      ? slugs
+          .map(s => this.tools.get(s))
+          .filter((t): t is ToolDefinition => Boolean(t))
+      : Array.from(this.tools.values());
+    return values.map(({ handler, ...schema }) => schema);
   }
 
   /**
@@ -105,4 +113,5 @@ export class ToolRegistry {
     }
   }
 }
+
 export const toolRegistry = ToolRegistry.getInstance();

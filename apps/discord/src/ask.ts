@@ -24,6 +24,20 @@ function normalizeQuestion(q: string): string {
   return q.toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
+/**
+ * `/ask` scopes to the small, relevant toolset instead of the whole registry.
+ * This keeps the tool-schema token overhead tiny so a multi-turn `/ask` stays
+ * under Groq's 8000 TPM free-tier limit.
+ */
+const ASK_TOOL_SLUGS = [
+  ...askTools.map((t) => t.slug),
+  // Uma Musume domain tools (data-miner, search, compile, list-sources).
+  'umamusume-data-miner',
+  'umamusume-search',
+  'umamusume-compile',
+  'umamusume-list-sources',
+];
+
 /** Register /ask tools + skill tools into the shared registry exactly once. */
 export function ensureAskToolsRegistered(): void {
   if (registered) return;
@@ -51,13 +65,13 @@ export async function handleAsk(interaction: ChatInputCommandInteraction): Promi
 
     const normalized = normalizeQuestion(question);
 
-    // ── Layer 1: safety guard (blocklist — improper content / injection) — hard reject. ──
+    // ══ Layer 1: safety guard (blocklist — improper content / injection) — hard reject. ══
     if (safetyGuard(question)) {
       await interaction.editReply(REJECT_MESSAGE);
       return;
     }
 
-    // ── Layer 3: keyword allowlist (soft pre-filter) — zero matches → redirect. ──
+    // ══ Layer 3: keyword allowlist (soft pre-filter) — zero matches → redirect. ══
     const registry = ToolRegistry.getInstance();
     const allowlist = buildRelevanceAllowlist(registry.getDeclarativeSchemas());
     if (!hasRelevance(normalized, allowlist)) {
@@ -101,10 +115,12 @@ export async function handleAsk(interaction: ChatInputCommandInteraction): Promi
       generateTimeoutMs: 20_000,
       overallTimeoutMs: 90_000,
       domainGuard: true,
+      // Scope the toolset to the small /ask-relevant subset.
+      toolSlugs: ASK_TOOL_SLUGS,
     });
     const answer = trace.answer;
 
-    // ── Layer 2: model topic gate — [[OFFTOPIC]] marker → redirect + log. ──
+    // ══ Layer 2: model topic gate — [[OFFTOPIC]] marker → redirect + log. ══
     if (isOffTopicAnswer(answer)) {
       logger.info(`/ask off-topic (model marker): "${question.slice(0, 60)}"`);
       try {

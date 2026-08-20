@@ -53,6 +53,12 @@ export interface ToolCallingAgentOptions {
    * agent is a general-conversation assistant. Used by `/chat` and `/agent`.
    */
   domainGuard?: boolean;
+  /**
+   * Optional explicit list of tool slugs to expose to the model this run. When
+   * omitted, ALL registered tools are sent. Scoping to a small set keeps the
+   * tool-schema token overhead low (important on Groq's free tier).
+   */
+  toolSlugs?: string[];
 }
 
 export const DEFAULT_AGENT_OPTIONS = {
@@ -62,9 +68,9 @@ export const DEFAULT_AGENT_OPTIONS = {
   generateTimeoutMs: 20_000,
   overallTimeoutMs: 90_000,
   maxResultBytes: 8 * 1024,
-  // Groq TPM is 8000; budget ~6000 input tokens + ~1500 output tokens leaves
-  // headroom for the provider's tool-schema serialization overhead.
-  inputTokenBudget: 6000,
+  // Groq TPM is 8000; budget ~4000 input tokens + ~1500 output tokens leaves
+  // ample headroom for the provider's tool-schema serialization overhead.
+  inputTokenBudget: 4000,
   outputTokenBudget: 1500,
 } as const;
 
@@ -143,8 +149,7 @@ TOOLS
 - Use the provided tools to gather real data instead of guessing. You may call a tool,
   then use its result to produce a final answer.
 - You may use at most ${maxWebSearches} web searches (search_web) in this conversation.
-- Stop as soon as the question is answered; do not enter an open-ended search loop.
-`.trim()
+- Stop as soon as the question is answered; do not enter an open-ended search loop.`.trim()
   );
 }
 
@@ -199,6 +204,7 @@ export class ToolCallingAgent {
         outputTokenBudget,
         domainGuard,
         systemPromptPrefix: options.systemPromptPrefix,
+        toolSlugs: options.toolSlugs,
       }),
       overallTimeoutMs,
       'agent run',
@@ -218,8 +224,9 @@ export class ToolCallingAgent {
     outputTokenBudget: number;
     domainGuard: boolean;
     systemPromptPrefix?: string;
+    toolSlugs?: string[];
   }): Promise<AgentRunTrace> {
-    const toolSchemas = this.registry.getDeclarativeSchemas();
+    const toolSchemas = this.registry.getDeclarativeSchemas(p.toolSlugs);
 
     const system = buildSystemPromptMsg(p.maxWebSearches, p.domainGuard, p.systemPromptPrefix);
     const systemTokens = estimateTokens(system);
@@ -233,7 +240,6 @@ export class ToolCallingAgent {
       : '';
     let toolCallCount = 0;
     let webSearchCount = 0;
-
     // Accumulates tool results across the loop. Trimmed oldest-first so later,
     // more recent results are preserved.
     let transcript = '';
@@ -354,7 +360,6 @@ export class ToolCallingAgent {
       }
 
       const decision: Decision = parsed.data!;
-
       // Final answer
       if (decision.answer && !decision.action) {
         return { answer: decision.answer, usedWebSearch: webSearchCount > 0 };
