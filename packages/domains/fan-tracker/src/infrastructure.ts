@@ -93,6 +93,15 @@ export interface RankThreshold {
   daily_fans_delta: number | null;
 }
 
+// ── Circle registry (name key → uma.moe circle id) ──
+
+export type CircleKey = 'umakraft' | 'umakraft2' | 'unified';
+
+export const CIRCLE_IDS: Record<'umakraft' | 'umakraft2', string> = {
+  umakraft: '974470619',
+  umakraft2: '325938032',
+};
+
 // ── API Client ──
 
 export class FanTrackerAPI {
@@ -254,6 +263,46 @@ export class FanTrackerAPI {
   // ────────────────────────────────────────────────────────────────
   // listAllTrainers: lightweight name+ID list (autocomplete)
   // ────────────────────────────────────────────────────────────────
+
+  /**
+   * Return members for a leaderboard, optionally scoped to a single circle.
+   * - 'umakraft' / 'umakraft2' → only that circle's members.
+   * - 'unified' (or any unknown) → deduped union of all circles.
+   */
+  public async fetchLeaderboard(circle: CircleKey = 'unified'): Promise<TrainerStats[]> {
+    if (circle === 'unified') return this.fetchAllMembers();
+
+    const cId = CIRCLE_IDS[circle];
+    const cacheKey = `circle-members:${cId}`;
+
+    try {
+      const data = await this.apiGet<any>(
+        `/api/v4/circles?circle_id=${cId}`,
+        cacheKey,
+        10 * 60 * 1000,
+      );
+
+      const members = data.members || [];
+      const statsList: TrainerStats[] = [];
+
+      for (const m of members) {
+        const stats = this.mapCircleMemberToStats(m, data.circle);
+        if (stats.isActive) statsList.push(stats);
+      }
+
+      if (statsList.length === 0 && members.length > 0) {
+        logger.warn(
+          `fetchLeaderboard (${circle}/${cId}): all ${members.length} members filtered as inactive; returning full list as fallback.`
+        );
+        return members.map((m: any) => this.mapCircleMemberToStats(m, data.circle));
+      }
+
+      return statsList;
+    } catch (error: any) {
+      logger.error(`fetchLeaderboard failed for ${circle}/${cId}: ${error.message}`);
+      return [];
+    }
+  }
 
   public async listAllTrainers(): Promise<Array<{ trainerId: string; trainerName: string; tier: string }>> {
     const members = await this.fetchAllMembers();
