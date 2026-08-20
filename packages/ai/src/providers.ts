@@ -53,6 +53,18 @@ function isToolUseFailed(err: any): boolean {
   return err.statusCode === 400 && /tool_use_failed|Tool choice is none|json_validate_failed/.test(err.message);
 }
 
+/**
+ * True when Groq rejects a request because the model id is unknown / not
+ * available on the account (free tiers often return 400 "Failed to ..." with a
+ * missing/unknown model, rather than 404). These are retryable by switching
+ * model, unlike true config/validation errors.
+ */
+function isModelNotFoundError(err: any): boolean {
+  if (!(err instanceof HttpError)) return false;
+  if (err.statusCode !== 400 && err.statusCode !== 404) return false;
+  return /model|not found|not available|does not exist|invalid model|unknown model/i.test(err.message);
+}
+
 const GROQ_MODEL_CANDIDATES: string[] = [
   'openai/gpt-oss-20b',
   'openai/gpt-oss-120b',
@@ -75,6 +87,31 @@ const GROQ_MODEL_FALLBACKS: string[] = [
   'llama-3.3-70b-versatile',
   'mixtral-8x7b-32768',
 ];
+
+/**
+ * Known-good Groq model ids. Used to sanitize env-driven model values: if
+ * `AI_MODEL` / `GROQ_MODEL` is set to something we don't recognize (e.g. a
+ * non-existent `qwen/qwen3.6-27b`), we IGNORE it and fall back to the safe
+ * default chain instead of letting an invalid id break every request.
+ */
+const GROQ_KNOWN_MODELS: ReadonlySet<string> = new Set(GROQ_MODEL_FALLBACKS);
+
+/**
+ * Returns the model id if it looks like a valid, known Groq model; otherwise
+ * returns undefined so the caller falls back to the safe default. Logs a warning
+ * when an invalid value is dropped so the operator can fix their env var.
+ */
+function sanitizeGroqModel(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  const value = raw.trim();
+  if (GROQ_KNOWN_MODELS.has(value)) return value;
+  // Reject obvious Qwen-style / malformed ids (they don't exist on Groq).
+  if (/qwen/i.test(value) || !/^[a-z0-9._-]+(?:\/[a-z0-9._-]+)?$/i.test(value)) {
+    logger.warn(`[providers] ignoring invalid/unknown GROQ model env value: "${raw}"`);
+    return undefined;
+  }
+  return value;
+}
 
 /** Sleep for `ms` milliseconds. */
 function sleep(ms: number): Promise<void> {
@@ -261,8 +298,9 @@ export class OpenAIProvider implements AIService {
 
   /**
    * Attempts a request across (a) all keys with backoff on 429, and (b) the
-   * fallback model chain on persistent 429s. Returns the parsed result object
-   * (or raw string content when no native tool-call context is used).
+   * fallback model chain on persistent 429s OR model-not-found 400s. Returns the
+   * parsed result object (or raw string content when no native tool-call context
+   * is used).
    */
   async #callWithRetryNativeWithFallback(
     messages: any[],
@@ -275,14 +313,15 @@ export class OpenAIProvider implements AIService {
     for (let mi = 0; mi < models.length; mi++) {
       const model = models[mi];
       if (mi > 0) {
-        logger.warn(`[model-fallback] 429 persisted; switching model from ${models[mi - 1]} to ${model}`);
+        logger.warn(`[model-fallback] switching model from ${models[mi - 1]} to ${model}`);
       }
       try {
         return await this.#callWithRetryNative(messages, { ...extra, model });
       } catch (err: any) {
         lastError = err;
         const isRateLimit = err instanceof HttpError && err.statusCode === 429;
-        if (!isRateLimit) throw err;
+        const isModelNotFound = isModelNotFoundError(err);
+        if (!isRateLimit && !isModelNotFound) throw err;
         // else: fall through to the next model.
       }
     }
@@ -313,6 +352,12 @@ export class OpenAIProvider implements AIService {
         lastError = err;
         if (isToolUseFailed(err)) {
           logger.error(`Provider config/validation error (no retry): ${err.message}`);
+          throw err;
+        }
+        // A model-not-found 400 is not a key problem — propagate up so the
+        // fallback loop can switch models (don't burn keys retrying it).
+        if (isModelNotFoundError(err)) {
+          logger.warn(`Model ${model} not found (400); will fall back to next model.`);
           throw err;
         }
         const isRateLimit = err instanceof HttpError && err.statusCode === 429;
@@ -428,10 +473,13 @@ export function createProvider(type: ProviderType, apiKey: string, model?: strin
     case 'anthropic':
       return new AnthropicProvider(apiKey, model);
     case 'groq': {
-      const resolved = model
-        || process.env['AI_MODEL']
-        || process.env['GROQ_MODEL']
-        || GROQ_MODEL_FALLBACKS[0];
+      // Sanitize the env-driven model value so a stray invalid id
+      // (e.g. AI_MODEL=qwen/qwen3.6-27b) can never break requests.
+      const resolved =
+        sanitizeGroqModel(model) ??
+        sanitizeGroqModel(process.env['AI_MODEL']) ??
+        sanitizeGroqModel(process.env['GROQ_MODEL']) ??
+        GROQ_MODEL_FALLBACKS[0];
       return new OpenAIProvider(apiKey, resolved, 'https://api.groq.com/openai', GROQ_MODEL_FALLBACKS);
     }
     case 'local': {
