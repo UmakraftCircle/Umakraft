@@ -7,8 +7,9 @@ import { conversationMemoryStore, askResponseCache, moderationLogStore } from '@
 import { askTools } from './ask-tools.js';
 import { allSkillTools } from '@ai-agent-platform/skills';
 import { failureMessage } from './errors.js';
-import { safetyGuard, buildRelevanceAllowlist, hasRelevance, isOffTopicAnswer } from './guard.js';
+import { safetyGuard, isOffTopicAnswer } from './guard.js';
 import { replyWithEmbed } from './embed-reply.js';
+import { classifyTopic, toTaxonomyTerms, buildSearchEscalator } from './off-topic-detector/index.js';
 
 const logger = createLogger('AskHandler');
 
@@ -17,7 +18,7 @@ let registered = false;
 const REDIRECT_MESSAGE =
   'I can only help with Uma Musume / Umakraft topics (trainer stats, leaderboards, banners, gacha, support cards, races, and horse-girl characters). Could you rephrase your question around those?';
 const REJECT_MESSAGE =
-  'I can\'t help with that. Please keep questions on Uma Musume / Umakraft topics.';
+  "I can't help with that. Please keep questions on Uma Musume / Umakraft topics.";
 
 /** Normalize a question for use as a cache key (lowercase + collapse whitespace). */
 function normalizeQuestion(q: string): string {
@@ -31,7 +32,6 @@ function normalizeQuestion(q: string): string {
  */
 const ASK_TOOL_SLUGS = [
   ...askTools.map((t) => t.slug),
-  // Uma Musume domain tools (data-miner, search, compile, list-sources).
   'umamusume-data-miner',
   'umamusume-search',
   'umamusume-compile',
@@ -65,17 +65,21 @@ export async function handleAsk(interaction: ChatInputCommandInteraction): Promi
 
     const normalized = normalizeQuestion(question);
 
-    // ══ Layer 1: safety guard (blocklist — improper content / injection) — hard reject. ══
+    // ── Layer 1: safety guard (blocklist — improper content / injection) — hard reject. ──
     if (safetyGuard(question)) {
       await interaction.editReply(REJECT_MESSAGE);
       return;
     }
 
-    // ══ Layer 3: keyword allowlist (soft pre-filter) — zero matches → redirect. ══
-    const registry = ToolRegistry.getInstance();
-    const allowlist = buildRelevanceAllowlist(registry.getDeclarativeSchemas());
-    if (!hasRelevance(normalized, allowlist)) {
-      logger.info(`/ask off-topic (no keyword match): "${question.slice(0, 60)}"`);
+    // ── Layer 3 (replaced): tiered taxonomy relevance (OffTopicDetector). ──
+    // A single pass over the tiered taxonomy: strong match → IN_SCOPE (no search);
+    // clearly unrelated → OFF_TOPIC; ambiguous/weak → escalate to umamusume_search.
+    const taxonomy = toTaxonomyTerms();
+    const search = buildSearchEscalator();
+    const verdict = await classifyTopic(question, { taxonomy, search });
+
+    if (verdict.verdict === 'OFF_TOPIC') {
+      logger.info(`/ask off-topic (${verdict.method}/${verdict.confidence}): "${question.slice(0, 60)}"`);
       try {
         await moderationLogStore.append(userId, channelId, question);
       } catch (logErr: any) {
@@ -108,7 +112,7 @@ export async function handleAsk(interaction: ChatInputCommandInteraction): Promi
     // Build an AI service from env (honours AI_PROVIDER=local|groq|openai|anthropic).
     const aiService = buildAIService();
 
-    const agent = new ToolCallingAgent(aiService, registry);
+    const agent = new ToolCallingAgent(aiService, ToolRegistry.getInstance());
     const trace = await agent.runWithTrace(userId, question, context, {
       maxToolCalls: 4,
       toolTimeoutMs: 8_000,
@@ -120,7 +124,7 @@ export async function handleAsk(interaction: ChatInputCommandInteraction): Promi
     });
     const answer = trace.answer;
 
-    // ══ Layer 2: model topic gate — [[OFFTOPIC]] marker → redirect + log. ══
+    // ── Layer 2: model topic gate — [[OFFTOPIC]] marker → redirect + log. ──
     if (isOffTopicAnswer(answer)) {
       logger.info(`/ask off-topic (model marker): "${question.slice(0, 60)}"`);
       try {
