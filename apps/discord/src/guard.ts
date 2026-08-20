@@ -18,9 +18,9 @@ const logger = createLogger('AskGuard');
 /** Reserved marker the model returns when it judges a question off-topic. */
 export const OFFTOPIC_MARKER = '[[OFFTOPIC]]';
 
-// ──────────────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
 // Layer 1 — Safety guard / blocklist (improper content + prompt injection)
-// ──────────────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
 
 const BLOCKED_PATTERNS: RegExp[] = [
   // Prompt injection / jailbreak cues
@@ -73,21 +73,35 @@ export function safetyGuard(text: string): boolean {
 /** @deprecated Use `safetyGuard` instead. Kept for back-compat. */
 export const matchBlocked = safetyGuard;
 
-// ──────────────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
 // Layer 3 — Keyword allowlist (soft relevance pre-filter)
-// ──────────────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
 
 /** Static core Uma Musume / Umakraft relevance terms. */
 const STATIC_RELEVANCE_TERMS: string[] = [
   // Franchise / community
-  'umamusume', 'uma musume', 'ウマ娘', 'ウマむすめ', 'umakraft', 'umacraft',
+  'umamusume', 'uma musume', 'ウマ娘', 'うまむすめ', 'umakraft', 'umacraft',
   'trainer', 'トレーナー', 'fankit', 'fan gain', 'fan count', 'fans',
   'circle', 'サークル',
 
   // Game systems / tools
   'banner', 'ガチャ', 'gacha', 'support card', 'サポートカード', 'leaderboard',
-  'ランキング', 'club rank', 'tier', 'scenario', 'ストーリー', 'race',
-  'レース', 'derby', 'ダービー', 'skill', 'スキル', 'stat', 'status',
+  'ランキング', 'club rank', 'tier', 'scenario', 'シナリオ', 'race',
+  'レース', 'derby', 'ダービー', 'skill', 'スキル', 'stat', 'stats',
+
+  // Events / modes / races (previously missing → false "off-topic" triggers)
+  'champions meeting', "champion's cup", 'championship', 'チャンピオンズミーティング',
+  'チャンピオンズカップ', 'team stadium', 'team race', 'チーム競技場',
+  'room match', 'ルームマッチ', 'grand live', 'グランドライブ',
+  'channel meeting', 'arc', 'レジェンド', 'legends', 'hall of fame',
+  'arena', 'grade', '重賞', 'g1', 'g2', 'g3', 'trophy',
+
+  // Training / growth systems
+  'inherit', 'inheritance', 'factor', '継承', '因子', 'training',
+  'speed', 'stamina', 'power', 'guts', 'intelligence', 'wisdom',
+  'aptitude', '適性', 'distance', 'surface', 'turf', 'dirt',
+  'sprint', 'mile', 'middle', 'long', 'running style', 'leader', 'chaser',
+  'betweener', '逃げ', '先行', '差し', '追込',
 
   // Prominent horse-girl names
   'special week', 'スペシャルウィーク', 'silence suzuka', 'サイレンススズカ',
@@ -98,7 +112,7 @@ const STATIC_RELEVANCE_TERMS: string[] = [
   'vodka', 'ウオッカ', 'narita brian', 'ナリタブライアン',
   'manhattan cafe', 'マンハッタンカフェ', 'tosen jordan', 'トーセンジョーダン',
   'symboli rudolf', 'シンボリルドルフ', 'biwa hayahide', 'ビワハヤヒデ',
-  'daring tact', 'デアリングタクト', 'almond eye', 'アーモンドアイ',
+  'daring tact', 'テーエムオペラオー', 'almond eye', 'アーモンドアイ',
   'contrail', 'コントレイル', 'efforia', 'エフフォーリア',
 
   // Umakraft tool concepts
@@ -123,7 +137,14 @@ export function buildRelevanceAllowlist(toolSchemas: Array<{ slug: string; name?
   return Array.from(terms);
 }
 
-/** Return true if the normalized question contains any allowlist term. */
+/**
+ * Return true if the normalized question contains any allowlist term.
+ *
+ * Multi-word terms (e.g. "champions meeting", "champion's cup") are matched via
+ * a substring check so a question like "who won the last champions meeting?" is
+ * correctly recognized as on-topic even though it lacks the literal word
+ * "umamusume".
+ */
 export function hasRelevance(normalized: string, allowlist: string[]): boolean {
   return allowlist.some((term) => normalized.includes(term));
 }
