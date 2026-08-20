@@ -1,5 +1,5 @@
 import React from 'react';
-import { PRIMARY_GREEN, MEDIUM_GREEN, DARK_GREEN, MINT, LIGHT_GREEN } from './theme.js';
+import { PRIMARY_GREEN, MEDIUM_GREEN, DARK_GREEN, MINT, LIGHT_GREEN } from './theme.ts';
 
 export interface BarChartData {
   labels: string[];
@@ -12,9 +12,16 @@ function formatAxis(n: number): string {
   return String(Math.round(n));
 }
 
+// Truncate a label to a max character length, ellipsizing on overflow. Kept in
+// sync with the left list panel so the bar chart and ranked list truncate
+// trainer names consistently.
+function truncateLabel(label: string, maxLen = 18): string {
+  return label.length > maxLen ? label.slice(0, maxLen - 1) + '\u2026' : label;
+}
+
 /**
  * Pure Satori-compatible horizontal bar chart (divs + flexbox, no SVG <text>).
- * Satori does not support raw SVG <text> nodes, so bars & labels are composited
+ * Satori does not support raw SVG <text> nodes, so bars & labels are composed
  * from styled <div>s. This removes the native `canvas` / chart.js dependency.
  */
 export function BarChart({ data, width = 480, height = 280 }: { data: BarChartData; width?: number; height?: number }) {
@@ -28,7 +35,7 @@ export function BarChart({ data, width = 480, height = 280 }: { data: BarChartDa
         return (
           <div key={label + i} style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: DARK_GREEN, whiteSpace: 'nowrap', overflow: 'hidden' }}>{label.length > 18 ? label.slice(0, 17) + '…' : label}</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: DARK_GREEN, whiteSpace: 'nowrap', overflow: 'hidden' }}>{truncateLabel(label)}</span>
               <span style={{ fontSize: 12, fontWeight: 700, color: PRIMARY_GREEN }}>{formatAxis(val)}</span>
             </div>
             <div style={{ display: 'flex', width: '100%', height: 12, borderRadius: 6, backgroundColor: LIGHT_GREEN, overflow: 'hidden' }}>
