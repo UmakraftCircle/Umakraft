@@ -31,6 +31,19 @@ function sanitizeTop(input: number): number {
   return ALLOWED_LEADERBOARD_TOPS.has(input) ? input : 10;
 }
 
+const ALLOWED_CIRCLES = new Set(['umakraft', 'umakraft2', 'unified']);
+const CIRCLE_LABELS: Record<string, string> = {
+  umakraft: 'Umakraft',
+  umakraft2: 'UmaKraft 2',
+  unified: 'Unified',
+};
+
+function sanitizeCircle(input: string): 'umakraft' | 'umakraft2' | 'unified' {
+  return ALLOWED_CIRCLES.has(input)
+    ? (input as 'umakraft' | 'umakraft2' | 'unified')
+    : 'unified';
+}
+
 function sanitizeTrainerInput(input: string): string {
   return input.replace(/[^a-zA-Z0-9\s\-()]/g, '').slice(0, 100);
 }
@@ -153,10 +166,11 @@ export async function handleFansGain(interaction: ChatInputCommandInteraction) {
 
 export async function handleFansLeaderboard(interaction: ChatInputCommandInteraction) {
   const top = sanitizeTop(interaction.options.getInteger('top') || 10);
-  const period = sanitizePeriod(interaction.options.getString('period') || 'monthly');
+  const period = sanitizePeriod(interaction.options.getString('period') || 'daily');
+  const circle = sanitizeCircle(interaction.options.getString('circle') || 'unified');
   await interaction.deferReply();
 
-  const members = await fanTrackerAPI.fetchAllMembers();
+  const members = await fanTrackerAPI.fetchLeaderboard(circle);
 
   if (members.length === 0) {
     await interaction.editReply(
@@ -199,7 +213,7 @@ export async function handleFansLeaderboard(interaction: ChatInputCommandInterac
   }), { name: fileName });
 
   const embed = new EmbedBuilder()
-    .setTitle(`🎺 Fan Leaderboard — Top ${topN.length} (${period.toUpperCase()})`)
+    .setTitle(`🎺 Fan Leaderboard — Top ${topN.length} (${period.toUpperCase()}) · ${CIRCLE_LABELS[circle]}`)
     .setColor(0xF1C40F)
     .setImage(`attachment://${fileName}`);
 
