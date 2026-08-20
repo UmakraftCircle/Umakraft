@@ -54,7 +54,7 @@ export const linkCommand = new SlashCommandBuilder()
   .addSubcommand((sub) =>
     sub.setName('remove').setDescription('Unlink a Discord user from their trainer (admin only)')
       .addUserOption(opt => opt.setName('user').setDescription('Discord member to unlink').setRequired(true))
-  
+  )
   .addSubcommand((sub) => sub.setName('list').setDescription('Show all linked Discord ↔ trainer pairs'))
   .setDMPermission(false)
   .toJSON();
