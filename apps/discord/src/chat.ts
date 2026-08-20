@@ -24,9 +24,9 @@ const logger = createLogger('ChatHandler');
  * `/chat` — a personalized, memory-aware, GENERAL conversation entry point.
  *
  * Lifecycle:
- *   - `Speak` opens (or resets) a session. A new `Speak` OVERWRITES the previous
- *     conversation.
- *   - `Reply` continues the current session and is REJECTED if no session exists.
+ *    - `Speak` opens (or resets) a session. A new `Speak` OVERWRITES the previous
+ *      conversation.
+ *    - `Reply` continues the current session and is REJECTED if no session exists.
  *
  * The agent keeps durable long-term memory of the Trainer (favourites, progress,
  * reply style), reuses cached answers for similar questions (semantic similarity),
@@ -46,7 +46,7 @@ const REDIRECT_REPLY_BEFORE_SPEAK =
 
 const MAX_CONTEXT_TURNS = 20;
 
-// ── Persona (layered ON TOP of the shared safety core) ──
+// ══ Persona (layered ON TOP of the shared safety core) ══
 //    This only defines the `/chat` voice; general behavior lives in the shared
 //    core prompt. It does NOT restrict the conversation to Uma Musume.
 //    NOTE: this is a static string literal — do not interpolate command names.
@@ -60,6 +60,15 @@ You may talk about any ordinary topic. Do not restrict the conversation to Uma
 Musume; that is the \`/ask\` command's job. Follow the safety policy for harmful or
 unsafe content, but otherwise chat freely about whatever the Trainer wants.
 `.trim();
+
+/**
+ * `/chat` is pure conversation. It scopes the toolset to ONLY `search_web` so the
+ * model can look up current facts when needed, but is never tempted to burn its
+ * tool-call budget on the 14 skill/research tools (those belong to `/ask`/`/agent`).
+ * This keeps the tool-schema overhead tiny and prevents the fallback model from
+ * flailing through tool calls instead of just answering conversationally.
+ */
+const CHAT_TOOL_SLUGS = [searchWebTool.slug];
 
 /**
  * Shared semantic answer cache. Built lazily on first use so the local embedding
@@ -82,7 +91,7 @@ export async function handleChat(interaction: ChatInputCommandInteraction): Prom
   await interaction.deferReply();
 
   try {
-    // ── Safety guard (deterministic blocklist — no domain restriction) ──
+    // ══ Safety guard (deterministic blocklist — no domain restriction) ══
     if (safetyGuard(message)) {
       await interaction.editReply(
         "🐎 I can't help with that, Trainer. Let's keep our chat friendly and safe.",
@@ -90,7 +99,7 @@ export async function handleChat(interaction: ChatInputCommandInteraction): Prom
       return;
     }
 
-    // ── Lifecycle ──
+    // ══ Lifecycle ══
     let session = await chatSessionStore.getSession(userId);
     if (subcommand === 'speak') {
       session = await chatSessionStore.openSession(userId, channelId);
@@ -102,24 +111,24 @@ export async function handleChat(interaction: ChatInputCommandInteraction): Prom
       await chatSessionStore.bumpTurn(userId);
     }
 
-    // ── Durable memory + explicit favourite detection ──
+    // ══ Durable memory + explicit favourite detection ══
     const memory = await chatMemoryStore.getMemory(userId);
-    const favoritesKnown = (memory?.favoriteUmamusume.length ?? 0) > 0;
+    const favouritesKnown = (memory?.favoriteUmamusume.length ?? 0) > 0;
 
-    const detectedFavorites = detectFavoriteUmamusume(message);
-    if (detectedFavorites.length > 0) {
-      await chatMemoryStore.setFavorite(userId, 'favorite_umamusume', detectedFavorites);
-      logger.info(`Stored favourites for ${userId}: ${detectedFavorites.join(', ')}`);
+    const detectedFavourites = detectFavoriteUmamusume(message);
+    if (detectedFavourites.length > 0) {
+      await chatMemoryStore.setFavorite(userId, 'favorite_umamusume', detectedFavourites);
+      logger.info(`Stored favourites for ${userId}: ${detectedFavourites.join(', ')}`);
     }
 
-    // ── Record the question in the rolling buffer (may trigger lazy digest) ──
+    // ══ Record the question in the rolling buffer (may trigger lazy digest) ══
     try {
       await getChatCache().recordQuestion(userId, message, session.conversationId, summarizeQuestions);
     } catch (cacheErr: any) {
       logger.warn(`/chat question recording skipped: ${cacheErr?.message ?? cacheErr}`);
     }
 
-    // ── Semantic answer cache: reuse a similar past answer if present ──
+    // ══ Semantic answer cache: reuse a similar past answer if present ══
     let cachedAnswer: string | null = null;
     try {
       const similar = await getChatCache().findSimilarAnswers(userId, message);
@@ -131,11 +140,11 @@ export async function handleChat(interaction: ChatInputCommandInteraction): Prom
       logger.warn(`/chat cache lookup skipped: ${cacheErr?.message ?? cacheErr}`);
     }
 
-    // ── Conversation context (per user+channel, like /ask) ──
+    // ══ Conversation context (per user+channel, like /ask) ══
     const history = await conversationMemoryStore.recent(userId, channelId, MAX_CONTEXT_TURNS);
     const context = buildContextTurns(history);
 
-    // ── Build the personalized system prompt (persona + known Trainer facts) ──
+    // ══ Build the personalized system prompt (persona + known Trainer facts) ══
     const personalNotes: string[] = [];
     if (memory) {
       if (memory.favoriteUmamusume.length) personalNotes.push(`Favourite Umamusume: ${memory.favoriteUmamusume.join(', ')}`);
@@ -146,7 +155,7 @@ export async function handleChat(interaction: ChatInputCommandInteraction): Prom
     const systemPromptPrefix =
       CHAT_PERSONA_PREFIX +
       (personalNotes.length ? `\n\nKNOWN ABOUT THIS TRAINER\n- ${personalNotes.join('\n- ')}` : '') +
-      (favoritesKnown
+      (favouritesKnown
         ? ''
         : '\n\nONBOARDING: You do not yet know this Trainer\'s favourite Umamusume. Briefly introduce yourself and ask them.');
 
@@ -155,28 +164,27 @@ export async function handleChat(interaction: ChatInputCommandInteraction): Prom
     if (cachedAnswer) {
       reply = cachedAnswer;
     } else {
-      // ── Generate the reply (domainGuard is OFF — general conversation) ──
+      // ══ Generate the reply (domainGuard is OFF — general conversation) ══
       const aiService = buildAIService();
       const registry = ToolRegistry.getInstance();
+      // Ensure search_web (and only search_web) is registered for /chat.
       registry.register(searchWebTool);
-      for (const tool of allSkillTools) {
-        registry.register(tool);
-      }
       const agent = new ToolCallingAgent(aiService, registry);
       reply = await agent.run(userId, message, context, {
-        maxToolCalls: 3,
+        maxToolCalls: 4,
         maxWebSearches: 2,
         toolTimeoutMs: 8_000,
         generateTimeoutMs: 20_000,
         overallTimeoutMs: 90_000,
         systemPromptPrefix,
         domainGuard: false,
+        toolSlugs: CHAT_TOOL_SLUGS,
       });
 
       // Keep it as a pure-chat answer.
       reply = reply.trim();
 
-      // ── Cache the fresh answer per-user ──
+      // ══ Cache the fresh answer per-user ══
       try {
         await getChatCache().cacheAnswer(userId, message, reply);
       } catch (cacheErr: any) {
@@ -184,7 +192,7 @@ export async function handleChat(interaction: ChatInputCommandInteraction): Prom
       }
     }
 
-    // ── Persist the exchange (per user+channel) for future context ──
+    // ══ Persist the exchange (per user+channel) for future context ══
     await conversationMemoryStore.append({ userId, channelId, role: 'user', content: message });
     await conversationMemoryStore.append({ userId, channelId, role: 'assistant', content: reply });
 
