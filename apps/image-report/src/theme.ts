@@ -33,23 +33,46 @@ export const HEADER_HEIGHT = 140;
  * rows to render.
  *
  * The previously hardcoded ROW_HEIGHT of 38px did not match the actual
- * rendered row height (FullRankRow renders two lines with 10px/16px padding,
- * ~52px tall), which caused tall leaderboards (“Top 10”) to be clipped by the
- * undersized 675px canvas — only ~6 rows would appear even though all entries
- * were present.
+ * rendered row height, and the formula omitted the list card's own chrome
+ * (padding, column header, gaps, wrapper padding, and the "UmaKraft" brand
+ * row). Those omissions caused tall leaderboards (notably the 60-row
+ * "unified" view, where two ~30-member circles are combined) to be clipped by
+ * the undersized canvas so only the top rows rendered.
  *
- * We now size per-row height to the layout actually chosen and add headroom
- * for the side bar-chart panel when it is shown (count <= 15).
+ * We size per-row height to the layout actually chosen and add headroom for
+ * all surrounding chrome, and raise the ceiling so a full 60-entry unified
+ * leaderboard renders every row.
  */
 export function leaderboardCanvasHeight(rowCount: number): number {
   const showChart = rowCount <= 15;
-  const ROW_HEIGHT = showChart ? 52 : 44; // FullRankRow vs CompactRankRow
-  const HEADER = HEADER_HEIGHT;
-  const FOOTER = 48;
-  const BRAND_ROW = 56;
-  const PADDING = 36;
-  const CHART_PANEL = showChart ? 320 : 0; // bar-chart card occupies vertical space
-  const listHeights = HEADER + PADDING + rowCount * ROW_HEIGHT + BRAND_ROW + FOOTER;
-  const needed = Math.max(listHeights, showChart ? HEADER + PADDING + CHART_PANEL + BRAND_ROW + FOOTER : 0);
-  return Math.max(CANVAS_HEIGHT, Math.min(needed, 3200));
+
+  // FullRankRow (two lines + 10px/16px padding) vs CompactRankRow
+  // (height: 36, plus an inter-row gap of 2).
+  const ROW_HEIGHT = showChart ? 52 : 38;
+
+  const HEADER = HEADER_HEIGHT;         // 140
+  const FOOTER = 48;                    // "Generated …" footer
+  const BRAND_ROW = 60;                 // "UmaKraft" wordmark (xxl font + padding)
+  const WRAPPER_PADDING = 28;           // flex:1 wrapper `14px 36px` top+bottom
+  const LIST_CARD_PADDING = showChart ? 24 : 16; // `12px 16px` vs `8px 12px` top+bottom
+  const COLUMN_HEADER = showChart ? 0 : 30;       // compact column header + border
+  const GAPS = showChart ? (rowCount - 1) * 4 : (rowCount - 1) * 2;
+  const CHART_PANEL = showChart ? 320 : 0;        // side bar-chart card height
+
+  const listHeights =
+    HEADER +
+    WRAPPER_PADDING +
+    LIST_CARD_PADDING +
+    COLUMN_HEADER +
+    rowCount * ROW_HEIGHT +
+    GAPS +
+    BRAND_ROW +
+    FOOTER;
+
+  const needed = Math.max(listHeights, showChart ? HEADER + WRAPPER_PADDING + CHART_PANEL + BRAND_ROW + FOOTER : 0);
+
+  // Cap high enough to fit a 60-row unified leaderboard (30 + 30 across two
+  // circles), while still guarding against absurdly tall images.
+  const MAX_CANVAS = 6000;
+  return Math.max(CANVAS_HEIGHT, Math.min(needed, MAX_CANVAS));
 }
