@@ -48,13 +48,13 @@ export const linkCommand = new SlashCommandBuilder()
   .setDescription('Manage Discord ↔ Umamusume trainer links')
   .addSubcommand((sub) =>
     sub.setName('add').setDescription('Link a Discord user to an Umamusume trainer (admin only)')
-      .addUserOption((opt) => opt.setName('user').setDescription('Discord member to link').setRequired(true))
+      .addUserOption(opt => opt.setName('user').setDescription('Discord member to link').setRequired(true))
       .addStringOption((opt) => opt.setName('trainer').setDescription('Umamusume trainer name (autocomplete)').setRequired(true).setAutocomplete(true))
   )
   .addSubcommand((sub) =>
     sub.setName('remove').setDescription('Unlink a Discord user from their trainer (admin only)')
       .addUserOption(opt => opt.setName('user').setDescription('Discord member to unlink').setRequired(true))
-  )
+  
   .addSubcommand((sub) => sub.setName('list').setDescription('Show all linked Discord ↔ trainer pairs'))
   .setDMPermission(false)
   .toJSON();
@@ -62,14 +62,14 @@ export const linkCommand = new SlashCommandBuilder()
 export const compareCommand = new SlashCommandBuilder()
   .setName('compare')
   .setDescription('Compare fan gain between two trainers')
-  .addStringOption((opt) =>
+  .addStringOption(opt =>
     opt.setName('period').setDescription('Time period for comparison').setRequired(true)
       .addChoices({ name: 'Daily', value: 'daily' }, { name: 'Weekly', value: 'weekly' }, { name: 'Monthly', value: 'monthly' })
   )
-  .addStringOption((opt) =>
+  .addStringOption(opt =>
     opt.setName('trainer1').setDescription('First trainer to compare (defaults to you)').setRequired(false).setAutocomplete(true)
   )
-  .addStringOption((opt) =>
+  .addStringOption(opt =>
     opt.setName('trainer2').setDescription('Second trainer to compare (defaults to you)').setRequired(false).setAutocomplete(true)
   )
   .setDMPermission(false)
