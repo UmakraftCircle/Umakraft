@@ -19,6 +19,7 @@ export * from './confirmation-store.js';
 export * from './notification-store.js';
 export * from './action-controller.js';
 export * from './relay-inbox.js';
+export * from './relay-routes.js';
 
 const logger = createLogger('Integrations');
 
