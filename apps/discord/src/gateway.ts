@@ -12,18 +12,18 @@ import { logger } from './bootstrap.js';
 import { registerMilestoneJobs } from './milestone-jobs.js';
 import { registerReminderJobs } from './reminder-jobs.js';
 
-export async function startGatewayBot() {
+export async function startGatewayBot(): Promise<Client> {
   const token = process.env['DISCORD_BOT_TOKEN']!;
   const clientId = process.env['DISCORD_CLIENT_ID']!;
 
   // Validate token format — Discord tokens are ~70 chars, base64-like
   if (!token || token.length < 50) {
     logger.error('DISCORD_BOT_TOKEN appears invalid (too short or missing). Aborting Gateway mode.');
-    return;
+    throw new Error('DISCORD_BOT_TOKEN missing or invalid');
   }
   if (!clientId || clientId.length < 15) {
     logger.error('DISCORD_CLIENT_ID appears invalid. Aborting Gateway mode.');
-    return;
+    throw new Error('DISCORD_CLIENT_ID missing or invalid');
   }
 
   const client = new Client({
@@ -250,4 +250,6 @@ export async function startGatewayBot() {
   };
   wireAutonomy(client, runScheduledTask, onApproved);
   await client.login(token);
+
+  return client;
 }
