@@ -11,6 +11,7 @@ import { taskStateStore } from '@ai-agent-platform/integrations';
 import { logger } from './bootstrap.js';
 import { registerMilestoneJobs } from './milestone-jobs.js';
 import { registerReminderJobs } from './reminder-jobs.js';
+import { pushRelayMessage } from '../../../relay-inbox.cjs';
 
 export async function startGatewayBot() {
   const token = process.env['DISCORD_BOT_TOKEN']!;
@@ -31,7 +32,29 @@ export async function startGatewayBot() {
       GatewayIntentBits.Guilds,
       GatewayIntentBits.GuildMembers,
       GatewayIntentBits.GuildMessages,
+      GatewayIntentBits.MessageContent,
     ],
+  });
+
+  // ── Phone-agent relay: buffer inbound messages for the phone to poll ──
+  // Guard against bot/self messages so the inbox never contains our own echoes.
+  client.on(Events.MessageCreate, (message) => {
+    if (message.author?.bot) return;
+    if (message.author?.id === client.user?.id) return;
+
+    let authorName = 'unknown';
+    try { authorName = message.member?.displayName ?? message.author?.username ?? 'unknown'; } catch {}
+
+    pushRelayMessage({
+      id: message.id,
+      author_id: message.author?.id ?? '',
+      author_name: authorName,
+      channel_id: message.channelId,
+      guild_id: message.guildId ?? null,
+      content: message.content ?? '',
+      mentions_bot: client.user ? message.mentions.has(client.user.id) : false,
+      created_at: message.createdTimestamp ?? Date.now(),
+    });
   });
 
   // ── Register slash commands on ready ──
@@ -93,9 +116,6 @@ export async function startGatewayBot() {
   const supervisor = new MessageSupervisor();
 
   // Local brain (supervisor) — the on-host Qwen brain via node-llama-cpp.
-  // It self-downloads its weights on first use and is used as a last-resort
-  // "brain" that retries a failed generation once before the cache fallback.
-  // Guard against a missing/undeployable native module so the bot never crashes.
   let brainAI: AIService | null = null;
   if (process.env['LOCAL_BRAIN_ENABLED'] === 'true') {
     try {
@@ -133,7 +153,6 @@ export async function startGatewayBot() {
     try {
       const guild = member.guild;
 
-      // Find a suitable welcome channel
       const welcomeChannel: TextChannel | undefined =
         (guild.channels.cache.find(
           (c): c is TextChannel =>
@@ -199,9 +218,9 @@ export async function startGatewayBot() {
   const tz = process.env['TZ'] || 'Asia/Manila';
 
   cron.schedule('0 8 * * *',   () => sendDailyMessage('morning',  '🌞'),  { timezone: tz });
-  cron.schedule('0 12 * * *',  () => sendDailyMessage('noon',     '🌇'), { timezone: tz });
-  cron.schedule('0 18 * * *',  () => sendDailyMessage('evening',  '🌆'), { timezone: tz });
-  cron.schedule('0 0 * * *',   () => sendDailyMessage('midnight', '🌙'), { timezone: tz });
+  cron.schedule('0 12 * * *',  () => sendDailyMessage('noon',     '🌇'),  { timezone: tz });
+  cron.schedule('0 18 * * *',  () => sendDailyMessage('evening',  '🌆'),  { timezone: tz });
+  cron.schedule('0 0 * * *',   () => sendDailyMessage('midnight', '🌙'),  { timezone: tz });
 
   logger.info(`Daily cron jobs scheduled (${tz}): 🌞 8AM  🌇 12PM  🌆 6PM  🌙 12AM`);
 
@@ -223,5 +242,26 @@ export async function startGatewayBot() {
     }
   };
   wireAutonomy(client, runScheduledTask, onApproved);
+
+  // ── Phone-agent relay: reply IPC from health.cjs ──
+  // health.cjs POST /reply then sends {type:'relay-reply', channel_id, content, requestId}
+  // to this child process. We perform channel.send on the EXISTING gateway (single
+  // connection) and echo the result back via process.send.
+  process.on('message', async (m: any) => {
+    if (!m || m.type !== 'relay-reply') return;
+    const { channel_id, content, requestId } = m;
+    try {
+      const channel = await client.channels.fetch(channel_id).catch(() => null);
+      if (!channel || !(channel as any).isTextBased) {
+        (process as any).send?.({ type: 'relay-reply-result', requestId, ok: false, error: 'channel not found or not text-based' });
+        return;
+      }
+      const sent = await (channel as any).send(String(content).slice(0, 2000));
+      (process as any).send?.({ type: 'relay-reply-result', requestId, ok: true, message_id: sent.id });
+    } catch (err: any) {
+      (process as any).send?.({ type: 'relay-reply-result', requestId, ok: false, error: String(err?.message ?? err) });
+    }
+  });
+
   await client.login(token);
 }
