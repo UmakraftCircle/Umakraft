@@ -7,7 +7,7 @@ import { ALL_COMMANDS } from './commands.js';
 import { routeCommand, handleTrainerAutocomplete, handleCompareAutocomplete } from './handlers.js';
 import { wireAutonomy, handleConfirmationButton } from './autonomous.js';
 import { ToolRegistry, AgentRunner } from '@ai-agent-platform/core';
-import { taskStateStore } from '@ai-agent-platform/integrations';
+import { taskStateStore, relayInboxStore } from '@ai-agent-platform/integrations';
 import { logger } from './bootstrap.js';
 import { registerMilestoneJobs } from './milestone-jobs.js';
 import { registerReminderJobs } from './reminder-jobs.js';
@@ -31,6 +31,7 @@ export async function startGatewayBot() {
       GatewayIntentBits.Guilds,
       GatewayIntentBits.GuildMembers,
       GatewayIntentBits.GuildMessages,
+      GatewayIntentBits.MessageContent,
     ],
   });
 
@@ -58,6 +59,31 @@ export async function startGatewayBot() {
     } catch (err: any) {
       logger.error(`Failed to register slash commands: ${err.message}`);
     }
+  });
+
+  // ── Phone relay: buffer inbound DMs + bot mentions into the durable inbox ──
+  //    The phone agent (apps/discord's "brain" counterpart) polls GET /relay/inbox
+  //    and replies via POST /relay/reply. Only DMs and messages that @-mention the
+  //    bot are buffered — everything else is ignored to keep the inbox small.
+  //    Fire-and-forget: a store failure must never break the bot.
+  client.on(Events.MessageCreate, (msg) => {
+    if (msg.author?.bot) return;
+    const isDM = !msg.guildId;
+    const mentionsBot = client.user ? msg.mentions.has(client.user.id) : false;
+    if (!isDM && !mentionsBot) return;
+
+    relayInboxStore
+      .push({
+        discord_id: msg.id,
+        author_id: msg.author.id,
+        author_name: msg.member?.displayName ?? msg.author.username ?? 'unknown',
+        channel_id: msg.channelId,
+        guild_id: msg.guildId ?? null,
+        content: msg.content ?? '',
+        mentions_bot: mentionsBot,
+        created_at: msg.createdTimestamp,
+      })
+      .catch((err: any) => logger.warn(`relay inbox push skipped: ${err?.message ?? err}`));
   });
 
   // ── Handle interactions ──
