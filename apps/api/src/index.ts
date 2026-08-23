@@ -1,5 +1,6 @@
 import * as http from 'http';
 import * as crypto from 'crypto';
+import { access, readFile as readFileAsync } from 'node:fs/promises';
 import { createLogger, PLATFORM_NAME, ExecutionPlan } from '@ai-agent-platform/shared';
 import { MockAIService, createProvider } from '@ai-agent-platform/ai';
 import { toolRegistry, Planner, TaskManager, MODELS } from '@ai-agent-platform/core';
@@ -10,9 +11,40 @@ import { allTools, webTools, notificationTools } from '@ai-agent-platform/tools'
 import { allIntegrations } from '@ai-agent-platform/integrations';
 import { allDomainTools as fanTrackerTools } from '@ai-agent-platform/fan-tracker';
 import { allDomainTools as prMonitorTools } from '@ai-agent-platform/pr-monitor';
+import {
+  HealthCollector,
+  HealthAnalyzer,
+  FileAdapter,
+  createHealthEvent,
+  validateHealthEvent,
+  validateHealthMetric,
+  collectCIHealth,
+  collectDependencyHealth,
+  collectDeploymentHealth,
+} from '@ai-agent-platform/health';
 
 const logger = createLogger('API-Server');
 const PORT = 3000;
+const healthCollector = new HealthCollector();
+const healthAnalyzer = new HealthAnalyzer(healthCollector);
+const healthStorage = new FileAdapter();
+const healthStreamClients = new Set<http.ServerResponse>();
+healthCollector.registerService({ name: 'api', version: process.env['APP_VERSION'] || '1.0.0' });
+healthCollector.on('event', (event) => {
+  const payload = `event: health\ndata: ${JSON.stringify(event)}\n\n`;
+  for (const client of healthStreamClients) {
+    try { client.write(payload); } catch { healthStreamClients.delete(client); }
+  }
+});
+healthCollector.on('metric', (metric) => {
+  const payload = `event: metric\ndata: ${JSON.stringify(metric)}\n\n`;
+  for (const client of healthStreamClients) {
+    try { client.write(payload); } catch { healthStreamClients.delete(client); }
+  }
+});
+const persistHealth = () => healthStorage.save(healthCollector.exportState()).catch((error) => {
+  logger.warn(`Failed to persist health state: ${error.message}`);
+});
 
 // Bootstrap tool registry
 for (const tool of [...allTools, ...webTools, ...notificationTools]) {
@@ -376,13 +408,79 @@ const server = http.createServer(async (req, res) => {
 
     // ── Health ──
     if (path === '/health' && req.method === 'GET') {
+      const health = healthAnalyzer.context();
       jsonResponse(res, 200, {
-        status: 'ok',
+        status: health.score.status === 'critical' ? 'degraded' : 'ok',
         platform: PLATFORM_NAME,
         version: process.env['APP_VERSION'] || '1.0.0',
         uptime: process.uptime(),
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        healthScore: health.score,
+        services: health.services,
       });
+      return;
+    }
+
+    // ── Health Domain ──
+    if (path === '/health/status' && req.method === 'GET') {
+      jsonResponse(res, 200, healthAnalyzer.context());
+      return;
+    }
+
+    if (path === '/health/stream' && req.method === 'GET') {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+        'Access-Control-Allow-Origin': corsOrigin(),
+      });
+      res.write(`event: snapshot\ndata: ${JSON.stringify(healthAnalyzer.context())}\n\n`);
+      healthStreamClients.add(res);
+      req.on('close', () => healthStreamClients.delete(res));
+      return;
+    }
+
+    if (path === '/health/events' && req.method === 'POST') {
+      const body = await readBody(req);
+      validateHealthEvent(body);
+      const event = healthCollector.ingest(createHealthEvent({
+        ...body,
+        service: body.service,
+        level: body.level,
+        message: body.message,
+      }));
+      persistHealth();
+      jsonResponse(res, 202, { accepted: true, event });
+      return;
+    }
+
+    if (path === '/health/heartbeat' && req.method === 'POST') {
+      const body = await readBody(req);
+      if (!body.service) {
+        jsonResponse(res, 400, { error: 'service is required' });
+        return;
+      }
+      const service = healthCollector.heartbeat(body.service, body.version);
+      persistHealth();
+      jsonResponse(res, 202, {
+        accepted: true,
+        service,
+      });
+      return;
+    }
+
+    if (path === '/health/metrics' && req.method === 'POST') {
+      const body = await readBody(req);
+      if (!body.service) {
+        jsonResponse(res, 400, { error: 'service is required' });
+        return;
+      }
+      validateHealthMetric(body);
+      persistHealth();
+      jsonResponse(res, 202, { accepted: true, metric: healthCollector.recordMetric({
+        ...body,
+        timestamp: body.timestamp || new Date().toISOString(),
+      }) });
       return;
     }
 
@@ -535,6 +633,14 @@ const server = http.createServer(async (req, res) => {
     // ── 404 ──
     jsonResponse(res, 404, { error: 'Not Found', path });
   } catch (error: any) {
+    if (
+      path.startsWith('/health/') &&
+      req.method === 'POST' &&
+      /required|invalid|must be|between|characters or fewer|non-negative/i.test(error.message || '')
+    ) {
+      jsonResponse(res, 400, { error: error.message });
+      return;
+    }
     logger.error(`Request handler error: ${error.message}`, error.stack);
     const isDev = process.env['NODE_ENV'] === 'development';
     jsonResponse(res, 500, {
@@ -546,11 +652,38 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, async () => {
   await loadPlanStore();
+  try {
+    healthCollector.restore(await healthStorage.load());
+    healthCollector.heartbeat('api', process.env['APP_VERSION'] || '1.0.0');
+  } catch (error: any) {
+    logger.warn(`Health storage unavailable; using memory only: ${error.message}`);
+  }
+  for (const signal of [...collectCIHealth(), ...collectDeploymentHealth()]) {
+    healthCollector.ingest(createHealthEvent(signal));
+  }
+  try {
+    const packageJson = JSON.parse(await readFileAsync('package.json', 'utf8'));
+    const [workspaceFileExists, lockfileExists] = await Promise.all([
+      access('pnpm-workspace.yaml').then(() => true).catch(() => false),
+      access('pnpm-lock.yaml').then(() => true).catch(() => false),
+    ]);
+    for (const signal of collectDependencyHealth(packageJson, { workspaceFileExists, lockfileExists })) {
+      healthCollector.ingest(createHealthEvent(signal));
+    }
+  } catch (error: any) {
+    logger.warn(`Dependency health collection skipped: ${error.message}`);
+  }
+  persistHealth();
   logger.info(`==================================================`);
   logger.info(`${PLATFORM_NAME} API Server listening on http://localhost:${PORT}`);
   logger.info(`Auth:    ${auth.getKeyCount()} key(s) configured`);
   logger.info(`Endpoints:`);
   logger.info(`  GET  /health             — Health check (public)`);
+  logger.info(`  GET  /health/status      — Repository health context`);
+  logger.info(`  GET  /health/stream      — Live health SSE stream`);
+  logger.info(`  POST /health/events      — Ingest health events`);
+  logger.info(`  POST /health/heartbeat   — Service heartbeat`);
+  logger.info(`  POST /health/metrics     — Ingest health metrics`);
   logger.info(`  GET  /tools              — List registered tools`);
   logger.info(`  POST /plans              — Submit plan intent`);
   logger.info(`  GET  /plans              — List all plans`);

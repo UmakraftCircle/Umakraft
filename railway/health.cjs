@@ -13,11 +13,33 @@
 
 const http = require('http');
 const { spawn } = require('child_process');
-const { drainRelayInbox, relayInboxSize } = require('./relay-inbox.cjs');
+const path = require('path');
+const fs = require('fs');
+
+// In Docker, this file is copied to /app/health.cjs and the relay module is
+// available beside it. When run directly from the repository, the module is
+// one directory above (../relay-inbox.cjs). Support both layouts.
+const relayInboxPath = [
+  path.join(__dirname, 'relay-inbox.cjs'),
+  path.join(__dirname, '..', 'relay-inbox.cjs'),
+].find((candidate) => fs.existsSync(candidate));
+
+if (!relayInboxPath) {
+  throw new Error('Could not locate relay-inbox.cjs');
+}
+
+const { drainRelayInbox, relayInboxSize } = require(relayInboxPath);
 
 const PORT = process.env.PORT || 3000;
 const RELAY_TOKEN = process.env.RELAY_TOKEN || '';
 const PENDING_TIMEOUT_MS = 10000;
+const PUBLIC_URL = process.env.RAILWAY_STATIC_URL
+  ? (process.env.RAILWAY_STATIC_URL.startsWith('http')
+    ? process.env.RAILWAY_STATIC_URL
+    : `https://${process.env.RAILWAY_STATIC_URL}`)
+  : process.env.RAILWAY_PUBLIC_DOMAIN
+    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+    : null;
 
 function relayAuthorized(req) {
   if (!RELAY_TOKEN) return false;
@@ -95,6 +117,11 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`[health] HTTP server listening on port ${PORT}`);
+  console.log(
+    PUBLIC_URL
+      ? `[health] Health URL: ${PUBLIC_URL.replace(/\/$/, '')}/health`
+      : `[health] Health URL: http://localhost:${PORT}/health (public Railway URL unavailable)`,
+  );
 });
 
 // Spawn the Discord bot via tsx (TypeScript execute).

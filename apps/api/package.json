@@ -16,7 +16,8 @@
     "@ai-agent-platform/tools": "workspace:*",
     "@ai-agent-platform/integrations": "workspace:*",
     "@ai-agent-platform/fan-tracker": "workspace:*",
-    "@ai-agent-platform/pr-monitor": "workspace:*"
+    "@ai-agent-platform/pr-monitor": "workspace:*",
+    "@ai-agent-platform/health": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.4.5"
