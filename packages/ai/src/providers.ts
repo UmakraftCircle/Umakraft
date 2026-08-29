@@ -293,7 +293,16 @@ export class OpenAIProvider implements AIService {
     extra: Record<string, any>,
     opts: { allowRetryOn400?: boolean } = {},
   ): Promise<string> {
-    return this.#callWithRetryNativeWithFallback(messages, extra, opts);
+    const result = await this.#callWithRetryNativeWithFallback(messages, extra, opts);
+    if (typeof result === 'string') {
+      return result;
+    }
+    const content = result?.choices?.[0]?.message?.content;
+    if (typeof content !== 'string') {
+      const tc = result?.choices?.[0]?.message?.tool_calls;
+      throw new Error(`Model returned no text content${tc ? ' and attempted a tool call' : ''}.`);
+    }
+    return content;
   }
 
   /**

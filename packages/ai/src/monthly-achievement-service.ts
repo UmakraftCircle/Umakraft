@@ -401,7 +401,7 @@ export class MonthlyAchievementService {
   }
 
   #sanitize(raw: string): string {
-    let msg = raw.trim();
+    let msg = typeof raw === 'string' ? raw.trim() : String(raw ?? '').trim();
     if ((msg.startsWith('"') && msg.endsWith('"')) || (msg.startsWith("'") && msg.endsWith("'"))) {
       msg = msg.slice(1, -1).trim();
     }

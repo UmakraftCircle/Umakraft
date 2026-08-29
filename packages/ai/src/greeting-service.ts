@@ -283,7 +283,7 @@ export class GreetingService {
   }
 
   #sanitize(raw: string): string {
-    let greeting = raw.trim();
+    let greeting = typeof raw === 'string' ? raw.trim() : String(raw ?? '').trim();
 
     // Remove stray quotes the model might wrap the response in
     if (
