@@ -270,8 +270,8 @@ export class HealthAnalyzer {
       ? recentMetrics.reduce((sum, metric) => sum + (metric.latencyMs || 0), 0) / recentMetrics.length
       : 0;
     const penalties = {
-      availability: Math.min(30, unavailable * 15 + warnings * 5),
-      errors: Math.min(25, errors * 2 + errorRate * 25),
+      availability: Math.min(50, unavailable * 35 + warnings * 10),
+      errors: Math.min(30, errors * 10 + errorRate * 30),
       performance: Math.min(20, latency > 1000 ? 20 : latency > 500 ? 10 : 0),
       tests: 0,
       dependencies: 0,

@@ -650,7 +650,7 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, async () => {
+server.listen(PORT, '0.0.0.0', async () => {
   await loadPlanStore();
   try {
     healthCollector.restore(await healthStorage.load());

@@ -10,7 +10,7 @@
     "dev": "tsc -w"
   },
   "dependencies": {
-    "@ai-agent-platform/shared": "workspace:*",
+    "@ai-agent-platform/shared": "*",
     "@libsql/client": "^0.14.0",
     "better-sqlite3": "^13.0.2",
     "sqlite3": "^5.1.7"

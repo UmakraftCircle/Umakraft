@@ -1,8 +1,29 @@
 import { getTursoClient } from './turso.js';
 import { createLogger } from '@ai-agent-platform/shared';
-import { cosineSimilarity, type EmbeddingGenerator } from '@ai-agent-platform/ai';
 
 const logger = createLogger('ChatCache');
+
+export interface EmbeddingResult {
+  embedding: number[];
+  model: string;
+  tokens: number;
+}
+
+export interface EmbeddingGenerator {
+  embed(text: string): Promise<EmbeddingResult>;
+  embedBatch(texts: string[]): Promise<EmbeddingResult[]>;
+}
+
+export function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length !== b.length) throw new Error('Vectors must have same dimension');
+  let dot = 0, magA = 0, magB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    magA += a[i] * a[i];
+    magB += b[i] * b[i];
+  }
+  return dot / (Math.sqrt(magA) * Math.sqrt(magB) || 1);
+}
 
 /**
  * Per-user caching for the `/chat` command, with two responsibilities:

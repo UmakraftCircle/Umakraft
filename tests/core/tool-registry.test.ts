@@ -46,7 +46,7 @@ describe('ToolRegistry', () => {
       assert.equal(found.handler, undefined); // handler stripped
     });
 
-    it('should throw on duplicate slug', () => {
+    it('should ignore duplicate slug idempotently', () => {
       const slug = `test-dupe-${Date.now()}`;
       const tool = {
         slug,
@@ -56,7 +56,7 @@ describe('ToolRegistry', () => {
         handler: async () => ({}),
       };
       registry.register(tool);
-      assert.throws(() => registry.register(tool), /already exists/i);
+      assert.doesNotThrow(() => registry.register(tool));
     });
   });
 

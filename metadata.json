@@ -1,0 +1,6 @@
+{
+  "name": "Umakraft Circle",
+  "description": "AI Agent Platform & Bot Manager for orchestrating intelligent workflows, Discord automation, and UmaKraft fan telemetry",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

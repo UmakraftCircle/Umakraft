@@ -10,9 +10,9 @@
     "dev": "tsc -w"
   },
   "dependencies": {
-    "@ai-agent-platform/shared": "workspace:*",
-    "@ai-agent-platform/ai": "workspace:*",
-    "@ai-agent-platform/integrations": "workspace:*",
+    "@ai-agent-platform/shared": "*",
+    "@ai-agent-platform/ai": "*",
+    "@ai-agent-platform/integrations": "*",
     "zod": "^3.23.8"
   },
   "devDependencies": {

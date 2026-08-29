@@ -1,9 +1,39 @@
 import { createLogger } from '@ai-agent-platform/shared';
-import { CacheStore } from '@ai-agent-platform/core';
 import { createProvider } from './providers.js';
 import type { AIService } from './index.js';
 
 const logger = createLogger('CompareSummaryService');
+
+export interface SimpleCacheEntry<T> {
+  data: T;
+  timestamp: number;
+  ttl: number;
+}
+
+export class SimpleCache<T = any> {
+  private store = new Map<string, SimpleCacheEntry<T>>();
+  constructor(private options: { namespace?: string; defaultTTL?: number } = {}) {}
+
+  get<U = T>(key: string): U | null {
+    const fullKey = `${this.options.namespace || 'default'}:${key}`;
+    const entry = this.store.get(fullKey);
+    if (!entry) return null;
+    if (Date.now() - entry.timestamp > entry.ttl) {
+      this.store.delete(fullKey);
+      return null;
+    }
+    return entry.data as unknown as U;
+  }
+
+  set(key: string, data: T, ttl?: number): void {
+    const fullKey = `${this.options.namespace || 'default'}:${key}`;
+    this.store.set(fullKey, {
+      data,
+      timestamp: Date.now(),
+      ttl: ttl ?? this.options.defaultTTL ?? COMPARE_SUMMARY_TTL_MS,
+    });
+  }
+}
 
 /**
  * Fan-gain comparison summary cache keyed on an ORDER-INDEPENDENT pair of
@@ -60,13 +90,13 @@ export class CompareSummaryService {
   constructor(
     private primaryAI: AIService,
     private fallbackAI?: AIService | null,
-    private cache: CacheStore<{ summary: string }> = new CacheStore<{ summary: string }>({
+    private cache: SimpleCache<{ summary: string }> = new SimpleCache<{ summary: string }>({
       namespace: 'compare-summary',
       defaultTTL: COMPARE_SUMMARY_TTL_MS,
     }),
   ) {}
 
-  public getCache(): CacheStore<{ summary: string }> {
+  public getCache(): SimpleCache<{ summary: string }> {
     return this.cache;
   }
 

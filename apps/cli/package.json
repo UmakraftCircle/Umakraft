@@ -10,12 +10,12 @@
     "start": "node ./dist/index.js"
   },
   "dependencies": {
-    "@ai-agent-platform/shared": "workspace:*",
-    "@ai-agent-platform/ai": "workspace:*",
-    "@ai-agent-platform/core": "workspace:*",
-    "@ai-agent-platform/tools": "workspace:*",
-    "@ai-agent-platform/integrations": "workspace:*",
-    "@ai-agent-platform/fan-tracker": "workspace:*"
+    "@ai-agent-platform/shared": "*",
+    "@ai-agent-platform/ai": "*",
+    "@ai-agent-platform/core": "*",
+    "@ai-agent-platform/tools": "*",
+    "@ai-agent-platform/integrations": "*",
+    "@ai-agent-platform/fan-tracker": "*"
   },
   "devDependencies": {
     "typescript": "^5.4.5"
