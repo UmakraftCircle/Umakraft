@@ -18,6 +18,7 @@ export * from './automation.js';
 export * from './confirmation-store.js';
 export * from './notification-store.js';
 export * from './action-controller.js';
+export * from './ask-question-store.js';
 
 const logger = createLogger('Integrations');
 

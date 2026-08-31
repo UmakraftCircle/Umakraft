@@ -3,12 +3,17 @@ import { createLogger } from '@ai-agent-platform/shared';
 import { ToolRegistry } from '@ai-agent-platform/core';
 import { buildAIService } from './bootstrap.js';
 import { ToolCallingAgent } from '@ai-agent-platform/core';
-import { conversationMemoryStore, askResponseCache, moderationLogStore } from '@ai-agent-platform/integrations';
+import {
+  conversationMemoryStore,
+  askResponseCache,
+  moderationLogStore,
+  askQuestionStore,
+} from '@ai-agent-platform/integrations';
 import { askTools } from './ask-tools.js';
 import { allSkillTools } from '@ai-agent-platform/skills';
 import { failureMessage } from './errors.js';
 import { safetyGuard, isOffTopicAnswer } from './guard.js';
-import { replyWithEmbed } from './embed-reply.js';
+import { replyWithEmbed, buildAnswerEmbeds, AI_EMBED_COLOR } from './embed-reply.js';
 import { classifyTopic, toTaxonomyTerms, buildSearchEscalator } from './off-topic-detector/index.js';
 
 const logger = createLogger('AskHandler');
@@ -52,28 +57,154 @@ export function ensureAskToolsRegistered(): void {
   logger.info(`Registered ${askTools.length} /ask tools + ${allSkillTools.length} skill tools`);
 }
 
-/** Feature 1+2: handle the /ask slash command with a model-driven tool loop. */
-export async function handleAsk(interaction: ChatInputCommandInteraction): Promise<void> {
-  const question = interaction.options.getString('question', true).trim();
+/**
+ * Subcommand: `/ask question <question>`
+ * Stores the user's question, creates a unique Question ID, and does NOT generate an answer.
+ */
+export async function handleAskQuestion(interaction: ChatInputCommandInteraction): Promise<void> {
+  const rawQuestion = interaction.options.getString('question', false) ?? '';
+  const question = rawQuestion.trim();
   const userId = interaction.user.id;
   const channelId = interaction.channelId;
+  const guildId = interaction.guildId;
+
+  // Validate input
+  if (!question) {
+    await interaction.reply({
+      content: `<@${userId}> Please provide a valid, non-empty question.`,
+      ephemeral: true,
+    });
+    return;
+  }
 
   await interaction.deferReply();
 
   try {
-    ensureAskToolsRegistered();
-
-    const normalized = normalizeQuestion(question);
-
-    // ── Layer 1: safety guard (blocklist — improper content / injection) — hard reject. ──
+    // Layer 1 safety guard check before submitting
     if (safetyGuard(question)) {
-      await interaction.editReply(REJECT_MESSAGE);
+      await interaction.editReply({
+        content: `<@${userId}> ${REJECT_MESSAGE}`,
+      });
       return;
     }
 
-    // ── Layer 3 (replaced): tiered taxonomy relevance (OffTopicDetector). ──
-    // A single pass over the tiered taxonomy: strong match → IN_SCOPE (no search);
-    // clearly unrelated → OFF_TOPIC; ambiguous/weak → escalate to umamusume_search.
+    const record = await askQuestionStore.create({
+      question,
+      userId,
+      channelId,
+      guildId,
+    });
+
+    logger.info(`Question submitted by ${userId} with ID ${record.id}: "${question.slice(0, 60)}"`);
+
+    await interaction.editReply({
+      content: `<@${userId}> Your question has been submitted.\n**Question ID:** \`${record.id}\`\nUse \`/ask answer question_id:${record.id}\` to retrieve your answer.`,
+    });
+  } catch (err: any) {
+    logger.error(`/ask question error: ${err?.message ?? err}`);
+    await interaction.editReply({
+      content: `<@${userId}> Failed to submit your question: ${failureMessage(err)}`,
+    });
+  }
+}
+
+/**
+ * Subcommand: `/ask answer <question_id>`
+ * Generates the answer once, stores it permanently, tracks usage up to 3 times,
+ * and expires after 3 successful retrievals.
+ */
+export async function handleAskAnswer(interaction: ChatInputCommandInteraction): Promise<void> {
+  const rawQuestionId = interaction.options.getString('question_id', false) ?? '';
+  const questionId = rawQuestionId.trim();
+  const userId = interaction.user.id;
+  const channelId = interaction.channelId;
+
+  // Validate input
+  if (!questionId) {
+    await interaction.reply({
+      content: `<@${userId}> Please provide a valid Question ID.`,
+      ephemeral: true,
+    });
+    return;
+  }
+
+  await interaction.deferReply();
+
+  try {
+    const record = await askQuestionStore.get(questionId);
+
+    if (!record) {
+      await interaction.editReply({
+        content: `<@${userId}> Question not found with ID \`${questionId}\`. Please check the Question ID or submit a new question with \`/ask question\`.`,
+      });
+      return;
+    }
+
+    // 1. Expired check: after 3 uses, the answer is expired
+    if (record.usageCount >= record.maxUses || record.status === 'expired') {
+      await interaction.editReply({
+        content: `<@${userId}> This answer has expired and can no longer be used.`,
+      });
+      return;
+    }
+
+    // 2. In-flight check: answer is currently being generated
+    if (record.status === 'generating') {
+      await interaction.editReply({
+        content: `<@${userId}> Your answer is not yet ready.`,
+      });
+      return;
+    }
+
+    // 3. Answer already generated: retrieve existing answer and increment usage
+    if (record.status === 'completed' && record.answer) {
+      const usageResult = await askQuestionStore.incrementUsage(record.id);
+
+      if (usageResult.expired) {
+        await interaction.editReply({
+          content: `<@${userId}> This answer has expired and can no longer be used.`,
+        });
+        return;
+      }
+
+      logger.info(
+        `/ask answer retrieved existing answer for ${record.id} (Usage: ${usageResult.usageCount}/${record.maxUses})`
+      );
+
+      const embeds = buildAnswerEmbeds(record.answer, AI_EMBED_COLOR);
+      await interaction.editReply({
+        content: `<@${userId}> **Answer for Question ID \`${record.id}\`** (Use ${usageResult.usageCount}/${record.maxUses})`,
+        embeds: embeds.length > 0 ? embeds : undefined,
+      });
+      return;
+    }
+
+    // 4. Answer does not exist yet (pending/failed): generate for the first time
+    const acquired = await askQuestionStore.markGenerating(record.id);
+    if (!acquired) {
+      // Another worker or request claimed generation
+      await interaction.editReply({
+        content: `<@${userId}> Your answer is not yet ready.`,
+      });
+      return;
+    }
+
+    // Begin AI generation
+    ensureAskToolsRegistered();
+    const question = record.question;
+    const normalized = normalizeQuestion(question);
+
+    // Layer 1: safety guard
+    if (safetyGuard(question)) {
+      const rejectAnswer = REJECT_MESSAGE;
+      await askQuestionStore.saveGeneratedAnswer(record.id, rejectAnswer);
+      await interaction.editReply({
+        content: `<@${userId}> ${rejectAnswer}`,
+      });
+      return;
+    }
+
+    // Layer 3: taxonomy classification
     const taxonomy = toTaxonomyTerms();
     const search = buildSearchEscalator();
     const verdict = await classifyTopic(question, { taxonomy, search });
@@ -85,83 +216,137 @@ export async function handleAsk(interaction: ChatInputCommandInteraction): Promi
       } catch (logErr: any) {
         logger.warn(`moderation log write skipped: ${logErr?.message ?? logErr}`);
       }
-      await interaction.editReply(REDIRECT_MESSAGE);
+      await askQuestionStore.saveGeneratedAnswer(record.id, REDIRECT_MESSAGE);
+      await interaction.editReply({
+        content: `<@${userId}> ${REDIRECT_MESSAGE}`,
+      });
       return;
     }
 
-    // Cache read: reuse a previously cached web-research answer for the same question.
+    // Cache check: reuse web search cached answer if exists
+    let generatedAnswer: string | null = null;
     try {
       const cached = await askResponseCache.get(normalized);
       if (cached) {
-        logger.info(`/ask cache hit for "${question.slice(0, 60)}"`);
-        await conversationMemoryStore.append({ userId, channelId, role: 'user', content: question });
-        await conversationMemoryStore.append({ userId, channelId, role: 'assistant', content: cached });
-        await replyWithEmbed(interaction, cached);
-        return;
+        logger.info(`/ask cache hit for question ${record.id}`);
+        generatedAnswer = cached;
       }
     } catch (cacheErr: any) {
       logger.warn(`/ask cache read skipped: ${cacheErr?.message ?? cacheErr}`);
     }
 
-    // Feature 1: retrieve short-term conversation context.
-    const history = await conversationMemoryStore.recent(userId, channelId, 10);
-    const context = history.length
-      ? history.map((t) => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.content}`).join('\n')
-      : undefined;
+    if (!generatedAnswer) {
+      // Retrieve short-term conversation context
+      const history = await conversationMemoryStore.recent(userId, channelId, 10);
+      const context = history.length
+        ? history.map((t) => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.content}`).join('\n')
+        : undefined;
 
-    // Build an AI service from env (honours AI_PROVIDER=local|groq|openai|anthropic).
-    const aiService = buildAIService();
+      const aiService = buildAIService();
+      const agent = new ToolCallingAgent(aiService, ToolRegistry.getInstance());
+      const trace = await agent.runWithTrace(userId, question, context, {
+        maxToolCalls: 4,
+        toolTimeoutMs: 8_000,
+        generateTimeoutMs: 20_000,
+        overallTimeoutMs: 90_000,
+        domainGuard: true,
+        toolSlugs: ASK_TOOL_SLUGS,
+      });
 
-    const agent = new ToolCallingAgent(aiService, ToolRegistry.getInstance());
-    const trace = await agent.runWithTrace(userId, question, context, {
-      maxToolCalls: 4,
-      toolTimeoutMs: 8_000,
-      generateTimeoutMs: 20_000,
-      overallTimeoutMs: 90_000,
-      domainGuard: true,
-      // Scope the toolset to the small /ask-relevant subset.
-      toolSlugs: ASK_TOOL_SLUGS,
+      generatedAnswer = trace.answer;
+
+      // Model off-topic check
+      if (isOffTopicAnswer(generatedAnswer)) {
+        logger.info(`/ask off-topic (model marker): "${question.slice(0, 60)}"`);
+        try {
+          await moderationLogStore.append(userId, channelId, question);
+        } catch (logErr: any) {
+          logger.warn(`moderation log write skipped: ${logErr?.message ?? logErr}`);
+        }
+        generatedAnswer = REDIRECT_MESSAGE;
+      }
+
+      // Persist to web search cache if web search was used
+      if (trace.usedWebSearch && generatedAnswer !== REDIRECT_MESSAGE) {
+        try {
+          await askResponseCache.set(normalized, generatedAnswer);
+          logger.info(`/ask cached web-research answer for "${question.slice(0, 60)}"`);
+        } catch (cacheErr: any) {
+          logger.warn(`/ask cache write skipped: ${cacheErr?.message ?? cacheErr}`);
+        }
+      }
+    }
+
+    // Save generated answer permanently (sets usageCount = 1)
+    await askQuestionStore.saveGeneratedAnswer(record.id, generatedAnswer);
+
+    // Save exchange to conversation memory
+    try {
+      await conversationMemoryStore.append({ userId, channelId, role: 'user', content: question });
+      await conversationMemoryStore.append({ userId, channelId, role: 'assistant', content: generatedAnswer });
+    } catch (memErr: any) {
+      logger.warn(`Memory append skipped: ${memErr?.message ?? memErr}`);
+    }
+
+    const embeds = buildAnswerEmbeds(generatedAnswer, AI_EMBED_COLOR);
+    await interaction.editReply({
+      content: `<@${userId}> **Answer for Question ID \`${record.id}\`** (Use 1/3)`,
+      embeds: embeds.length > 0 ? embeds : undefined,
     });
-    const answer = trace.answer;
-
-    // ── Layer 2: model topic gate — [[OFFTOPIC]] marker → redirect + log. ──
-    if (isOffTopicAnswer(answer)) {
-      logger.info(`/ask off-topic (model marker): "${question.slice(0, 60)}"`);
-      try {
-        await moderationLogStore.append(userId, channelId, question);
-      } catch (logErr: any) {
-        logger.warn(`moderation log write skipped: ${logErr?.message ?? logErr}`);
-      }
-      await interaction.editReply(REDIRECT_MESSAGE);
-      return;
-    }
-
-    // Persist to cache only if the answer required a web search.
-    if (trace.usedWebSearch) {
-      try {
-        await askResponseCache.set(normalized, answer);
-        logger.info(`/ask cached web-research answer for "${question.slice(0, 60)}"`);
-      } catch (cacheErr: any) {
-        logger.warn(`/ask cache write skipped: ${cacheErr?.message ?? cacheErr}`);
-      }
-    }
-
-    // Feature 1: persist the exchange for future context.
-    await conversationMemoryStore.append({ userId, channelId, role: 'user', content: question });
-    await conversationMemoryStore.append({ userId, channelId, role: 'assistant', content: answer });
-
-    await replyWithEmbed(interaction, answer);
   } catch (err: any) {
-    logger.error(`/ask error: ${err?.message ?? err}`);
-    await interaction.editReply(failureMessage(err));
+    logger.error(`/ask answer generation error for ${questionId}: ${err?.message ?? err}`);
+    await askQuestionStore.resetPending(questionId);
+    await interaction.editReply({
+      content: `<@${userId}> An error occurred while generating your answer: ${failureMessage(err)}`,
+    });
+  }
+}
+
+/** Feature 1+2: handle the /ask slash command and route to appropriate subcommand. */
+export async function handleAsk(interaction: ChatInputCommandInteraction): Promise<void> {
+  const subcommand = interaction.options.getSubcommand(false);
+
+  if (subcommand === 'question') {
+    await handleAskQuestion(interaction);
+  } else if (subcommand === 'answer') {
+    await handleAskAnswer(interaction);
+  } else {
+    // Fallback if subcommand was omitted: check for direct options
+    const directQuestion = interaction.options.getString('question', false);
+    const directQuestionId = interaction.options.getString('question_id', false);
+
+    if (directQuestion) {
+      await handleAskQuestion(interaction);
+    } else if (directQuestionId) {
+      await handleAskAnswer(interaction);
+    } else {
+      const userId = interaction.user.id;
+      await interaction.reply({
+        content: `<@${userId}> Please specify a valid subcommand: \`/ask question <question>\` or \`/ask answer <question_id>\`.`,
+        ephemeral: true,
+      });
+    }
   }
 }
 
 export const askCommand = new SlashCommandBuilder()
   .setName('ask')
-  .setDescription('Ask the AI agent a question (uses tools + context)')
-  .addStringOption((opt) =>
-    opt.setName('question').setDescription('Your question').setRequired(true)
+  .setDescription('Ask the AI agent a question (submit question or retrieve answer)')
+  .addSubcommand((sub) =>
+    sub
+      .setName('question')
+      .setDescription('Submit a question to the AI agent')
+      .addStringOption((opt) =>
+        opt.setName('question').setDescription('Your question').setRequired(true)
+      )
+  )
+  .addSubcommand((sub) =>
+    sub
+      .setName('answer')
+      .setDescription('Retrieve or generate the answer for a question ID')
+      .addStringOption((opt) =>
+        opt.setName('question_id').setDescription('The unique Question ID').setRequired(true)
+      )
   )
   .setDMPermission(false)
   .toJSON();
