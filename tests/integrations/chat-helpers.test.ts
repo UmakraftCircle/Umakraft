@@ -123,3 +123,52 @@ describe('buildContextTurns', () => {
     assert.equal(lines.length, 20);
   });
 });
+
+describe('Chat Stores in-memory fallback', () => {
+  it('chatSessionStore supports open, get, and bump without Turso', async () => {
+    const mod = await loadHelpers();
+    const session = await mod.chatSessionStore.openSession('test-user-1', 'chan-1');
+    assert.equal(session.userId, 'test-user-1');
+    assert.equal(session.turnCount, 1);
+
+    const fetched = await mod.chatSessionStore.getSession('test-user-1');
+    assert.ok(fetched);
+    assert.equal(fetched.userId, 'test-user-1');
+
+    await mod.chatSessionStore.bumpTurn('test-user-1');
+    const updated = await mod.chatSessionStore.getSession('test-user-1');
+    assert.equal(updated?.turnCount, 2);
+  });
+
+  it('chatMemoryStore supports durable favorites and observations without Turso', async () => {
+    const mod = await loadHelpers();
+    await mod.chatMemoryStore.setFavorite('test-user-2', 'favorite_umamusume', ['Tokai Teio']);
+    const mem = await mod.chatMemoryStore.getMemory('test-user-2');
+    assert.deepEqual(mem?.favoriteUmamusume, ['Tokai Teio']);
+
+    await mod.chatMemoryStore.addObservation('test-user-2', 'Likes speed training', 0.8);
+    const obs = await mod.chatMemoryStore.getObservations('test-user-2');
+    assert.ok(obs.length >= 1);
+    assert.equal(obs[0].content, 'Likes speed training');
+  });
+
+  it('conversationMemoryStore records and retrieves history without Turso', async () => {
+    const mod = await loadHelpers();
+    await mod.conversationMemoryStore.append({
+      userId: 'test-user-3',
+      channelId: 'chan-3',
+      role: 'user',
+      content: 'hello',
+    });
+    await mod.conversationMemoryStore.append({
+      userId: 'test-user-3',
+      channelId: 'chan-3',
+      role: 'assistant',
+      content: 'hi Trainer',
+    });
+    const turns = await mod.conversationMemoryStore.recent('test-user-3', 'chan-3');
+    assert.equal(turns.length, 2);
+    assert.equal(turns[0].content, 'hello');
+    assert.equal(turns[1].content, 'hi Trainer');
+  });
+});

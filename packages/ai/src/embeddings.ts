@@ -146,6 +146,8 @@ export class MockEmbeddingGenerator extends EmbeddingGenerator {
 export class LocalEmbeddingGenerator extends EmbeddingGenerator {
   private pipelinePromise: Promise<any> | null = null;
   private readonly modelName: string;
+  private fallbackEmbedder = new MockEmbeddingGenerator(384);
+  private useFallback = false;
 
   constructor(modelName: string = 'Xenova/all-MiniLM-L6-v2') {
     super();
@@ -154,19 +156,21 @@ export class LocalEmbeddingGenerator extends EmbeddingGenerator {
 
   /** Lazily load the Transformers.js pipeline once (shared across calls). */
   private async pipeline(): Promise<any> {
+    if (this.useFallback) return null;
     if (!this.pipelinePromise) {
       this.pipelinePromise = (async () => {
         let transformers: any;
         try {
           transformers = await import('@xenova/transformers');
+          logger.info(`Loading local embedding model ${this.modelName} (first use)...`);
+          return await transformers.pipeline('feature-extraction', this.modelName);
         } catch (err: any) {
-          throw new Error(
-            `@xenova/transformers is not installed or failed to load: ${err?.message ?? err}. ` +
-            'Add it to packages/ai dependencies to enable the local /chat embedding model.'
+          logger.warn(
+            `@xenova/transformers is not available (${err?.message ?? err}), using deterministic fallback embedder.`
           );
+          this.useFallback = true;
+          return null;
         }
-        logger.info(`Loading local embedding model ${this.modelName} (first use)...`);
-        return transformers.pipeline('feature-extraction', this.modelName);
       })();
       // If loading failed, allow a retry on a subsequent call instead of caching the rejection forever.
       this.pipelinePromise.catch(() => {
@@ -183,32 +187,41 @@ export class LocalEmbeddingGenerator extends EmbeddingGenerator {
 
   public override async embedBatch(texts: string[]): Promise<EmbeddingResult[]> {
     if (texts.length === 0) return [];
-    const extractor = await this.pipeline();
+    try {
+      const extractor = await this.pipeline();
+      if (!extractor) {
+        return this.fallbackEmbedder.embedBatch(texts);
+      }
 
-    // Transformers.js `feature-extraction` returns a tensor of shape
-    // [batch, tokens, dim]. For sentence embeddings we mean-pool over the token
-    // dimension and L2-normalize. We run per-item to stay robust to tokenizer
-    // quirks and to allow simple token counting.
-    const out: EmbeddingResult[] = [];
-    for (const text of texts) {
-      const output = await extractor(text, { pooling: 'mean', normalize: true });
-      // `output` is a Tensor; `.data` holds the raw Float32Array values.
-      const data: number[] = Array.from(
-        output.data && typeof output.data[Symbol.iterator] === 'function'
-          ? (output.data as Float32Array)
-          : output.tolist
-            ? output.tolist()
-            : []
-      );
-      // If the model already applied mean+normalize, data is the 384-dim vector.
-      const embedding = data.length ? data : Array.from(output.data as Float32Array);
-      out.push({
-        embedding,
-        model: this.modelName,
-        tokens: text.split(/\s+/).filter(Boolean).length,
-      });
+      // Transformers.js `feature-extraction` returns a tensor of shape
+      // [batch, tokens, dim]. For sentence embeddings we mean-pool over the token
+      // dimension and L2-normalize. We run per-item to stay robust to tokenizer
+      // quirks and to allow simple token counting.
+      const out: EmbeddingResult[] = [];
+      for (const text of texts) {
+        const output = await extractor(text, { pooling: 'mean', normalize: true });
+        // `output` is a Tensor; `.data` holds the raw Float32Array values.
+        const data: number[] = Array.from(
+          output.data && typeof output.data[Symbol.iterator] === 'function'
+            ? (output.data as Float32Array)
+            : output.tolist
+              ? output.tolist()
+              : []
+        );
+        // If the model already applied mean+normalize, data is the 384-dim vector.
+        const embedding = data.length ? data : Array.from(output.data as Float32Array);
+        out.push({
+          embedding,
+          model: this.modelName,
+          tokens: text.split(/\s+/).filter(Boolean).length,
+        });
+      }
+      return out;
+    } catch (err: any) {
+      logger.warn(`Local embedding extraction failed (${err?.message ?? err}), falling back:`);
+      this.useFallback = true;
+      return this.fallbackEmbedder.embedBatch(texts);
     }
-    return out;
   }
 }
 

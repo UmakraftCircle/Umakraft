@@ -42,7 +42,7 @@ const logger = createLogger('ChatHandler');
  */
 
 const REDIRECT_REPLY_BEFORE_SPEAK =
-  'Trainer, we haven\'t started chatting yet — use `/chat Speak` to begin! 🐎';
+  'Trainer, we haven\'t started chatting yet — use `/chat speak` to begin! 🐎';
 
 const MAX_CONTEXT_TURNS = 20;
 
@@ -83,12 +83,19 @@ function getChatCache(): ChatCacheStore {
 }
 
 export async function handleChat(interaction: ChatInputCommandInteraction): Promise<void> {
-  const subcommand = interaction.options.getSubcommand(true); // 'speak' | 'reply'
-  const message = interaction.options.getString('message', true).trim();
+  const rawSubcommand = interaction.options.getSubcommand(false);
+  const subcommand = (rawSubcommand || 'speak').toLowerCase();
+  const rawMessage = interaction.options.getString('message', false);
+  const message = (rawMessage || '').trim();
   const userId = interaction.user.id;
   const channelId = interaction.channelId;
 
   await interaction.deferReply();
+
+  if (!message) {
+    await interaction.editReply('Trainer, please provide a message to chat! 🐎');
+    return;
+  }
 
   try {
     // ══ Safety guard (deterministic blocklist — no domain restriction) ══

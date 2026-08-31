@@ -7,6 +7,10 @@ const logger = createLogger('Turso');
 
 let client: Client | null = null;
 
+export function isTursoConfigured(): boolean {
+  return Boolean(process.env['TURSO_URL'] && process.env['TURSO_AUTH_TOKEN']);
+}
+
 /**
  * Returns the shared Turso client instance (lazily constructed singleton).
  */
