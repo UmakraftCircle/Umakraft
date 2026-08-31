@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc -b --force",
     "start": "node server.ts",
-    "dev": "node server.ts",
+    "dev": "tsc -b && node server.ts",
     "test": "node --import tsx --test tests/**/*.test.ts",
     "test:core": "node --import tsx --test tests/core/*.test.ts",
     "test:watch": "node --import tsx --test --watch tests/**/*.test.ts",

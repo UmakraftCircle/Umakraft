@@ -128,8 +128,10 @@ export async function startGatewayBot() {
   }
 
   if (groqKey) {
-    const primaryAI = createProvider('groq', groqKey, 'openai/gpt-oss-120b');
-    const fallbackAI = createProvider('groq', groqKey, 'openai/gpt-oss-20b');
+    const primaryModel = process.env['AI_MODEL'] || process.env['GROQ_MODEL'] || 'llama-3.1-8b-instant';
+    const fallbackModel = process.env['AI_FALLBACK_MODEL'] || 'llama-3.3-70b-versatile';
+    const primaryAI = createProvider('groq', groqKey, primaryModel);
+    const fallbackAI = createProvider('groq', groqKey, fallbackModel);
     greetingService = new GreetingService(primaryAI, promptLibrary, fallbackAI, brainAI);
     dailyService = new DailyMessageService(primaryAI, promptLibrary, fallbackAI, brainAI);
     milestoneService = new MilestoneMessageService(primaryAI, promptLibrary, fallbackAI, brainAI);

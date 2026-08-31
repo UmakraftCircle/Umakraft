@@ -66,25 +66,23 @@ function isModelNotFoundError(err: any): boolean {
 }
 
 const GROQ_MODEL_CANDIDATES: string[] = [
-  'openai/gpt-oss-20b',
-  'openai/gpt-oss-120b',
   'llama-3.1-8b-instant',
   'llama-3.3-70b-versatile',
-  'llama3-70b-8192',
+  'openai/gpt-oss-120b',
+  'openai/gpt-oss-20b',
   'mixtral-8x7b-32768',
 ];
 
 /**
  * Ordered fallback list for Groq model auto-selection. The default (first entry)
  * is the primary; on persistent 429 rate limits we walk this chain to a
- * less-contended model. Note: the `qwen/qwen3.6-*` models are intentionally NOT
- * in this list — they are heavily rate-limited on the free tier. Prefer these
- * OpenAI-compatible / Llama endpoints that Groq serves at higher RPM/TPM.
+ * less-contended model.
  */
-const GROQ_MODEL_FALLBACKS: string[] = [
-  'openai/gpt-oss-20b',
+export const GROQ_MODEL_FALLBACKS: string[] = [
   'llama-3.1-8b-instant',
   'llama-3.3-70b-versatile',
+  'openai/gpt-oss-120b',
+  'openai/gpt-oss-20b',
   'mixtral-8x7b-32768',
 ];
 
@@ -94,14 +92,14 @@ const GROQ_MODEL_FALLBACKS: string[] = [
  * non-existent `qwen/qwen3.6-27b`), we IGNORE it and fall back to the safe
  * default chain instead of letting an invalid id break every request.
  */
-const GROQ_KNOWN_MODELS: ReadonlySet<string> = new Set(GROQ_MODEL_FALLBACKS);
+export const GROQ_KNOWN_MODELS: ReadonlySet<string> = new Set(GROQ_MODEL_FALLBACKS);
 
 /**
  * Returns the model id if it looks like a valid, known Groq model; otherwise
  * returns undefined so the caller falls back to the safe default. Logs a warning
  * when an invalid value is dropped so the operator can fix their env var.
  */
-function sanitizeGroqModel(raw: string | undefined): string | undefined {
+export function sanitizeGroqModel(raw: string | undefined): string | undefined {
   if (!raw) return undefined;
   const value = raw.trim();
   if (GROQ_KNOWN_MODELS.has(value)) return value;

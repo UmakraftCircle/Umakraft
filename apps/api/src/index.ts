@@ -182,7 +182,7 @@ function parseUrl(req: http.IncomingMessage): { path: string; params: Record<str
 // ── Auth middleware ──
 const auth = new AuthMiddleware({
   requireAuth: !!(process.env['API_KEY'] || process.env['API_KEYS']), // only require auth if keys are configured
-  publicPaths: ['/health'],
+  publicPaths: ['/', '/health', '/health/status', '/health/stream', '/tools', '/models'],
 });
 
 logger.info(`Auth: ${auth.getKeyCount()} API key(s) configured. Auth required: ${!!(process.env['API_KEY'] || process.env['API_KEYS'])}`);
@@ -205,8 +205,8 @@ const server = http.createServer(async (req, res) => {
   if (!authCtx) return; // response already sent by middleware
 
   try {
-    // ── GET / — Interactive Web Dashboard ──
-    if (path === '/' && req.method === 'GET') {
+    // ── GET/HEAD / — Interactive Web Dashboard ──
+    if (path === '/' && (req.method === 'GET' || req.method === 'HEAD')) {
       const schemas = toolRegistry.getDeclarativeSchemas();
       const html = `<!DOCTYPE html>
 <html lang="en">

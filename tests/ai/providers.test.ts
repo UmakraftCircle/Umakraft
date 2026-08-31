@@ -98,4 +98,9 @@ describe('OpenAIProvider', () => {
       /Model returned no text content/,
     );
   });
+
+  it('createProvider for groq defaults to llama-3.1-8b-instant', () => {
+    const provider = createProvider('groq', 'gsk_dummy_key');
+    assert.strictEqual(provider.getCurrentModel(), 'llama-3.1-8b-instant');
+  });
 });
