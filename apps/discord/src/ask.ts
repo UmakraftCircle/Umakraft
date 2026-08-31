@@ -245,7 +245,7 @@ export async function handleAskAnswer(interaction: ChatInputCommandInteraction):
       const aiService = buildAIService();
       const agent = new ToolCallingAgent(aiService, ToolRegistry.getInstance());
       const trace = await agent.runWithTrace(userId, question, context, {
-        maxToolCalls: 4,
+        maxToolCalls: 10,
         toolTimeoutMs: 8_000,
         generateTimeoutMs: 20_000,
         overallTimeoutMs: 90_000,

@@ -117,7 +117,7 @@ export function fingerprintCall(call: ToolCall): string {
 }
 
 const DEFAULT_CONFIG: ToolCallingAgentConfig = {
-  maxToolCalls: 4,
+  maxToolCalls: 10,
   toolBudgets: {},
   defaultBudget: 1,
   stopShortBy: 1,

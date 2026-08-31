@@ -20,7 +20,7 @@ export interface RunLimits {
 
 export const DEFAULT_RUN_LIMITS: RunLimits = {
   maxPlanSteps: 8,
-  maxToolCalls: 5,
+  maxToolCalls: 10,
   maxWebSearches: 3,
   maxRetriesPerStep: 3,
   perToolTimeoutMs: 10_000,

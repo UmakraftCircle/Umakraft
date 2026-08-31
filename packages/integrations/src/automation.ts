@@ -99,7 +99,7 @@ export const DEFAULT_RATE_LIMITS: RateLimitConfig = {
   maxScheduledTasksGlobal: 500,
   maxConcurrentTasks: 5,
   maxWebSearchesPerTask: 3,
-  maxToolCallsPerTask: 5,
+  maxToolCallsPerTask: 10,
   maxExecutionMs: 60_000,
   notificationCooldownMs: 5 * 60 * 1000,
   perUserWindowMs: 60_000,

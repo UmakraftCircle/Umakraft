@@ -171,7 +171,7 @@ export async function handleChat(interaction: ChatInputCommandInteraction): Prom
       registry.register(searchWebTool);
       const agent = new ToolCallingAgent(aiService, registry);
       reply = await agent.run(userId, message, context, {
-        maxToolCalls: 4,
+        maxToolCalls: 10,
         maxWebSearches: 2,
         toolTimeoutMs: 8_000,
         generateTimeoutMs: 20_000,

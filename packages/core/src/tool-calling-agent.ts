@@ -62,7 +62,7 @@ export interface ToolCallingAgentOptions {
 }
 
 export const DEFAULT_AGENT_OPTIONS = {
-  maxToolCalls: 5,
+  maxToolCalls: 10,
   maxWebSearches: 3,
   toolTimeoutMs: 10_000,
   generateTimeoutMs: 20_000,

@@ -61,7 +61,7 @@ export async function handleAgent(interaction: ChatInputCommandInteraction): Pro
       // domainGuard is OFF — this is general conversation, not Uma-only.
       const agent = new ToolCallingAgent(aiService, registry);
       const answer = await agent.run(userId, goal, undefined, {
-        maxToolCalls: 4,
+        maxToolCalls: 10,
         toolTimeoutMs: 8_000,
         generateTimeoutMs: 20_000,
         overallTimeoutMs: 90_000,
