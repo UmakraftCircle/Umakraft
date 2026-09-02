@@ -75,4 +75,162 @@ export const compareCommand = new SlashCommandBuilder()
   .setDMPermission(false)
   .toJSON();
 
-export const ALL_COMMANDS = [syncCommand, fanCommand, linkCommand, compareCommand, askCommand, chatCommand, agentCommand, scheduleCommand, myTasksCommand, unscheduleCommand];
+export const searchCommand = new SlashCommandBuilder()
+  .setName('search')
+  .setDescription('Search Umamusume inheritance, parents, and factors via Pure-DB')
+  .addSubcommand((sub) =>
+    sub
+      .setName('parent')
+      .setDescription('Search for Umamusume parents and inheritance factors on uma.pure-db.com')
+      .addStringOption((opt) =>
+        opt
+          .setName('character')
+          .setDescription('Parent Uma Musume character (autocomplete)')
+          .setRequired(false)
+          .setAutocomplete(true)
+      )
+      .addStringOption((opt) =>
+        opt
+          .setName('blue')
+          .setDescription('Primary blue factor stat')
+          .setRequired(false)
+          .addChoices(
+            { name: '⚡ Speed', value: 'speed' },
+            { name: '❤️ Stamina', value: 'stamina' },
+            { name: '💪 Power', value: 'power' },
+            { name: '🔥 Guts', value: 'guts' },
+            { name: '🧠 Wisdom', value: 'wisdom' },
+            { name: '✨ Any Blue Factor', value: 'any' }
+          )
+      )
+      .addIntegerOption((opt) =>
+        opt
+          .setName('blue_stars')
+          .setDescription('Minimum blue factor stars/count (default 3)')
+          .setRequired(false)
+          .addChoices(
+            { name: '3★ (or 3+ count)', value: 3 },
+            { name: '2★', value: 2 },
+            { name: '1★', value: 1 }
+          )
+      )
+      .addStringOption((opt) =>
+        opt
+          .setName('red')
+          .setDescription('Red factor aptitude (Turf, Dirt, Sprint, Mile, Middle, Long, Front, Pace, Late, End)')
+          .setRequired(false)
+          .addChoices(
+            { name: '🌱 Turf Track', value: 'turf' },
+            { name: '🏜️ Dirt Track', value: 'dirt' },
+            { name: '⚡ Sprint (Short)', value: 'short' },
+            { name: '🏃 Mile', value: 'mile' },
+            { name: '🏆 Middle', value: 'middle' },
+            { name: '🏔️ Long', value: 'long' },
+            { name: '🥇 Front (Runner)', value: 'runner' },
+            { name: '🥈 Pace (Leading)', value: 'leading' },
+            { name: '🥉 Late (Betweener)', value: 'betweener' },
+            { name: '⚡ End (Chaser)', value: 'chaser' }
+          )
+      )
+      .addIntegerOption((opt) =>
+        opt
+          .setName('red_stars')
+          .setDescription('Minimum red factor stars/count (default 3)')
+          .setRequired(false)
+          .addChoices(
+            { name: '3★', value: 3 },
+            { name: '2★', value: 2 },
+            { name: '1★', value: 1 }
+          )
+      )
+      .addStringOption((opt) =>
+        opt
+          .setName('green')
+          .setDescription('Unique skill / Green factor (autocomplete)')
+          .setRequired(false)
+          .setAutocomplete(true)
+      )
+      .addStringOption((opt) =>
+        opt
+          .setName('scenario')
+          .setDescription('Scenario factor (URA, Unity Cup, TS Climax, Grand Concert)')
+          .setRequired(false)
+          .addChoices(
+            { name: '🏆 URA Finale', value: 'ura' },
+            { name: '⚡ Unity Cup (Aoharu)', value: 'unity' },
+            { name: '👑 TS Climax Scenario', value: 'climax' },
+            { name: '🎵 Our Grand Concert', value: 'grand_concert' }
+          )
+      )
+      .addStringOption((opt) =>
+        opt
+          .setName('race')
+          .setDescription('G1 race factor (e.g. Japanese Derby, Arima Kinen, Tenno Sho)')
+          .setRequired(false)
+          .setAutocomplete(true)
+      )
+      .addStringOption((opt) =>
+        opt
+          .setName('skill')
+          .setDescription('White / common skill factor (autocomplete)')
+          .setRequired(false)
+          .setAutocomplete(true)
+      )
+      .addStringOption((opt) =>
+        opt
+          .setName('support_card')
+          .setDescription('Equipped support card (autocomplete)')
+          .setRequired(false)
+          .setAutocomplete(true)
+      )
+      .addIntegerOption((opt) =>
+        opt
+          .setName('support_limit_break')
+          .setDescription('Support card limit break level (default 4★ MLB)')
+          .setRequired(false)
+          .addChoices(
+            { name: 'MLB (4★ Limit Break)', value: 4 },
+            { name: '3★ Limit Break', value: 3 },
+            { name: '2★ Limit Break', value: 2 },
+            { name: '1★ Limit Break', value: 1 },
+            { name: '0★ (Base SSR)', value: 0 }
+          )
+      )
+      .addStringOption((opt) =>
+        opt
+          .setName('server')
+          .setDescription('Game server code (default: Global)')
+          .setRequired(false)
+          .addChoices(
+            { name: '🌐 Global', value: 'global' },
+            { name: '🇯🇵 Japan', value: 'japan' }
+          )
+      )
+      .addStringOption((opt) =>
+        opt
+          .setName('target')
+          .setDescription('Factor target scope (All, Representative Parent 1, or Grandparents)')
+          .setRequired(false)
+          .addChoices(
+            { name: '🌐 All (Representative + Inheritance)', value: 'all' },
+            { name: '👤 Representative Only (Parent 1)', value: 'representative' },
+            { name: '🧬 Inheritance Only (Grandparents)', value: 'inheritance' }
+          )
+      )
+  )
+  .setDMPermission(false)
+  .toJSON();
+
+export const ALL_COMMANDS = [
+  syncCommand,
+  fanCommand,
+  linkCommand,
+  compareCommand,
+  searchCommand,
+  askCommand,
+  chatCommand,
+  agentCommand,
+  scheduleCommand,
+  myTasksCommand,
+  unscheduleCommand,
+];

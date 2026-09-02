@@ -3,6 +3,9 @@ import {
   AutocompleteInteraction,
   EmbedBuilder,
   AttachmentBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   PermissionFlagsBits,
 } from 'discord.js';
 import { fanTrackerAPI, TrainerStats } from '@ai-agent-platform/fan-tracker';
@@ -10,7 +13,26 @@ import { createLogger } from '@ai-agent-platform/shared';
 import { trainerLinkStore, type TrainerLink } from '@ai-agent-platform/integrations';
 import { renderGainReport, renderLeaderboardReport, renderCompareReport } from '@ai-agent-platform/image-report';
 import { CreateCompareSummaryService } from '@ai-agent-platform/ai';
-import { handleAsk } from './ask.js';
+import {
+  buildPureDbSearchUrl,
+  BLUE_FACTORS,
+  RED_FACTORS,
+  SCENARIO_FACTORS,
+  PURE_DB_CARDS,
+  PURE_DB_GREEN_FACTORS,
+  PURE_DB_RACE_FACTORS,
+  PURE_DB_COMMON_SKILL_FACTORS,
+  PURE_DB_SUPPORT_CARDS,
+  searchCharacters,
+  searchGreenFactors,
+  searchRaceFactors,
+  searchCommonSkills,
+  searchSupportCards,
+  type PureDbSearchCriteria,
+  type PureDbFactorQuery,
+} from '@ai-agent-platform/umamusume';
+import { handleAsk, handleAskQuestionAutocomplete } from './ask.js';
+export { handleAskQuestionAutocomplete };
 import { handleAgent } from './agent.js';
 import { handleChat } from './chat.js';
 import { handleScheduleCreate, handleMyTasks, handleUnschedule } from './autonomous.js';
@@ -444,6 +466,272 @@ export async function handleCompareAutocomplete(interaction: AutocompleteInterac
   }
 }
 
+export async function handleSearchAutocomplete(interaction: AutocompleteInteraction) {
+  const focused = interaction.options.getFocused(true);
+  const query = focused.value.toLowerCase().trim();
+
+  try {
+    if (focused.name === 'character') {
+      const results = searchCharacters(query, 25);
+      await interaction.respond(results.map((r) => ({ name: r.name.slice(0, 100), value: r.value })));
+    } else if (focused.name === 'green') {
+      const results = searchGreenFactors(query, 25);
+      await interaction.respond(results.map((r) => ({ name: r.name.slice(0, 100), value: r.value })));
+    } else if (focused.name === 'race') {
+      const results = searchRaceFactors(query, 25);
+      await interaction.respond(results.map((r) => ({ name: r.name.slice(0, 100), value: r.value })));
+    } else if (focused.name === 'skill') {
+      const results = searchCommonSkills(query, 25);
+      await interaction.respond(results.map((r) => ({ name: r.name.slice(0, 100), value: r.value })));
+    } else if (focused.name === 'support_card') {
+      const results = searchSupportCards(query, 25);
+      await interaction.respond(results.map((r) => ({ name: r.name.slice(0, 100), value: r.value })));
+    } else {
+      await interaction.respond([]);
+    }
+  } catch {
+    await interaction.respond([]);
+  }
+}
+
+export async function handleSearch(interaction: ChatInputCommandInteraction) {
+  const characterVal = interaction.options.getString('character');
+  const blueVal = interaction.options.getString('blue');
+  const blueStars = interaction.options.getInteger('blue_stars') ?? 3;
+  const redVal = interaction.options.getString('red');
+  const redStars = interaction.options.getInteger('red_stars') ?? 3;
+  const greenVal = interaction.options.getString('green');
+  const scenarioVal = interaction.options.getString('scenario');
+  const raceVal = interaction.options.getString('race');
+  const skillVal = interaction.options.getString('skill');
+  const supportVal = interaction.options.getString('support_card');
+  const supportLimitBreak = interaction.options.getInteger('support_limit_break') ?? 4;
+  const server = (interaction.options.getString('server') as 'global' | 'japan') ?? 'global';
+  const targetScope = interaction.options.getString('target') ?? 'all';
+
+  // Determine searchType: 0 = All, 1 = Representative (Parent 1), 2 = Inheritance (Grandparents)
+  let searchType = 0;
+  let targetLabel = 'All (Representative + Grandparents)';
+  if (targetScope === 'representative') {
+    searchType = 1;
+    targetLabel = 'Representative Only (Parent 1)';
+  } else if (targetScope === 'inheritance') {
+    searchType = 2;
+    targetLabel = 'Inheritance Only (Grandparents)';
+  }
+
+  const filterSummaries: { name: string; value: string; inline?: boolean }[] = [];
+
+  // Character lookup
+  let partnerCardIds: number[] = [];
+  if (characterVal) {
+    const charIdNum = Number(characterVal);
+    const card = !isNaN(charIdNum)
+      ? PURE_DB_CARDS.find((c) => c.id === charIdNum)
+      : PURE_DB_CARDS.find((c) => c.name.toLowerCase().includes(characterVal.toLowerCase()));
+    if (card) {
+      partnerCardIds = [card.id];
+      filterSummaries.push({
+        name: '🐎 Target Uma',
+        value: `**${card.name}**`,
+        inline: true,
+      });
+    } else {
+      filterSummaries.push({
+        name: '🐎 Target Uma',
+        value: characterVal,
+        inline: true,
+      });
+    }
+  }
+
+  // Blue Factor
+  const blueFactors: PureDbFactorQuery[] = [];
+  if (blueVal && BLUE_FACTORS[blueVal]) {
+    const def = BLUE_FACTORS[blueVal];
+    blueFactors.push({
+      groupId: def.groupId,
+      count: blueStars,
+      searchType,
+    });
+    filterSummaries.push({
+      name: `${def.emoji} Blue Factor`,
+      value: `**${def.name}** (${blueStars}★+)`,
+      inline: true,
+    });
+  }
+
+  // Red Factor
+  const redFactors: PureDbFactorQuery[] = [];
+  if (redVal && RED_FACTORS[redVal]) {
+    const def = RED_FACTORS[redVal];
+    redFactors.push({
+      groupId: def.groupId,
+      count: redStars,
+      searchType,
+    });
+    filterSummaries.push({
+      name: `${def.emoji} Red Factor`,
+      value: `**${def.name}** (${redStars}★+)`,
+      inline: true,
+    });
+  }
+
+  // Green Factor (Unique Skill)
+  const greenFactors: PureDbFactorQuery[] = [];
+  if (greenVal) {
+    const valNum = Number(greenVal);
+    const item = !isNaN(valNum)
+      ? PURE_DB_GREEN_FACTORS.find((f) => f.value === valNum)
+      : PURE_DB_GREEN_FACTORS.find((f) => f.label.toLowerCase().includes(greenVal.toLowerCase()));
+    const id = item?.value ?? valNum;
+    if (id) {
+      greenFactors.push({
+        groupId: id,
+        count: 1,
+        searchType,
+      });
+      filterSummaries.push({
+        name: '🟢 Unique Skill (Green)',
+        value: `**${item?.label ?? greenVal}**`,
+        inline: true,
+      });
+    }
+  }
+
+  // Scenario Factor
+  const scenarioFactors: PureDbFactorQuery[] = [];
+  if (scenarioVal && SCENARIO_FACTORS[scenarioVal]) {
+    const def = SCENARIO_FACTORS[scenarioVal];
+    scenarioFactors.push({
+      groupId: def.groupId,
+      count: 0,
+      searchType,
+    });
+    filterSummaries.push({
+      name: `${def.emoji} Scenario Factor`,
+      value: `**${def.name}**`,
+      inline: true,
+    });
+  }
+
+  // G1 Race Factor
+  const raceFactors: PureDbFactorQuery[] = [];
+  if (raceVal) {
+    const valNum = Number(raceVal);
+    const item = !isNaN(valNum)
+      ? PURE_DB_RACE_FACTORS.find((f) => f.value === valNum)
+      : PURE_DB_RACE_FACTORS.find((f) => f.label.toLowerCase().includes(raceVal.toLowerCase()));
+    const id = item?.value ?? valNum;
+    if (id) {
+      raceFactors.push({
+        groupId: id,
+        count: 0,
+        searchType,
+      });
+      filterSummaries.push({
+        name: '🏁 G1 Race Factor',
+        value: `**${item?.label ?? raceVal}**`,
+        inline: true,
+      });
+    }
+  }
+
+  // Skill Factor
+  const commonSkillFactors: PureDbFactorQuery[] = [];
+  if (skillVal) {
+    const valNum = Number(skillVal);
+    const item = !isNaN(valNum)
+      ? PURE_DB_COMMON_SKILL_FACTORS.find((f) => f.value === valNum)
+      : PURE_DB_COMMON_SKILL_FACTORS.find((f) => f.label.toLowerCase().includes(skillVal.toLowerCase()));
+    const id = item?.value ?? valNum;
+    if (id) {
+      commonSkillFactors.push({
+        groupId: id,
+        count: 0,
+        searchType,
+      });
+      filterSummaries.push({
+        name: '📜 Skill Factor',
+        value: `**${item?.label ?? skillVal}**`,
+        inline: true,
+      });
+    }
+  }
+
+  // Support Card
+  let supportCardId = 0;
+  if (supportVal) {
+    const valNum = Number(supportVal);
+    const item = !isNaN(valNum)
+      ? PURE_DB_SUPPORT_CARDS.find((s) => s.id === valNum)
+      : PURE_DB_SUPPORT_CARDS.find((s) => s.name.toLowerCase().includes(supportVal.toLowerCase()));
+    if (item) {
+      supportCardId = item.id;
+      filterSummaries.push({
+        name: '🎴 Equipped Support Card',
+        value: `**${item.name}** (${supportLimitBreak}★ MLB)`,
+        inline: true,
+      });
+    }
+  }
+
+  const criteria: PureDbSearchCriteria = {
+    gameServerCode: server,
+    partnerCardIds,
+    supportCardId,
+    supportCardLimitBreak: supportLimitBreak,
+    excludeCardIds: [],
+    excludeCardSearchType: 0,
+    blueFactors,
+    redFactors,
+    greenFactors,
+    commonSkillFactors,
+    raceFactors,
+    scenarioFactors,
+    otherFactors: [],
+    whiteFactorCountConditions: [],
+    winCount: 0,
+    g1WinCount: 0,
+    searchCount: 100,
+    excludeFullFollowerUser: true,
+    excludeArchivedChara: true,
+  };
+
+  const searchUrl = buildPureDbSearchUrl(criteria);
+
+  const embed = new EmbedBuilder()
+    .setTitle('🔍 Umamusume Pure-DB Parent Search')
+    .setColor(0x4caf72)
+    .setDescription(
+      `Direct search link generated for **[uma.pure-db.com](${searchUrl})**.\n\n` +
+      `Click the button or link below to view matching rental parents, spark inheritances, and trainer IDs.`
+    )
+    .addFields(
+      filterSummaries.length > 0
+        ? filterSummaries
+        : [{ name: '🔍 Search Scope', value: 'Browsing all active Uma Musume rental parents', inline: false }],
+      {
+        name: '⚙️ Settings',
+        value: `**Server:** ${server === 'global' ? '🌐 Global' : '🇯🇵 Japan'}\n**Scope:** ${targetLabel}`,
+        inline: false,
+      }
+    )
+    .setFooter({
+      text: 'Pure-DB Taxonomy & Inheritance Search • Umakraft',
+    });
+
+  const buttonRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setLabel('Open Search on Pure-DB')
+      .setURL(searchUrl)
+      .setStyle(ButtonStyle.Link)
+      .setEmoji('🔗')
+  );
+
+  await interaction.reply({ embeds: [embed], components: [buttonRow] });
+}
+
 export async function routeCommand(interaction: ChatInputCommandInteraction) {
   const { commandName } = interaction;
   const subcommand = interaction.options.getSubcommand(false);
@@ -451,6 +739,9 @@ export async function routeCommand(interaction: ChatInputCommandInteraction) {
   try {
     if (commandName === 'sync') {
       await handleSync(interaction);
+    } else if (commandName === 'search') {
+      if (subcommand === 'parent') await handleSearch(interaction);
+      else await interaction.reply({ content: 'Unknown subcommand.', ephemeral: true });
     } else if (commandName === 'fan') {
       if (subcommand === 'gain') await handleFansGain(interaction);
       else if (subcommand === 'leaderboard') await handleFansLeaderboard(interaction);

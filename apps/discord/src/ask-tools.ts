@@ -1,6 +1,7 @@
 import { ToolDefinition, createLogger } from '@ai-agent-platform/shared';
 import { fanTrackerAPI } from '@ai-agent-platform/fan-tracker';
 import { trainerLinkStore, searchWebTool } from '@ai-agent-platform/integrations';
+import { umamusumePureDbSearch } from '@ai-agent-platform/umamusume';
 
 const logger = createLogger('AskTools');
 
@@ -88,4 +89,5 @@ export const askTools: ToolDefinition[] = [
   getLeaderboardTool,
   getUserProfileTool,
   searchWebTool,
+  umamusumePureDbSearch,
 ];

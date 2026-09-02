@@ -317,6 +317,105 @@ export class AskQuestionStore {
   }
 
   /**
+   * Correct an answer for a given question ID (admin operation).
+   * Overrides the answer with an accurate verified answer, marks status as 'completed',
+   * and optionally resets usage count to 0 so users can retrieve it.
+   */
+  async correctAnswer(
+    id: string,
+    newAnswer: string,
+    resetUsage: boolean = true
+  ): Promise<{ previousAnswer: string | null; record: AskQuestionRecord | null }> {
+    const record = await this.get(id);
+    if (!record) return { previousAnswer: null, record: null };
+
+    const previousAnswer = record.answer;
+    const now = new Date().toISOString();
+
+    record.answer = newAnswer;
+    record.status = 'completed';
+    if (resetUsage) {
+      record.usageCount = 0;
+    }
+    record.answeredAt = now;
+    record.updatedAt = now;
+    this.memoryStore.set(id, { ...record });
+
+    if (!this.useMemoryFallback) {
+      try {
+        const db = getTursoClient();
+        await db.execute({
+          sql: `UPDATE ask_questions
+                SET answer = ?, status = 'completed', usage_count = ?, answered_at = ?, updated_at = ?
+                WHERE id = ?`,
+          args: [newAnswer, record.usageCount, now, now, id],
+        });
+      } catch (err: any) {
+        logger.warn(`Turso correctAnswer warning: ${err?.message ?? err}`);
+      }
+    }
+
+    return { previousAnswer, record: { ...record } };
+  }
+
+  /**
+   * List recent questions for autocomplete or administration.
+   */
+  async listRecent(limit: number = 25, query?: string): Promise<AskQuestionRecord[]> {
+    await this.init();
+    const q = query ? query.toLowerCase().trim() : '';
+
+    if (this.useMemoryFallback || this.memoryStore.size > 0) {
+      const records = Array.from(this.memoryStore.values());
+      const filtered = q
+        ? records.filter(
+            (r) =>
+              r.id.toLowerCase().includes(q) ||
+              r.question.toLowerCase().includes(q) ||
+              (r.answer && r.answer.toLowerCase().includes(q))
+          )
+        : records;
+
+      filtered.sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+      if (filtered.length >= limit || this.useMemoryFallback) {
+        return filtered.slice(0, limit);
+      }
+    }
+
+    if (!this.useMemoryFallback) {
+      try {
+        const db = getTursoClient();
+        const sql = q
+          ? `SELECT * FROM ask_questions WHERE id LIKE ? OR question LIKE ? ORDER BY created_at DESC LIMIT ?`
+          : `SELECT * FROM ask_questions ORDER BY created_at DESC LIMIT ?`;
+        const args = q ? [`%${q}%`, `%${q}%`, limit] : [limit];
+        const res = await db.execute({ sql, args });
+
+        return res.rows.map((row) => ({
+          id: String(row['id']),
+          userId: String(row['user_id']),
+          channelId: String(row['channel_id']),
+          guildId: row['guild_id'] ? String(row['guild_id']) : null,
+          question: String(row['question']),
+          answer: row['answer'] ? String(row['answer']) : null,
+          status: String(row['status']) as AskQuestionRecord['status'],
+          usageCount: Number(row['usage_count'] ?? 0),
+          maxUses: Number(row['max_uses'] ?? 3),
+          createdAt: String(row['created_at']),
+          answeredAt: row['answered_at'] ? String(row['answered_at']) : null,
+          updatedAt: String(row['updated_at']),
+        }));
+      } catch (err: any) {
+        logger.warn(`Turso listRecent error: ${err?.message ?? err}`);
+      }
+    }
+
+    return Array.from(this.memoryStore.values()).slice(0, limit);
+  }
+
+  /**
    * Clear in-memory state (useful for tests).
    */
   clearMemory(): void {

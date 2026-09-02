@@ -440,11 +440,282 @@ export const umamusumeListSources: ToolDefinition = {
   },
 };
 
+/**
+ * Tool 5 — Pure-DB Parent Search: Generates direct search links and structured criteria
+ * for uma.pure-db.com parent, rental, and inheritance factor search.
+ */
+export const umamusumePureDbSearch: ToolDefinition = {
+  slug: 'umamusume-puredb-search',
+  name: 'Umamusume: Pure-DB Parent Search',
+  description:
+    'Generates direct search URLs for uma.pure-db.com parent, rental, and inheritance factor searching. ' +
+    'Supports filtering by character, blue/red/green/white/scenario/race factors, support card, and server region.',
+  parameters: {
+    character: {
+      type: 'string',
+      description: 'Umamusume character name or card ID (e.g. "Special Week", "Oguri Cap", "100101").',
+      required: false,
+    },
+    blueFactor: {
+      type: 'string',
+      description: 'Blue factor stat: speed, stamina, power, guts, wisdom, any.',
+      required: false,
+      enum: ['speed', 'stamina', 'power', 'guts', 'wisdom', 'any'],
+    },
+    blueStars: {
+      type: 'number',
+      description: 'Minimum blue factor star count (1, 2, 3). Default is 3.',
+      required: false,
+    },
+    redFactor: {
+      type: 'string',
+      description: 'Red factor aptitude: turf, dirt, short, mile, middle, long, runner, leading, betweener, chaser.',
+      required: false,
+      enum: ['turf', 'dirt', 'short', 'mile', 'middle', 'long', 'runner', 'leading', 'betweener', 'chaser'],
+    },
+    redStars: {
+      type: 'number',
+      description: 'Minimum red factor star count (1, 2, 3). Default is 3.',
+      required: false,
+    },
+    greenFactor: {
+      type: 'string',
+      description: 'Green factor / unique skill name or ID (e.g. "Shooting Star", "Red Shift").',
+      required: false,
+    },
+    scenarioFactor: {
+      type: 'string',
+      description: 'Scenario factor: ura, unity, climax, grand_concert.',
+      required: false,
+      enum: ['ura', 'unity', 'climax', 'grand_concert'],
+    },
+    raceFactor: {
+      type: 'string',
+      description: 'G1 Race factor name or ID (e.g. "Japanese Derby", "Tenno Sho", "Arima Kinen").',
+      required: false,
+    },
+    skillFactor: {
+      type: 'string',
+      description: 'White/common skill factor name or ID (e.g. "Right-Handed ○", "Tail Held High").',
+      required: false,
+    },
+    supportCard: {
+      type: 'string',
+      description: 'Equipped support card name or ID (e.g. "Special Week", "Silence Suzuka").',
+      required: false,
+    },
+    server: {
+      type: 'string',
+      description: 'Game server region: global or japan. Default is global.',
+      required: false,
+      enum: ['global', 'japan'],
+    },
+    targetScope: {
+      type: 'string',
+      description: 'Target scope: all, representative (Parent 1), inheritance (Grandparents). Default is all.',
+      required: false,
+      enum: ['all', 'representative', 'inheritance'],
+    },
+  },
+  handler: async (args) => {
+    const character = args['character'] ? String(args['character']) : undefined;
+    const blue = args['blueFactor'] ? String(args['blueFactor']) : undefined;
+    const blueStars = Number(args['blueStars']) || 3;
+    const red = args['redFactor'] ? String(args['redFactor']) : undefined;
+    const redStars = Number(args['redStars']) || 3;
+    const green = args['greenFactor'] ? String(args['greenFactor']) : undefined;
+    const scenario = args['scenarioFactor'] ? String(args['scenarioFactor']) : undefined;
+    const race = args['raceFactor'] ? String(args['raceFactor']) : undefined;
+    const skill = args['skillFactor'] ? String(args['skillFactor']) : undefined;
+    const support = args['supportCard'] ? String(args['supportCard']) : undefined;
+    const server = (args['server'] as 'global' | 'japan') || 'global';
+    const targetScope = String(args['targetScope'] || 'all');
+
+    let searchType = 0;
+    if (targetScope === 'representative') searchType = 1;
+    else if (targetScope === 'inheritance') searchType = 2;
+
+    const {
+      buildPureDbSearchUrl,
+      BLUE_FACTORS,
+      RED_FACTORS,
+      SCENARIO_FACTORS,
+      PURE_DB_CARDS,
+      PURE_DB_GREEN_FACTORS,
+      PURE_DB_RACE_FACTORS,
+      PURE_DB_COMMON_SKILL_FACTORS,
+      PURE_DB_SUPPORT_CARDS,
+    } = await import('./puredb-taxonomy.js');
+
+    let partnerCardIds: number[] = [];
+    let matchedCharacterName: string | null = null;
+    if (character) {
+      const num = Number(character);
+      const card = !isNaN(num)
+        ? PURE_DB_CARDS.find((c) => c.id === num)
+        : PURE_DB_CARDS.find((c) => c.name.toLowerCase().includes(character.toLowerCase()));
+      if (card) {
+        partnerCardIds = [card.id];
+        matchedCharacterName = card.name;
+      } else {
+        const { findBestCharacterMatch, searchPureDbCardsFuzzy } = await import('./fuzzy-search.js');
+        const bestChar = findBestCharacterMatch(character);
+        if (bestChar?.item?.pureDbCards && bestChar.item.pureDbCards.length > 0) {
+          partnerCardIds = [bestChar.item.pureDbCards[0].id];
+          matchedCharacterName = bestChar.item.pureDbCards[0].name;
+        } else {
+          const fuzzyDb = searchPureDbCardsFuzzy(character, 1);
+          if (fuzzyDb.length > 0 && fuzzyDb[0].score >= 40) {
+            partnerCardIds = [fuzzyDb[0].card.id];
+            matchedCharacterName = fuzzyDb[0].card.name;
+          }
+        }
+      }
+    }
+
+    const blueFactors = [];
+    if (blue && BLUE_FACTORS[blue]) {
+      blueFactors.push({
+        groupId: BLUE_FACTORS[blue].groupId,
+        count: blueStars,
+        searchType,
+      });
+    }
+
+    const redFactors = [];
+    if (red && RED_FACTORS[red]) {
+      redFactors.push({
+        groupId: RED_FACTORS[red].groupId,
+        count: redStars,
+        searchType,
+      });
+    }
+
+    const greenFactors = [];
+    if (green) {
+      const num = Number(green);
+      const item = !isNaN(num)
+        ? PURE_DB_GREEN_FACTORS.find((f) => f.value === num)
+        : PURE_DB_GREEN_FACTORS.find((f) => f.label.toLowerCase().includes(green.toLowerCase()));
+      if (item) {
+        greenFactors.push({
+          groupId: item.value,
+          count: 1,
+          searchType,
+        });
+      }
+    }
+
+    const scenarioFactors = [];
+    if (scenario && SCENARIO_FACTORS[scenario]) {
+      scenarioFactors.push({
+        groupId: SCENARIO_FACTORS[scenario].groupId,
+        count: 0,
+        searchType,
+      });
+    }
+
+    const raceFactors = [];
+    if (race) {
+      const num = Number(race);
+      const item = !isNaN(num)
+        ? PURE_DB_RACE_FACTORS.find((f) => f.value === num)
+        : PURE_DB_RACE_FACTORS.find((f) => f.label.toLowerCase().includes(race.toLowerCase()));
+      if (item) {
+        raceFactors.push({
+          groupId: item.value,
+          count: 0,
+          searchType,
+        });
+      }
+    }
+
+    const commonSkillFactors = [];
+    if (skill) {
+      const num = Number(skill);
+      const item = !isNaN(num)
+        ? PURE_DB_COMMON_SKILL_FACTORS.find((f) => f.value === num)
+        : PURE_DB_COMMON_SKILL_FACTORS.find((f) => f.label.toLowerCase().includes(skill.toLowerCase()));
+      if (item) {
+        commonSkillFactors.push({
+          groupId: item.value,
+          count: 0,
+          searchType,
+        });
+      }
+    }
+
+    let supportCardId = 0;
+    if (support) {
+      const num = Number(support);
+      const card = !isNaN(num)
+        ? PURE_DB_SUPPORT_CARDS.find((s) => s.id === num)
+        : PURE_DB_SUPPORT_CARDS.find((s) => s.name.toLowerCase().includes(support.toLowerCase()));
+      if (card) {
+        supportCardId = card.id;
+      } else {
+        const { findBestSupportCardMatch, searchPureDbSupportCardsFuzzy } = await import('./fuzzy-search.js');
+        const bestCard = findBestSupportCardMatch(support);
+        if (bestCard?.item?.pureDbSupportCards && bestCard.item.pureDbSupportCards.length > 0) {
+          supportCardId = bestCard.item.pureDbSupportCards[0].id;
+        } else {
+          const fuzzyDb = searchPureDbSupportCardsFuzzy(support, 1);
+          if (fuzzyDb.length > 0 && fuzzyDb[0].score >= 40) {
+            supportCardId = fuzzyDb[0].card.id;
+          }
+        }
+      }
+    }
+
+    const url = buildPureDbSearchUrl({
+      gameServerCode: server,
+      partnerCardIds,
+      supportCardId,
+      supportCardLimitBreak: 4,
+      excludeCardIds: [],
+      excludeCardSearchType: 0,
+      blueFactors,
+      redFactors,
+      greenFactors,
+      commonSkillFactors,
+      raceFactors,
+      scenarioFactors,
+      otherFactors: [],
+      whiteFactorCountConditions: [],
+      winCount: 0,
+      g1WinCount: 0,
+      searchCount: 100,
+      excludeFullFollowerUser: true,
+      excludeArchivedChara: true,
+    });
+
+    return {
+      success: true,
+      searchUrl: url,
+      server,
+      matchedCharacter: matchedCharacterName,
+      criteria: {
+        partnerCardIds,
+        blueFactors,
+        redFactors,
+        greenFactors,
+        scenarioFactors,
+        raceFactors,
+        commonSkillFactors,
+        supportCardId,
+      },
+    };
+  },
+};
+
 export const allDomainTools = [
   umamusumeDataMiner,
   umamusumeSearch,
   umamusumeCompile,
   umamusumeListSources,
+  umamusumePureDbSearch,
 ];
 
 export * from './sources.js';
+export * from './puredb-taxonomy.js';
+export * from './fuzzy-search.js';

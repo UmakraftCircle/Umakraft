@@ -47,21 +47,27 @@ export interface SourceEntry {
  *  - Reddit + fandom are community/lore sources, not authoritative gameplay data.
  */
 export const SOURCE_REGISTRY: SourceEntry[] = [
-  // ── Priority 1 — Primary Game Data (uma.guide) ──
-  { key: 'characters',       priority: 1, url: 'https://uma.guide/characters', label: 'Characters', useFor: 'Character profiles, stats, growth rates, aptitudes, unique skills, gameplay data.' },
-  { key: 'support-cards',    priority: 1, url: 'https://uma.guide/support-cards', label: 'Support Cards', useFor: 'Support card data, effects, stats, events, skills, card details.' },
-  { key: 'skills',           priority: 1, url: 'https://uma.guide/skills', label: 'Skills', useFor: 'Skill names, effects, conditions, costs, types, skill data.' },
-  { key: 'tracks',           priority: 1, url: 'https://uma.guide/tracks', label: 'Tracks', useFor: 'Track, racecourse, distance, surface, conditions, track data.' },
-  { key: 'glossary',         priority: 1, url: 'https://uma.guide/guides/glossary', label: 'Terms / Glossary', useFor: 'Terminology, abbreviations, game-specific definitions.' },
+  // ── Priority 1 — Primary Game Data (uma.guide & GameTora) ──
+  { key: 'characters',          priority: 1, url: 'https://uma.guide/characters', label: 'Characters', useFor: 'Character profiles, stats, growth rates, aptitudes, unique skills, gameplay data.' },
+  { key: 'gametora-characters', priority: 1, url: 'https://gametora.com/umamusume/characters', label: 'GameTora Characters Database', useFor: 'Character database, growth rates, base stats, innate & awakening skills, aptitudes, costumes.' },
+  { key: 'support-cards',       priority: 1, url: 'https://uma.guide/support-cards', label: 'Support Cards', useFor: 'Support card data, effects, stats, events, skills, card details.' },
+  { key: 'gametora-supports',   priority: 1, url: 'https://gametora.com/umamusume/supports', label: 'GameTora Support Card Database', useFor: 'Support cards database, training bonuses, specialty rate, hints, card tier comparisons.' },
+  { key: 'skills',              priority: 1, url: 'https://uma.guide/skills', label: 'Skills', useFor: 'Skill names, effects, conditions, costs, types, skill data.' },
+  { key: 'gametora-skills',     priority: 1, url: 'https://gametora.com/umamusume/skills', label: 'GameTora Skill Database', useFor: 'Skill database, trigger conditions, PT costs, durations, gold/white pairs, passive/recovery/accel/velocity/debuff categories.' },
+  { key: 'tracks',              priority: 1, url: 'https://uma.guide/tracks', label: 'Tracks', useFor: 'Track, racecourse, distance, surface, conditions, track data.' },
+  { key: 'gametora-racetracks', priority: 1, url: 'https://gametora.com/umamusume/racetracks', label: 'GameTora Racetrack Database', useFor: 'Racetrack database, slopes, elevation profiles, straights length, turn directions, acceleration timing.' },
+  { key: 'glossary',            priority: 1, url: 'https://uma.guide/guides/glossary', label: 'Terms / Glossary', useFor: 'Terminology, abbreviations, game-specific definitions.' },
 
   // ── Priority 2 — Planning, Analysis & Game Tools ──
   { key: 'agenda-planner',        priority: 2, url: 'https://uma.guide/agenda-planner', label: 'Agenda Planner', useFor: 'Agenda planning and related planning information.' },
   { key: 'deck-builder',          priority: 2, url: 'https://uma.guide/support-cards/deck-builder', label: 'Deck Builder', useFor: 'Support deck construction and deck analysis.' },
   { key: 'training-simulator',    priority: 2, url: 'https://uma.guide/support-cards/training-simulator', label: 'Training Simulator', useFor: 'Training simulations and support-card interactions.' },
   { key: 'support-compare',       priority: 2, url: 'https://uma.guide/support-cards/compare', label: 'Support Card Comparison', useFor: 'Comparing support cards and their effects.' },
+  { key: 'gametora-tier-list',    priority: 2, url: 'https://gametora.com/umamusume/tier-list', label: 'GameTora Tier List', useFor: 'Support card and character meta tier lists, rankings, evaluation.' },
+  { key: 'gametora-compatibility',priority: 2, url: 'https://gametora.com/umamusume/compatibility', label: 'GameTora Compatibility Tool', useFor: 'Character inheritance compatibility, affinity calculations, grandfather/grandmother synergy.' },
   { key: 'cm-canvas',             priority: 2, url: 'https://uma.guide/cm-canvas', label: 'CM Canvas / Assets', useFor: 'Champion Meeting assets and related visual/reference data.' },
   { key: 'cm-schedule',           priority: 2, url: 'https://uma.guide/cm-schedule', label: 'Champion Meeting Schedule', useFor: 'Champion Meeting schedules and related timing information.' },
-  { key: 'gametora-events',       priority: 2, url: 'https://gametora.com/umamusume/events', label: 'GameTora Events', useFor: 'Event choices, outcomes, rewards, event-related game info.', note: 'Secondary to uma.guide when both contain equivalent information.' },
+  { key: 'gametora-events',       priority: 2, url: 'https://gametora.com/umamusume/events', label: 'GameTora Events', useFor: 'Event choices, outcomes, rewards, event-related game info.', note: 'Authoritative event database for all character & support card choices.' },
 
   // ── Priority 3 — General Guides & Game Mechanics ──
   { key: 'guides',              priority: 3, url: 'https://uma.guide/guides', label: 'Guide Overview', useFor: 'Finding relevant guides when no more specific entry applies.' },
@@ -95,28 +101,28 @@ export const SOURCE_REGISTRY: SourceEntry[] = [
   { key: 'unity-cup-deck',   priority: 5, url: 'https://uma.guide/guides/unity-cup-deckbuilding-guide', label: 'Unity Cup Deckbuilding', useFor: 'Unity Cup deck-building strategy.' },
   { key: 'unity-cup-career', priority: 5, url: 'https://uma.guide/guides/unity-cup-career-guide', label: 'Unity Cup Career', useFor: 'Unity Cup career mechanics and strategy.' },
 
-  // ── Priority 6 — Lore & Community ──
-  { key: 'fandom-wiki', priority: 6, url: 'https://umamusume.fandom.com/wiki/Umamusume_Wiki', label: 'Umamusume Wiki', useFor: 'Character lore, background, relationships, story info.', note: 'Not authoritative for gameplay mechanics when uma.guide applies. May block non-browser agents (HTTP 403); the tool falls back to uma.guide character data.', characterFallback: true },
+  // ── Priority 6 — Lore, Multimedia & Community ──
+  { key: 'umamusu-wiki', priority: 6, url: 'https://umamusu.wiki/Main_Page', label: 'Umamusu Wiki (Moegirl/En)', useFor: 'In-depth lore, real-life racehorse origins, voice actors (seiyuu), anime/manga adaptations (Cinderella Gray, Star Blossom), discography, character relationships.', characterFallback: true },
+  { key: 'fandom-wiki',  priority: 6, url: 'https://umamusume.fandom.com/wiki/Umamusume_Wiki', label: 'Umamusume Fandom Wiki', useFor: 'Character lore, background, real-life racehorse histories, anime episodes, seiyuu, Tracen Academy settings, story summaries.', note: 'Authoritative for lore and media. May block non-browser agents (HTTP 403); falls back to uma.guide/gametora character data.', characterFallback: true },
   { key: 'reddit',       priority: 6, url: 'https://www.reddit.com/r/UmamusumeGame', label: 'r/UmamusumeGame', useFor: 'Community discussion, player experiences, discoveries, strategy discussion.', note: 'Community-sourced only, never authoritative game data.' },
 ];
 
 /** Maps a request category to the ordered list of source keys to try. */
 export const CATEGORY_SOURCE_MAP: Record<RequestCategory, string[]> = {
-  character:    ['characters'],
-  'support-card': ['support-cards'],
-  skill:        ['skills'],
-  track:        ['tracks'],
+  character:    ['characters', 'gametora-characters', 'umamusu-wiki', 'fandom-wiki'],
+  'support-card': ['support-cards', 'gametora-supports'],
+  skill:        ['skills', 'gametora-skills'],
+  track:        ['tracks', 'gametora-racetracks'],
   'game-mechanic': ['guides', 'stats', 'race-mechanics', 'career-mechanics'],
   scenario:     ['cm-guide', 'grand-concert', 'trackblazer', 'unity-cup-deck', 'unity-cup-career'],
   guide:        ['guides'],
-  tool:         ['deck-builder', 'training-simulator', 'support-compare', 'agenda-planner'],
+  tool:         ['deck-builder', 'training-simulator', 'support-compare', 'gametora-compatibility', 'gametora-tier-list', 'agenda-planner'],
   event:        ['gametora-events'],
-  // Lore resolves through fandom first, then falls back to uma.guide character data
-  // when fandom is unavailable (e.g. blocks server-side agents with HTTP 403).
-  lore:         ['fandom-wiki', 'characters'],
-  community:    ['reddit'],
-  comparison:   ['support-compare', 'support-cards'],
-  general:      ['guides', 'characters', 'skills', 'tracks', 'support-cards'],
+  // Lore resolves through umamusu.wiki and fandom first, then falls back to uma.guide/gametora
+  lore:         ['umamusu-wiki', 'fandom-wiki', 'characters', 'gametora-characters'],
+  community:    ['umamusu-wiki', 'fandom-wiki', 'reddit'],
+  comparison:   ['support-compare', 'gametora-tier-list', 'support-cards', 'gametora-supports'],
+  general:      ['guides', 'characters', 'gametora-characters', 'skills', 'gametora-skills', 'tracks', 'gametora-racetracks', 'support-cards', 'gametora-supports'],
 };
 
 export function getSource(key: string): SourceEntry | undefined {
@@ -135,8 +141,8 @@ export function getSource(key: string): SourceEntry | undefined {
 export function classifyRequest(text: string): RequestCategory {
   const t = text.toLowerCase();
 
-  // Explicit lore intent → lore (which still falls back to uma.guide characters).
-  if (/\b(lore|backstory|storyline|relationship|real.life|irl racehorse|racehorse|rival story)\b/.test(t)) return 'lore';
+  // Explicit lore / multimedia intent → lore
+  if (/\b(lore|backstory|storyline|relationship|real.life|irl racehorse|racehorse|rival story|seiyuu|voice actor|va|anime|manga|cinderella gray|star blossom|road to the top|movie|umapyoi|tracen academy|three goddesses)\b/.test(t)) return 'lore';
   if (/\b(support card|card|deck|training simulator)\b/.test(t)) return 'support-card';
   if (/\b(unique skill|skill)\b/.test(t)) return 'skill';
   if (/\b(track|racecourse|turf|dirt|distance|surface|speed record)\b/.test(t)) return 'track';

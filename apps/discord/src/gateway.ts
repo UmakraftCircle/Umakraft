@@ -4,7 +4,7 @@ import type { TimeSlot, AIService } from '@ai-agent-platform/ai';
 import cron from 'node-cron';
 import { MessageSupervisor } from './supervisor.js';
 import { ALL_COMMANDS } from './commands.js';
-import { routeCommand, handleTrainerAutocomplete, handleCompareAutocomplete } from './handlers.js';
+import { routeCommand, handleTrainerAutocomplete, handleCompareAutocomplete, handleSearchAutocomplete, handleAskQuestionAutocomplete } from './handlers.js';
 import { wireAutonomy, handleConfirmationButton } from './autonomous.js';
 import { ToolRegistry, AgentRunner } from '@ai-agent-platform/core';
 import { taskStateStore } from '@ai-agent-platform/integrations';
@@ -89,8 +89,12 @@ export async function startGatewayBot() {
       const focused = interaction.options.getFocused(true);
       if (focused.name === 'trainer1' || focused.name === 'trainer2') {
         await handleCompareAutocomplete(interaction);
-      } else {
+      } else if (focused.name === 'trainer') {
         await handleTrainerAutocomplete(interaction);
+      } else if (focused.name === 'question_id') {
+        await handleAskQuestionAutocomplete(interaction);
+      } else {
+        await handleSearchAutocomplete(interaction);
       }
       return;
     }

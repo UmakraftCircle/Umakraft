@@ -65,3 +65,4 @@ export * from './local-brain.js';
 export * from './local-provider.js';
 export * from './compare-summary-service.js';
 export * from './agent-system.js';
+export * from './entity-classification-middleware.js';
