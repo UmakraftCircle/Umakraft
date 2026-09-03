@@ -21,7 +21,7 @@ import { failureMessage } from './errors.js';
 import { safetyGuard, isOffTopicAnswer } from './guard.js';
 import { replyWithEmbed, buildAnswerEmbeds, AI_EMBED_COLOR } from './embed-reply.js';
 import { classifyTopic, toTaxonomyTerms, buildSearchEscalator } from './off-topic-detector/index.js';
-import { validateBeforeSearch } from '@ai-agent-platform/ai';
+import { validateBeforeSearch, ASK_5W1H_FORMAT_PROMPT } from '@ai-agent-platform/ai';
 
 const logger = createLogger('AskHandler');
 
@@ -254,6 +254,13 @@ export async function handleAskAnswer(interaction: ChatInputCommandInteraction):
 
       const aiService = buildAIService();
       const agent = new ToolCallingAgent(aiService, ToolRegistry.getInstance());
+      const systemPromptPrefix = [
+        ASK_5W1H_FORMAT_PROMPT,
+        entityValidation.formattedGuidelines ? `Entity Reference Guidance:\n${entityValidation.formattedGuidelines}` : undefined,
+      ]
+        .filter(Boolean)
+        .join('\n\n');
+
       const trace = await agent.runWithTrace(userId, question, context, {
         maxToolCalls: 10,
         toolTimeoutMs: 8_000,
@@ -261,7 +268,7 @@ export async function handleAskAnswer(interaction: ChatInputCommandInteraction):
         overallTimeoutMs: 90_000,
         domainGuard: true,
         toolSlugs: ASK_TOOL_SLUGS,
-        systemPromptPrefix: entityValidation.formattedGuidelines,
+        systemPromptPrefix,
       });
 
       generatedAnswer = trace.answer;

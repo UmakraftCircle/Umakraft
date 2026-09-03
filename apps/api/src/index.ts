@@ -213,7 +213,10 @@ const server = http.createServer(async (req, res) => {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>UmaKraft Circle — AI Agent Platform & Bot Manager</title>
+  <title>Umakraft Circle — AI Agent Platform & Bot Manager</title>
+  <meta name="description" content="AI Agent Platform & Bot Manager for orchestrating intelligent workflows, Discord automation, and UmaKraft fan telemetry" />
+  <meta property="og:title" content="Umakraft Circle — AI Agent Platform & Bot Manager" />
+  <meta property="og:description" content="AI Agent Platform & Bot Manager for orchestrating intelligent workflows, Discord automation, and UmaKraft fan telemetry" />
   <style>
     :root {
       --bg: #0f172a;
@@ -658,6 +661,10 @@ server.listen(PORT, '0.0.0.0', async () => {
   } catch (error: any) {
     logger.warn(`Health storage unavailable; using memory only: ${error.message}`);
   }
+  const heartbeatInterval = setInterval(() => {
+    healthCollector.heartbeat('api', process.env['APP_VERSION'] || '1.0.0');
+  }, 15000);
+  heartbeatInterval.unref();
   for (const signal of [...collectCIHealth(), ...collectDeploymentHealth()]) {
     healthCollector.ingest(createHealthEvent(signal));
   }

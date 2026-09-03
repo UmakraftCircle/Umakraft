@@ -5,6 +5,7 @@ import { askCommand, ensureAskToolsRegistered, handleAsk } from '../../apps/disc
 import { ToolRegistry } from '@ai-agent-platform/core';
 import { safetyGuard, isOffTopicAnswer } from '../../apps/discord/src/guard.js';
 import { askQuestionStore } from '@ai-agent-platform/integrations';
+import { ASK_5W1H_FORMAT_PROMPT } from '@ai-agent-platform/ai';
 
 describe('Discord /ask Command Structure & Rules', () => {
   beforeEach(() => {
@@ -217,5 +218,18 @@ describe('Discord /ask Command Structure & Rules', () => {
   it('isOffTopicAnswer detects model off-topic markers', () => {
     assert.strictEqual(isOffTopicAnswer('[[OFFTOPIC]] I cannot answer that.'), true);
     assert.strictEqual(isOffTopicAnswer('Special Week is a famous horse girl.'), false);
+  });
+
+  it('ASK_5W1H_FORMAT_PROMPT defines complete 5W1H framework and rules', () => {
+    assert.ok(ASK_5W1H_FORMAT_PROMPT.includes('## 🎀 [Topic / Main Subject]'));
+    assert.ok(ASK_5W1H_FORMAT_PROMPT.includes("Trainer's Quick Take"));
+    assert.ok(ASK_5W1H_FORMAT_PROMPT.includes('### 👤 WHO'));
+    assert.ok(ASK_5W1H_FORMAT_PROMPT.includes('### ❓ WHAT'));
+    assert.ok(ASK_5W1H_FORMAT_PROMPT.includes('### 📅 WHEN'));
+    assert.ok(ASK_5W1H_FORMAT_PROMPT.includes('### 📍 WHERE'));
+    assert.ok(ASK_5W1H_FORMAT_PROMPT.includes('### 💡 WHY'));
+    assert.ok(ASK_5W1H_FORMAT_PROMPT.includes('### ⚙️ HOW'));
+    assert.ok(ASK_5W1H_FORMAT_PROMPT.includes('Context over "N/A"'));
+    assert.ok(ASK_5W1H_FORMAT_PROMPT.includes('[[OFFTOPIC]]'));
   });
 });
