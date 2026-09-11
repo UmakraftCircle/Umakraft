@@ -15,6 +15,7 @@ import { safetyGuard } from './guard.js';
 import { splitForEmbeds } from './embed-reply.js';
 import { lilyChatService, type LilyChatResponse } from './automation/lily-chat-service.js';
 import { dmMemoryStore } from './automation/dm-memory.js';
+import { lilyOrchestrator } from './lily-orchestrator.js';
 
 const logger = createLogger('Discord-DM');
 
@@ -173,13 +174,23 @@ export async function handleDirectMessage(
       await conversationMemoryStore.record(userId, sessionId, 'user', content).catch(() => {});
       await conversationMemoryStore.record(userId, sessionId, 'assistant', response).catch(() => {});
     } else {
-      // Route through existing conversational intelligence engine (which handles session open/bump & memory persistence)
-      response = await generateChatResponse({
-        userId,
-        channelId: sessionId,
-        message: content,
-        subcommand: isNewSession ? 'speak' : 'reply',
-      });
+      if (process.env.USE_LILY_ORCHESTRATOR_DM === 'true') {
+        const orchestratorResult = lilyOrchestrator.handleMessage({
+          userId,
+          message: content,
+          recentMessages: dmMemoryStore.getHistory(userId).map(m => `${m.role}: ${m.content}`)
+        });
+        response = orchestratorResult.reply;
+        logger.info(`[DM_MIGRATION] UserId=${userId} Intent=${routeDecision.domain} SelectedTools=[] ResponseScore=${orchestratorResult.evaluation.score}`);
+      } else {
+        // Route through existing conversational intelligence engine (which handles session open/bump & memory persistence)
+        response = await generateChatResponse({
+          userId,
+          channelId: sessionId,
+          message: content,
+          subcommand: isNewSession ? 'speak' : 'reply',
+        });
+      }
     }
 
     // Persist turn in DM memory store
