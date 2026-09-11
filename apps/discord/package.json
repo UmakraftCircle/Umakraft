@@ -1,0 +1,30 @@
+{
+  "name": "@ai-agent-platform/discord",
+  "version": "1.0.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc -w",
+    "start": "node ./dist/index.js"
+  },
+  "dependencies": {
+    "@ai-agent-platform/shared": "*",
+    "@ai-agent-platform/core": "*",
+    "@ai-agent-platform/ai": "*",
+    "@ai-agent-platform/tools": "*",
+    "@ai-agent-platform/skills": "*",
+    "@ai-agent-platform/integrations": "*",
+    "@ai-agent-platform/fan-tracker": "*",
+    "@ai-agent-platform/pr-monitor": "*",
+    "@ai-agent-platform/umamusume": "*",
+    "@ai-agent-platform/image-report": "*",
+    "discord.js": "^14.15.3",
+    "node-cron": "^3.0.3"
+  },
+  "devDependencies": {
+    "@types/node-cron": "^3.0.11",
+    "typescript": "^5.4.5"
+  }
+}

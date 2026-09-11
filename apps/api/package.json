@@ -1,0 +1,25 @@
+{
+  "name": "@ai-agent-platform/api",
+  "version": "1.0.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc -w",
+    "start": "node ./dist/index.js"
+  },
+  "dependencies": {
+    "@ai-agent-platform/shared": "*",
+    "@ai-agent-platform/ai": "*",
+    "@ai-agent-platform/core": "*",
+    "@ai-agent-platform/tools": "*",
+    "@ai-agent-platform/integrations": "*",
+    "@ai-agent-platform/fan-tracker": "*",
+    "@ai-agent-platform/pr-monitor": "*",
+    "@ai-agent-platform/health": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  }
+}

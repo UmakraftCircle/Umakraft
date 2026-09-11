@@ -1,0 +1,38 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false,
+    "module": "ESNext",
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "allowJs": true,
+    "jsx": "react-jsx",
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "incremental": true,
+    "noEmit": false
+  },
+  "files": [],
+  "references": [
+    { "path": "./packages/shared" },
+    { "path": "./packages/ai" },
+    { "path": "./packages/integrations" },
+    { "path": "./packages/core" },
+    { "path": "./packages/tools" },
+    { "path": "./packages/skills" },
+    { "path": "./packages/domains/fan-tracker" },
+    { "path": "./packages/domains/pr-monitor" },
+    { "path": "./packages/domains/umamusume" },
+    { "path": "./packages/health" },
+    { "path": "./apps/api" },
+    { "path": "./apps/cli" },
+    { "path": "./apps/image-report" },
+    { "path": "./apps/discord" }
+  ]
+}

@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.turbo/
+platform.db
+*.log
+.env
+.env.local
+.git/

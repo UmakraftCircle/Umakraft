@@ -1,0 +1,22 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "composite": true,
+    "declaration": true,
+    "noEmit": false
+  },
+  "include": ["src/**/*"],
+  "references": [
+    { "path": "../../packages/shared" },
+    { "path": "../../packages/ai" },
+    { "path": "../../packages/core" },
+    { "path": "../../packages/tools" },
+    { "path": "../../packages/integrations" },
+    { "path": "../../packages/domains/fan-tracker" },
+    { "path": "../../packages/domains/pr-monitor" },
+    { "path": "../../packages/domains/umamusume" },
+    { "path": "../image-report" }
+  ]
+}
