@@ -148,7 +148,7 @@ export const DEFAULT_AGENT_OPTIONS = {
   generateTimeoutMs: 20_000,
   overallTimeoutMs: 90_000,
   maxResultBytes: 8 * 1024,
-  inputTokenBudget: 4000,
+  inputTokenBudget: 7500,
   outputTokenBudget: 1500,
 } as const;
 

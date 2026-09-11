@@ -22,12 +22,10 @@ export class GroqModelManager {
   // Curated candidate priority chain (including proven working models)
   private defaultCandidatePool: string[] = [
     'openai/gpt-oss-120b',
-    'openai/gpt-oss-20b',
-    'qwen-2.5-32b',
-    'moonshotai/kimi-k2-instruct',
-    'llama-3.3-70b-versatile',
-    'llama-3.1-8b-instant',
+    'openai/gpt-oss-safeguard-20b',
+    'qwen/qwen3.6-27b',
     'mixtral-8x7b-32768',
+    'allam-2-7b',
   ];
 
   private configuredModels: string[] = [];
@@ -42,12 +40,10 @@ export class GroqModelManager {
     const trimmed = raw.trim().toLowerCase();
     // Normalize aliases & variations
     if (trimmed.includes('gpt-oss-120b')) return 'openai/gpt-oss-120b';
-    if (trimmed.includes('gpt-oss-20b')) return 'openai/gpt-oss-20b';
-    if (trimmed.includes('kimi')) return 'moonshotai/kimi-k2-instruct';
-    if (trimmed.includes('qwen')) return 'qwen-2.5-32b';
-    if (trimmed === 'llama-3.3' || trimmed.includes('llama-3.3-70b')) return 'llama-3.3-70b-versatile';
-    if (trimmed === 'llama-3.1' || trimmed.includes('llama-3.1-8b')) return 'llama-3.1-8b-instant';
+    if (trimmed.includes('safeguard')) return 'openai/gpt-oss-safeguard-20b';
+    if (trimmed.includes('qwen')) return 'qwen/qwen3.6-27b';
     if (trimmed.includes('mixtral')) return 'mixtral-8x7b-32768';
+    if (trimmed.includes('allam')) return 'allam-2-7b';
     return raw.trim();
   }
 

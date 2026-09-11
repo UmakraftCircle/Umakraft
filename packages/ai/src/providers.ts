@@ -67,11 +67,10 @@ function isModelNotFoundError(err: any): boolean {
 
 const GROQ_MODEL_CANDIDATES: string[] = [
   'openai/gpt-oss-120b',
-  'openai/gpt-oss-20b',
-  'qwen-2.5-32b',
-  'llama-3.3-70b-versatile',
-  'llama-3.1-8b-instant',
+  'openai/gpt-oss-safeguard-20b',
+  'qwen/qwen3.6-27b',
   'mixtral-8x7b-32768',
+  'allam-2-7b',
 ];
 
 /**
@@ -81,11 +80,10 @@ const GROQ_MODEL_CANDIDATES: string[] = [
  */
 export const GROQ_MODEL_FALLBACKS: string[] = [
   'openai/gpt-oss-120b',
-  'openai/gpt-oss-20b',
-  'qwen-2.5-32b',
-  'llama-3.3-70b-versatile',
-  'llama-3.1-8b-instant',
+  'openai/gpt-oss-safeguard-20b',
+  'qwen/qwen3.6-27b',
   'mixtral-8x7b-32768',
+  'allam-2-7b',
 ];
 
 /**
@@ -103,11 +101,10 @@ export function sanitizeGroqModel(raw: string | undefined): string | undefined {
   if (GROQ_KNOWN_MODELS.has(value)) return value;
   // Normalize common aliases
   if (value.includes('120b')) return 'openai/gpt-oss-120b';
-  if (value.includes('20b')) return 'openai/gpt-oss-20b';
-  if (value.includes('3.3')) return 'llama-3.3-70b-versatile';
-  if (value.includes('3.1')) return 'llama-3.1-8b-instant';
-  if (value.includes('qwen')) return 'qwen-2.5-32b';
+  if (value.includes('safeguard')) return 'openai/gpt-oss-safeguard-20b';
+  if (value.includes('qwen')) return 'qwen/qwen3.6-27b';
   if (value.includes('mixtral')) return 'mixtral-8x7b-32768';
+  if (value.includes('allam')) return 'allam-2-7b';
 
   if (!/^[a-z0-9._-]+(?:\/[a-z0-9._-]+)?$/i.test(value)) {
     logger.warn(`[providers] ignoring invalid/unknown GROQ model env value: "${raw}"`);

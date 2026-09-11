@@ -29,11 +29,10 @@ export class GroqModelDiscoveryService {
   // Curated candidate list if API is unreachable or before first sync
   private static readonly KNOWN_FALLBACK_CANDIDATES: string[] = [
     'openai/gpt-oss-120b',
-    'openai/gpt-oss-20b',
-    'qwen-2.5-32b',
-    'llama-3.3-70b-versatile',
-    'llama-3.1-8b-instant',
+    'openai/gpt-oss-safeguard-20b',
+    'qwen/qwen3.6-27b',
     'mixtral-8x7b-32768',
+    'allam-2-7b',
   ];
 
   constructor(keyManager?: GroqKeyManager) {
