@@ -13,52 +13,85 @@ export interface ScopeResolution {
   limit: number;
 }
 
+export interface StructuredIntentResult {
+  intent: FanIntentType;
+  confidence: number;
+  rule: string | null;
+}
+
 /**
  * 1. Fan Intent Detector
  */
 export class FanIntentDetector {
-  public static detectIntent(message: string): FanIntentType {
+  public static detectIntentStructured(message: string): StructuredIntentResult {
     const lower = message.toLowerCase().trim();
 
-    const fanGainKeywords = [
-      'fan gain',
-      'my fan gain',
-      'how many fans did i gain',
-      'fans today',
-      "today's fans",
-      'fan progress',
-      'fan count today',
-      'current fan gain',
-      'how many fans',
+    const fanGainRules: { pattern: RegExp; rule: string }[] = [
+      { pattern: /\bshow\s+my\s+fan\s+gain\b/i, rule: 'show my fan gain' },
+      { pattern: /\bfan\s+gain\s+today\b/i, rule: 'fan gain today' },
+      { pattern: /\bmy\s+fans?\s+today\b/i, rule: 'my fans today' },
+      { pattern: /\bmy\s+fan\s+gain\b/i, rule: 'my fan gain' },
+      { pattern: /\bhow\s+many\s+fans?\s+did\s+i\s+gain\b/i, rule: 'how many fans did i gain' },
+      { pattern: /\bfans?\s+today\b/i, rule: 'fans today' },
+      { pattern: /\btoday'?s?\s+fans?\b/i, rule: "today's fans" },
+      { pattern: /\bfan\s+progress\b/i, rule: 'fan progress' },
+      { pattern: /\bfan\s+count\s+today\b/i, rule: 'fan count today' },
+      { pattern: /\bcurrent\s+fan\s+gain\b/i, rule: 'current fan gain' },
+      { pattern: /\bhow\s+many\s+fans?\b/i, rule: 'how many fans' },
+      { pattern: /\bfan\s+gain\b/i, rule: 'fan gain' },
     ];
 
-    const leaderboardKeywords = [
-      'leaderboard',
-      'fan leaderboard',
-      'ranking',
-      'rankings',
-      'top trainers',
-      'top fan gain',
-      'leaderboard today',
-      'leaderboard this week',
-      'top 5',
-      'top 10',
-      'top 25',
-      'top 50',
+    const leaderboardRules: { pattern: RegExp; rule: string }[] = [
+      { pattern: /\bfan\s+leaderboard\b/i, rule: 'fan leaderboard' },
+      { pattern: /\bleaderboard\b/i, rule: 'leaderboard' },
+      { pattern: /\btop\s+trainers?\b/i, rule: 'top trainers' },
+      { pattern: /\btop\s+(?:5|10|20|25|50|100)\b/i, rule: 'top N' },
+      { pattern: /\bmy\s+rank\b/i, rule: 'my rank' },
+      { pattern: /\bshow\s+ranking\b/i, rule: 'show ranking' },
+      { pattern: /\branking\b/i, rule: 'ranking' },
+      { pattern: /\brankings\b/i, rule: 'rankings' },
+      { pattern: /\bfan\s+ranking\b/i, rule: 'fan ranking' },
     ];
 
-    for (const kw of fanGainKeywords) {
-      if (lower.includes(kw)) return 'fan_gain';
+    for (const item of fanGainRules) {
+      if (item.pattern.test(lower)) {
+        const result: StructuredIntentResult = {
+          intent: 'fan_gain',
+          confidence: 1.0,
+          rule: item.rule,
+        };
+        logger.info(`[Intent Audit]\nMessage:\n"${message}"\n\nDetected Intent:\n${result.intent}\n\nRule:\n${result.rule}\n\nConfidence:\n${result.confidence}`);
+        return result;
+      }
     }
 
-    for (const kw of leaderboardKeywords) {
-      if (lower.includes(kw)) return 'leaderboard';
+    for (const item of leaderboardRules) {
+      if (item.pattern.test(lower)) {
+        const result: StructuredIntentResult = {
+          intent: 'leaderboard',
+          confidence: 1.0,
+          rule: item.rule,
+        };
+        logger.info(`[Intent Audit]\nMessage:\n"${message}"\n\nDetected Intent:\n${result.intent}\n\nRule:\n${result.rule}\n\nConfidence:\n${result.confidence}`);
+        return result;
+      }
     }
 
-    if (lower.includes('fan')) return 'fan_gain';
-    if (lower.includes('rank') || lower.includes('position')) return 'leaderboard';
+    const defaultResult: StructuredIntentResult = {
+      intent: 'none',
+      confidence: 0.0,
+      rule: null,
+    };
+    logger.info(`[Intent Audit]\nMessage:\n"${message}"\n\nDetected Intent:\n${defaultResult.intent}\n\nRule:\nnone\n\nConfidence:\n${defaultResult.confidence}`);
+    return defaultResult;
+  }
 
-    return 'none';
+  public static detectIntent(message: string): FanIntentType {
+    const structured = this.detectIntentStructured(message);
+    if (structured.confidence < 1.0) {
+      return 'none';
+    }
+    return structured.intent;
   }
 }
 
@@ -391,6 +424,10 @@ export class FanLeaderboardResolver {
 
   public detectIntent(message: string): FanIntentType {
     return FanIntentDetector.detectIntent(message);
+  }
+
+  public detectIntentStructured(message: string): StructuredIntentResult {
+    return FanIntentDetector.detectIntentStructured(message);
   }
 
   public async getLeaderboard(

@@ -49,13 +49,29 @@ describe('Phase 15: Fan Gain & Ecosystem Scope Resolution', () => {
     assert.ok(uma2Leaderboard.some((t) => t.trainerName === 'TrainerTwo'));
   });
 
-  it('5. FanIntentDetector classifies fan gain vs leaderboard queries', () => {
+  it('5. FanIntentDetector classifies fan gain vs leaderboard queries and rejects false positives (Smart Falcon, Fantastic, etc.)', () => {
+    // Valid Fan Gain
     assert.strictEqual(FanIntentDetector.detectIntent('how many fans did I gain'), 'fan_gain');
     assert.strictEqual(FanIntentDetector.detectIntent('my fan gain'), 'fan_gain');
     assert.strictEqual(FanIntentDetector.detectIntent('fans today'), 'fan_gain');
+    assert.strictEqual(FanIntentDetector.detectIntent('show my fan gain'), 'fan_gain');
+    assert.strictEqual(FanIntentDetector.detectIntent('fan gain today'), 'fan_gain');
+    assert.strictEqual(FanIntentDetector.detectIntent('my fans today'), 'fan_gain');
+
+    // Valid Leaderboard
     assert.strictEqual(FanIntentDetector.detectIntent('show leaderboard'), 'leaderboard');
     assert.strictEqual(FanIntentDetector.detectIntent('top 10 trainers'), 'leaderboard');
     assert.strictEqual(FanIntentDetector.detectIntent('rankings today'), 'leaderboard');
+    assert.strictEqual(FanIntentDetector.detectIntent('fan leaderboard'), 'leaderboard');
+    assert.strictEqual(FanIntentDetector.detectIntent('top trainers'), 'leaderboard');
+    assert.strictEqual(FanIntentDetector.detectIntent('my rank'), 'leaderboard');
+
+    // False Positive Rejections (Must route to chat / none)
+    assert.strictEqual(FanIntentDetector.detectIntent('Smart Falcon is amazing'), 'none');
+    assert.strictEqual(FanIntentDetector.detectIntent('She loves her fans'), 'none');
+    assert.strictEqual(FanIntentDetector.detectIntent('Fantastic race'), 'none');
+    assert.strictEqual(FanIntentDetector.detectIntent('Fancy support card'), 'none');
+    assert.strictEqual(FanIntentDetector.detectIntent('Falcon is my favorite'), 'none');
   });
 
   it('6. ScopeResolver resolves ecosystem, period, and limit', () => {

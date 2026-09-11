@@ -14,10 +14,10 @@ if (process.env.PORT === '8080') {
 // If compiled distribution file does not exist, build it now
 if (!existsSync(apiDist)) {
   try {
-    console.log('[Startup] Building project artifacts with tsc -b --force...');
-    execSync('npx tsc -b --force', { stdio: 'inherit', cwd: __dirname });
+    console.log('[Startup] Building project artifacts with npm run build...');
+    execSync('npm run build', { stdio: 'inherit', cwd: __dirname });
   } catch (err) {
-    console.error('[Startup] Failed to build with tsc:', err);
+    console.error('[Startup] Failed to build:', err);
   }
 }
 

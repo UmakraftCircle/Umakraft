@@ -10,6 +10,7 @@ import {
 import { generateChatResponse } from './chat.js';
 import { generateAskResponse } from './ask.js';
 import { classifyIntent, type RouteDecision } from './router.js';
+import { routeMessage } from './domain-router.js';
 import { safetyGuard } from './guard.js';
 import { splitForEmbeds } from './embed-reply.js';
 import { lilyChatService, type LilyChatResponse } from './automation/lily-chat-service.js';
@@ -107,17 +108,31 @@ export async function handleDirectMessage(
     return;
   }
 
-  // 2. Fan & Leaderboard Direct Intent Check (Domain Resolver)
-  try {
-    const fanResolver = new FanLeaderboardResolver();
-    const fanIntent = fanResolver.detectIntent(content);
-    if (fanIntent === 'fan_gain' || fanIntent === 'leaderboard') {
+  // 2. Centralized Domain Router Check (Phase D2)
+  const routeDecision = await routeMessage({
+    userId,
+    message: content,
+    recentHistory: dmMemoryStore.getHistory(userId),
+  });
+
+  logger.info(`[Domain Router Decision] Domain: ${routeDecision.domain} | Confidence: ${routeDecision.confidence} | Handler: ${routeDecision.handler} | Reason: ${routeDecision.reason}`);
+
+  // Single Ownership Rule: Execute ONLY the winning handler
+  if (routeDecision.domain === 'FAN_GAIN' || routeDecision.domain === 'FAN_LEADERBOARD') {
+    try {
+      const fanResolver = new FanLeaderboardResolver();
       const fanReply = await fanResolver.formatLeaderboardResponse(userId, content);
       await sendDirectMessageResponse(message, fanReply);
       return;
+    } catch (fanErr: any) {
+      logger.warn(`Fan query handling error for ${userId}: ${fanErr?.message}; falling back to chat`);
     }
-  } catch (fanErr: any) {
-    logger.warn(`Fan query handling error for ${userId}: ${fanErr?.message}; continuing to AI routing`);
+  }
+
+  if (routeDecision.domain === 'LINK_REQUEST') {
+    const linkMsg = "Trainer, to link your account, please use the settings menu in the Umakraft web app or execute `/link` in your authorized server! 🐎";
+    await sendDirectMessageResponse(message, linkMsg);
+    return;
   }
 
   // 3. Update Conversation & Session Tracking for DM Context Continuity
