@@ -121,33 +121,33 @@ export async function handleDirectMessage(
   }
 
   // 3. Update Conversation & Session Tracking for DM Context Continuity
-  try {
-    const session = await chatSessionStore.getSession(userId);
-    if (!session) {
-      await chatSessionStore.openSession(userId, sessionId);
-    } else {
-      await chatSessionStore.bumpTurn(userId);
-    }
-    dmMemoryStore.addMessage(userId, 'user', content);
-  } catch (sessErr: any) {
-    logger.warn(`Session/memory update skipped for user ${userId}: ${sessErr?.message}`);
-  }
+  const existingSession = await chatSessionStore.getSession(userId).catch(() => null);
+  const isNewSession = !existingSession;
+  dmMemoryStore.addMessage(userId, 'user', content);
 
-  // 4. Main Feature: LilyChatService Conversational Engine (or injected test generator)
+  // 4. Main Feature: Conversational Engine (or injected test generator)
   let response: string;
   try {
-    if (options?.chatGenerator || options?.useLegacyChat) {
-      // Injected generator / legacy chat option (for custom tests & overrides)
-      const chatFn = options?.chatGenerator ?? generateChatResponse;
-      const session = await chatSessionStore.getSession(userId);
-      response = await chatFn({
+    if (options?.chatGenerator) {
+      if (isNewSession) {
+        await chatSessionStore.openSession(userId, sessionId);
+      } else {
+        await chatSessionStore.bumpTurn(userId);
+      }
+      response = await options.chatGenerator({
         userId,
         channelId: sessionId,
         message: content,
-        subcommand: session ? 'reply' : 'speak',
+        subcommand: isNewSession ? 'speak' : 'reply',
       });
+      await conversationMemoryStore.record(userId, sessionId, 'user', content).catch(() => {});
+      await conversationMemoryStore.record(userId, sessionId, 'assistant', response).catch(() => {});
     } else if (options?.askGenerator) {
-      // Injected ask generator
+      if (isNewSession) {
+        await chatSessionStore.openSession(userId, sessionId);
+      } else {
+        await chatSessionStore.bumpTurn(userId);
+      }
       response = await options.askGenerator({
         userId,
         channelId: sessionId,
@@ -155,26 +155,23 @@ export async function handleDirectMessage(
         domainGuard: false,
         bypassTopicCheck: true,
       });
+      await conversationMemoryStore.record(userId, sessionId, 'user', content).catch(() => {});
+      await conversationMemoryStore.record(userId, sessionId, 'assistant', response).catch(() => {});
     } else {
-      // Main Feature: Enterprise LilyChatService Conversational Intelligence
-      const lilyResult: LilyChatResponse = await lilyChatService.generateResponse({
+      // Route through existing conversational intelligence engine (which handles session open/bump & memory persistence)
+      response = await generateChatResponse({
         userId,
-        username,
+        channelId: sessionId,
         message: content,
+        subcommand: isNewSession ? 'speak' : 'reply',
       });
-      response = lilyResult.content;
-      logger.info(
-        `[LilyChatService DM] Model=${lilyResult.activeModel} Key=${lilyResult.activeKeyIndex} Latency=${lilyResult.latencyMs}ms Cached=${Boolean(lilyResult.cached)}`
-      );
     }
 
-    // Persist turn across memory stores
+    // Persist turn in DM memory store
     dmMemoryStore.addMessage(userId, 'assistant', response);
-    await memoryService.saveUserMessage(userId, content, sessionId).catch(() => {});
-    await memoryService.saveAssistantMessage(userId, response, sessionId).catch(() => {});
 
     await sendDirectMessageResponse(message, response);
-    logger.info(`[DM Replied] Successfully responded to user ${userId} via LilyChatService`);
+    logger.info(`[DM Replied] Successfully responded to user ${userId}`);
   } catch (err: any) {
     logger.error(`Error processing DM for user ${userId}: ${err?.message ?? err}`);
     const fallbackMsg = "Sorry, I couldn't process your message right now.";

@@ -13,10 +13,8 @@
     "@types/node": "^20.12.7",
     "@types/better-sqlite3": "^7.6.13",
     "@ai-agent-platform/shared": "*",
-    "@libsql/client": "^0.14.0"
-  },
-  "optionalDependencies": {
-    "better-sqlite3": "^13.0.2",
+    "@libsql/client": "^0.14.0",
+    "better-sqlite3": "^11.8.1",
     "sqlite3": "^5.1.7"
   },
   "devDependencies": {

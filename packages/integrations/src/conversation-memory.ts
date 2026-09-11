@@ -135,6 +135,11 @@ export class ConversationMemoryStore {
       .join('\n');
   }
 
+  /** Record a turn (alias for append with parameter signature). */
+  async record(userId: string, channelId: string, role: 'user' | 'assistant', content: string): Promise<void> {
+    await this.append({ userId, channelId, role, content });
+  }
+
   /** Append a turn. */
   async append(turn: Omit<ConversationTurn, 'id' | 'createdAt'>): Promise<void> {
     await this.init();
