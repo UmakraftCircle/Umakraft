@@ -3,6 +3,8 @@ import { createLogger } from '@ai-agent-platform/shared';
 
 const logger = createLogger('LinkRequests');
 
+export type LinkRequestStatus = 'PENDING' | 'FORWARDED';
+
 export interface LinkRequestRecord {
   id: string;
   discordUserId: string;
@@ -11,7 +13,7 @@ export interface LinkRequestRecord {
   trainerName: string;
   requestedAt: string;
   forwardedAt: string;
-  status: 'PENDING' | 'FORWARDED';
+  status: LinkRequestStatus;
 }
 
 export class LinkRequestStore {

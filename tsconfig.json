@@ -26,6 +26,7 @@
     { "path": "./packages/core" },
     { "path": "./packages/tools" },
     { "path": "./packages/skills" },
+    { "path": "./packages/lily-ai" },
     { "path": "./packages/domains/fan-tracker" },
     { "path": "./packages/domains/pr-monitor" },
     { "path": "./packages/domains/umamusume" },

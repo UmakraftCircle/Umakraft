@@ -19,6 +19,7 @@
     "@ai-agent-platform/fan-tracker": "*",
     "@ai-agent-platform/health": "*",
     "@ai-agent-platform/integrations": "*",
+    "@ai-agent-platform/lily-ai": "*",
     "@ai-agent-platform/pr-monitor": "*",
     "@ai-agent-platform/shared": "*",
     "@ai-agent-platform/skills": "*",

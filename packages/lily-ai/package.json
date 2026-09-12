@@ -1,0 +1,27 @@
+{
+  "name": "@ai-agent-platform/lily-ai",
+  "version": "1.0.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc -w"
+  },
+  "dependencies": {
+    "@ai-agent-platform/shared": "*",
+    "@ai-agent-platform/umamusume": "*",
+    "@ai-agent-platform/integrations": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  }
+}
