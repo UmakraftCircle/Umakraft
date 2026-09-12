@@ -87,5 +87,25 @@ export const TAXONOMY_DATA: TaxonomyEntity[] = [
   // Characters
   { id: 'CHAR_OGURI_CAP', canonical: 'Oguri Cap', type: 'character', aliases: ['oguri cap', 'oguri'] },
   { id: 'CHAR_MEJIRO_MCQUEEN', canonical: 'Mejiro McQueen', type: 'character', aliases: ['mejiro mcqueen', 'mcqueen'] },
-  { id: 'CHAR_TOKAI_TEIO', canonical: 'Tokai Teio', type: 'character', aliases: ['tokai teio', 'teio'] }
+  { id: 'CHAR_TOKAI_TEIO', canonical: 'Tokai Teio', type: 'character', aliases: ['tokai teio', 'teio'] },
+
+  // Support Cards
+  { id: 'CARD_KITASAN_BLACK', canonical: 'Kitasan Black [SSR]', type: 'support_card', aliases: ['kitasan black', 'kitasan ssr', 'kita black'] },
+  { id: 'CARD_SUPER_CREEK', canonical: 'Super Creek [SSR]', type: 'support_card', aliases: ['super creek', 'creek ssr'] },
+
+  // Races
+  { id: 'RACE_ARIMA_KINEN', canonical: 'Arima Kinen', type: 'race', aliases: ['arima kinen', 'arima'] },
+  { id: 'RACE_JAPAN_CUP', canonical: 'Japan Cup', type: 'race', aliases: ['japan cup', 'jc'] },
+  { id: 'RACE_TOKYO_YUSHUN', canonical: 'Tokyo Yushun (Japanese Derby)', type: 'race', aliases: ['tokyo yushun', 'japanese derby', 'derby'] },
+
+  // Factors
+  { id: 'FACTOR_BLUE_SPEED', canonical: 'Speed Factor (Blue)', type: 'factor', aliases: ['blue factor', 'speed factor', 'blue spark'] },
+  { id: 'FACTOR_URA_FINALS', canonical: 'URA Finals Factor', type: 'factor', aliases: ['ura factor', 'ura finals factor'] },
+
+  // Events
+  { id: 'EVENT_AOHARU_HAI', canonical: 'Aoharu Hai', type: 'event', aliases: ['aoharu', 'aoharu hai'] },
+  { id: 'EVENT_GRAND_LIVE', canonical: 'Grand Live', type: 'event', aliases: ['grand live', 'grandlive'] },
+
+  // Titles
+  { id: 'TITLE_TRIPLE_CROWN', canonical: 'Classic Triple Crown', type: 'title', aliases: ['triple crown', 'classic triple crown'] }
 ];

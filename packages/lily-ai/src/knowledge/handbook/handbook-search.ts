@@ -1,98 +1,193 @@
+import {
+  HandbookDocument,
+  HandbookCategory,
+  HandbookSearchOptions,
+  HandbookSearchResult,
+  HandbookRecommendationResult
+} from './handbook-types.js';
+import { HandbookRegistry } from './handbook-registry.js';
+import { HandbookResolver } from './handbook-resolver.js';
+import { HandbookRankingEngine } from './handbook-ranking.js';
+import { HandbookCache } from './handbook-cache.js';
 import { HandbookResult } from './handbook-result.js';
+import { HandbookLoader } from './handbook-loader.js';
 
-export interface HandbookEntry {
-  section: string;
-  title: string;
-  content: string;
-  keywords: string[];
-}
+export class HandbookSearchEngine {
+  private registry: HandbookRegistry;
+  private resolver: HandbookResolver;
+  private rankingEngine: HandbookRankingEngine;
+  private cache: HandbookCache;
 
-export const HANDBOOK_INDEX: HandbookEntry[] = [
-  {
-    section: 'Fan Requirements',
-    title: 'Minimum Monthly Fan Target',
-    content: 'Minimum monthly fan target: 150 million fans. Members are expected to maintain this target to remain in good standing.',
-    keywords: ['fan', 'minimum', '150m', 'target', 'requirement', '150 million']
-  },
-  {
-    section: 'Activity Rules',
-    title: 'Inactivity Policy',
-    content: 'Inactive members may be subject to review if participation requirements are not met. Consistency in fan gain and participation in club events is expected.',
-    keywords: ['inactive', 'activity', 'kick', 'review', 'participation', 'online']
-  },
-  {
-    section: 'Membership',
-    title: 'Joining Umakraft',
-    content: 'Umakraft is a competitive club. Membership is granted based on fan performance and community fit. New members must link their Discord and Trainer accounts.',
-    keywords: ['join', 'membership', 'apply', 'recruit', 'member']
-  },
-  {
-    section: 'Linking',
-    title: 'Account Linking Procedure',
-    content: 'To link your account, provide your Trainer ID and Trainer Name to Lily. A leader will review and approve the request.',
-    keywords: ['link', 'connect', 'account', 'trainer id', 'verify']
-  },
-  {
-    section: 'Club Procedures',
-    title: 'Monthly Review',
-    content: 'The club conducts a monthly review of all members. Performance statistics, including fan gain and event participation, are evaluated.',
-    keywords: ['review', 'monthly', 'stats', 'performance', 'procedure']
-  },
-  {
-    section: 'FAQ',
-    title: 'How are fans tracked?',
-    content: 'Lily tracks fan gains daily using snapshots. You can check your progress by asking for your fan gain or deficit.',
-    keywords: ['track', 'fans', 'how', 'snapshot', 'daily']
-  },
-  {
-    section: 'FAQ',
-    title: 'What is the "Link Request"?',
-    content: 'A Link Request is the process of connecting your Discord identity to your Umamusume Trainer ID so Lily can track your performance.',
-    keywords: ['what', 'link request', 'explanation']
+  constructor(
+    registry?: HandbookRegistry,
+    resolver?: HandbookResolver,
+    rankingEngine?: HandbookRankingEngine,
+    cache?: HandbookCache
+  ) {
+    this.registry = registry || new HandbookRegistry(HandbookLoader.load());
+    this.resolver = resolver || new HandbookResolver();
+    this.rankingEngine = rankingEngine || new HandbookRankingEngine();
+    this.cache = cache || new HandbookCache();
   }
-];
 
-export function searchHandbook(query: string): HandbookResult[] {
-  const normalizedQuery = query.toLowerCase();
-  const results: (HandbookEntry & { score: number })[] = [];
+  public getRegistry(): HandbookRegistry {
+    return this.registry;
+  }
 
-  for (const entry of HANDBOOK_INDEX) {
-    let score = 0;
+  public getCache(): HandbookCache {
+    return this.cache;
+  }
 
-    // Title match (high weight)
-    if (entry.title.toLowerCase().includes(normalizedQuery)) {
-      score += 5;
+  /**
+   * Main Search Method:
+   * Searches handbook documents with semantic expansion and multi-factor ranking.
+   */
+  public search(
+    rawQuery: string,
+    options?: HandbookSearchOptions
+  ): HandbookSearchResult[] {
+    const query = rawQuery.trim();
+    if (!query) return [];
+
+    // Check cache
+    const cached = this.cache.get(query, options?.category);
+    if (cached) {
+      return cached;
     }
 
-    // Section match
-    if (entry.section.toLowerCase().includes(normalizedQuery)) {
-      score += 3;
+    // 1. Semantic Query Resolution (Taxonomy + Lexical Intelligence)
+    const semanticContext = this.resolver.resolve(query);
+
+    // 2. Candidate Selection
+    let candidates = this.registry.getAll();
+
+    // Filter by Category
+    if (options?.category) {
+      const catLower = options.category.toLowerCase();
+      candidates = candidates.filter(d => d.category.toLowerCase() === catLower);
     }
 
-    // Keyword match
-    for (const keyword of entry.keywords) {
-      if (normalizedQuery.includes(keyword.toLowerCase())) {
-        score += 2;
+    // Filter Deprecated
+    if (!options?.includeDeprecated) {
+      candidates = candidates.filter(d => !d.deprecated);
+    }
+
+    // Filter by Required Tags
+    if (options?.tags && options.tags.length > 0) {
+      const requiredTags = options.tags.map(t => t.toLowerCase());
+      candidates = candidates.filter(d =>
+        d.tags.some(t => requiredTags.includes(t.toLowerCase()))
+      );
+    }
+
+    // 3. Score and Rank candidates
+    const scoredResults: HandbookSearchResult[] = [];
+
+    for (const doc of candidates) {
+      const ranked = this.rankingEngine.rank(doc, query, {
+        taxonomyMatches: [
+          ...semanticContext.taxonomyMatches,
+          ...(options?.taxonomyContext || [])
+        ],
+        semanticTokens: semanticContext.semanticTokens,
+        category: options?.category
+      });
+
+      if (ranked.score > 0) {
+        if (!options?.minConfidence || ranked.confidence >= options.minConfidence) {
+          scoredResults.push(ranked);
+        }
       }
     }
 
-    // Content match
-    if (entry.content.toLowerCase().includes(normalizedQuery)) {
-      score += 1;
-    }
+    // Sort by score descending
+    scoredResults.sort((a, b) => b.score - a.score);
 
-    if (score > 0) {
-      results.push({ ...entry, score });
-    }
+    const limit = options?.limit || 10;
+    const finalResults = scoredResults.slice(0, limit);
+
+    // Store in cache
+    this.cache.set(query, finalResults, options?.category);
+
+    return finalResults;
   }
 
-  // Sort by score descending and map to HandbookResult
-  return results
-    .sort((a, b) => b.score - a.score)
-    .map(r => ({
-      section: r.section,
-      title: r.title,
-      content: r.content,
-      confidence: Math.min(r.score / 10, 1.0)
-    }));
+  /**
+   * Finds documents matching query with optional category constraint.
+   */
+  public find(query: string, category?: HandbookCategory | string): HandbookSearchResult[] {
+    return this.search(query, { category });
+  }
+
+  /**
+   * Direct lookup by Document ID or exact Title.
+   */
+  public lookup(idOrTitle: string): HandbookDocument | undefined {
+    const byId = this.registry.getDocument(idOrTitle);
+    if (byId) return byId;
+
+    return this.registry.getByTitle(idOrTitle);
+  }
+
+  /**
+   * Generates actionable recommendations and primary guide for a training / context goal.
+   */
+  public recommend(context: {
+    character?: string;
+    runningStyle?: string;
+    track?: string;
+    goal?: string;
+  }): HandbookRecommendationResult {
+    const searchTerms = [
+      context.character,
+      context.runningStyle,
+      context.track,
+      context.goal
+    ].filter(Boolean).join(' ');
+
+    const results = this.search(searchTerms || 'recommendations', { limit: 5 });
+    const primaryGuide = results[0]?.document;
+    const relatedGuides = results.slice(1).map(r => r.document);
+
+    const recommendations: string[] = [];
+    if (primaryGuide?.recommendations) {
+      recommendations.push(...primaryGuide.recommendations);
+    }
+    for (const rel of relatedGuides) {
+      if (rel.recommendations) {
+        recommendations.push(...rel.recommendations);
+      }
+    }
+
+    return {
+      primaryGuide,
+      relatedGuides,
+      recommendations: Array.from(new Set(recommendations)),
+      confidence: results[0]?.confidence || 0.8
+    };
+  }
+}
+
+// Backwards-compatible standalone function for existing callers
+let defaultSearchEngineInstance: HandbookSearchEngine | null = null;
+function getDefaultEngine(): HandbookSearchEngine {
+  if (!defaultSearchEngineInstance) {
+    defaultSearchEngineInstance = new HandbookSearchEngine();
+  }
+  return defaultSearchEngineInstance;
+}
+
+export function searchHandbook(query: string): HandbookResult[] {
+  const engine = getDefaultEngine();
+  const results = engine.search(query);
+  return results.map(r => ({
+    section: r.document.category,
+    title: r.document.title,
+    content: r.document.content,
+    confidence: r.confidence,
+    category: r.document.category,
+    tags: r.document.tags,
+    version: r.document.version,
+    recommendations: r.document.recommendations
+  }));
 }

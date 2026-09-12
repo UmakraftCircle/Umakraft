@@ -2,6 +2,7 @@ export interface CalculationResult {
   operation: 'add' | 'subtract' | 'multiply' | 'divide' | 'percentage' | 'ratio' | 'progress';
   operands: number[];
   result: number;
+  progress?: number;
   formatted: string;
 }
 
@@ -100,5 +101,36 @@ export class CalculationEngine {
       progress: pct,
       formatted: `${pct}%`
     };
+  }
+
+  public calculate(
+    operation: 'add' | 'subtract' | 'multiply' | 'divide' | 'percentage' | 'ratio' | 'progress',
+    a: number,
+    b: number
+  ): CalculationResult {
+    switch (operation) {
+      case 'add':
+        return this.add(a, b);
+      case 'subtract':
+        return this.subtract(a, b);
+      case 'multiply':
+        return this.multiply(a, b);
+      case 'divide':
+        return this.divide(a, b);
+      case 'percentage':
+        return this.percentage(a, b);
+      case 'ratio':
+        return this.ratio(a, b);
+      case 'progress': {
+        const prog = this.progress(a, b);
+        return {
+          operation: 'progress',
+          operands: [a, b],
+          result: prog.progress,
+          progress: prog.progress,
+          formatted: prog.formatted
+        };
+      }
+    }
   }
 }

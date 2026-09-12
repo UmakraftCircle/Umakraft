@@ -21,3 +21,6 @@ export class HandbookKnowledgeSource {
     return this.classifier.classify(analysis);
   }
 }
+
+export { HandbookKnowledgeSource as HandbookLegacyKnowledgeSource };
+

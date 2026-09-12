@@ -1,5 +1,5 @@
 export interface Comparison {
-  type: 'requirement' | 'numeric' | 'stat';
+  type: 'requirement' | 'numeric' | 'stat' | 'fact';
   metric?: string;
   first: number | string;
   second: number | string;
@@ -73,6 +73,13 @@ export class ComparisonEngine {
   }
 
   /**
+   * Compares two numbers directly
+   */
+  public compare(a: number, b: number, metric = 'Value'): Comparison {
+    return this.compareNumbers(a, b, metric);
+  }
+
+  /**
    * Compares two character/support stats
    */
   public compareStats(
@@ -92,7 +99,7 @@ export class ComparisonEngine {
       difference,
       higher,
       lower,
-      status: val1 >= val2 ? 'greater' : 'less',
+      status: val1 > val2 ? 'greater' : val1 < val2 ? 'less' : 'equal',
       description: `${statName}: higher is ${higher}, lower is ${lower} (difference: ${difference})`
     };
   }

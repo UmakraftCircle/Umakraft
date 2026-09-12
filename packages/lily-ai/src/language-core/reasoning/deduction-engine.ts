@@ -5,6 +5,7 @@ export interface Deduction {
   requirementMet?: boolean;
   possibleIssue?: string;
   confidence: number;
+  details?: Record<string, any>;
 }
 
 export class DeductionEngine {
@@ -18,7 +19,13 @@ export class DeductionEngine {
       premise: `Current Fans: ${currentFans.toLocaleString()}, Required: ${requiredFans.toLocaleString()}`,
       conclusion: met ? 'Fan requirement is satisfied' : 'Fan requirement is NOT satisfied',
       requirementMet: met,
-      confidence: 1.0
+      confidence: 1.0,
+      details: {
+        currentFans,
+        requiredFans,
+        deficit: met ? 0 : requiredFans - currentFans,
+        surplus: met ? currentFans - requiredFans : 0
+      }
     };
   }
 
@@ -48,44 +55,93 @@ export class DeductionEngine {
         : `Stamina (${stamina}) is sufficient for ${distanceCategory}`,
       possibleIssue: isDeficient ? 'insufficient_stamina' : undefined,
       requirementMet: !isDeficient,
-      confidence: 0.95
+      confidence: 0.95,
+      details: {
+        distance: distanceCategory,
+        stamina,
+        minRecommendedStamina
+      }
     };
   }
 
   /**
    * General deductive reasoning given text and context facts
    */
-  public deduceFromContext(facts: any[], text: string): Deduction[] {
+  public deduceFromContext(facts: any[] = [], text = ''): Deduction[] {
     const deductions: Deduction[] = [];
     const normalized = text.toLowerCase();
 
-    // Check for stamina & long distance combinations
+    // 1. Check for stamina & long distance combinations
     const hasLongDistance =
       normalized.includes('long distance') ||
       normalized.includes('long') ||
-      facts.some(f => String(f.value || f.text || '').toLowerCase().includes('long'));
+      facts.some(f => String(f.value || f.text || f.name || '').toLowerCase().includes('long'));
 
-    const staminaMatch = text.match(/stamina\s*(\d+)/i) || text.match(/(\d+)\s*stamina/i);
-    if (hasLongDistance && staminaMatch) {
-      const staminaVal = parseInt(staminaMatch[1], 10);
-      if (staminaVal < 600) {
-        deductions.push({
-          type: 'stat_deficiency',
-          premise: `Long distance race with ${staminaVal} stamina`,
-          conclusion: 'Stamina value is deficient for long distance endurance requirements',
-          possibleIssue: 'insufficient_stamina',
-          confidence: 0.95
-        });
+    const staminaMatch = text.match(/stamina\s*[:=]?\s*(\d+)/i) || text.match(/(\d+)\s*stamina/i);
+    let staminaVal = staminaMatch ? parseInt(staminaMatch[1], 10) : undefined;
+
+    if (staminaVal === undefined) {
+      const staminaFact = facts.find(f => (f.name || f.key || '').toLowerCase() === 'stamina');
+      if (staminaFact && typeof staminaFact.value === 'number') {
+        staminaVal = staminaFact.value;
       }
     }
 
-    // Fan requirement deduction
-    const currentFanMatch = text.match(/(\d+)\s*m(?:illion)?\s*fans/i);
-    const reqFanMatch = text.match(/require(?:d|ment)?(?:\s*is)?\s*(\d+)\s*m/i);
-    if (currentFanMatch && reqFanMatch) {
-      const current = parseInt(currentFanMatch[1], 10);
-      const req = parseInt(reqFanMatch[1], 10);
-      deductions.push(this.deduceFanRequirement(current * 1000000, req * 1000000));
+    if (hasLongDistance && staminaVal !== undefined) {
+      deductions.push(this.deduceStaminaSufficiency('Long Distance', staminaVal));
+    }
+
+    // 2. Fan requirement deduction from text
+    const fanMatches = Array.from(text.matchAll(/(\d+(?:\.\d+)?)\s*m(?:illion)?\s*fans?/gi));
+    const reqFanMatch = text.match(/require(?:d|ment)?(?:\s*is)?\s*[:=]?\s*(\d+(?:\.\d+)?)\s*m/i);
+    const trainerFanMatch = text.match(/trainer\s*(?:has|with)?\s*[:=]?\s*(\d+(?:\.\d+)?)\s*m/i) ||
+      text.match(/current\s*(?:fans)?\s*[:=]?\s*(\d+(?:\.\d+)?)\s*m/i);
+
+    if (reqFanMatch && (trainerFanMatch || fanMatches.length >= 2)) {
+      const reqVal = parseFloat(reqFanMatch[1]) * 1_000_000;
+      const currentVal = trainerFanMatch
+        ? parseFloat(trainerFanMatch[1]) * 1_000_000
+        : parseFloat(fanMatches[0][1]) * 1_000_000;
+      deductions.push(this.deduceFanRequirement(currentVal, reqVal));
+    } else if (facts.length > 0) {
+      const cur = facts.find(f => f.key === 'currentFans' || f.name === 'currentFans' || f.key === 'current');
+      const req = facts.find(f => f.key === 'requiredFans' || f.name === 'requiredFans' || f.key === 'required');
+      if (cur && req && typeof cur.value === 'number' && typeof req.value === 'number') {
+        deductions.push(this.deduceFanRequirement(cur.value, req.value));
+      }
+    }
+
+    return deductions;
+  }
+
+  /**
+   * Deduce from direct input parameters
+   */
+  public deduce(input: {
+    currentFans?: number;
+    requiredFans?: number;
+    distance?: string;
+    stamina?: number;
+    facts?: any[];
+    text?: string;
+  }): Deduction[] {
+    const deductions: Deduction[] = [];
+
+    if (input.currentFans !== undefined && input.requiredFans !== undefined) {
+      deductions.push(this.deduceFanRequirement(input.currentFans, input.requiredFans));
+    }
+
+    if (input.distance && input.stamina !== undefined) {
+      deductions.push(this.deduceStaminaSufficiency(input.distance, input.stamina));
+    }
+
+    if (input.text || (input.facts && input.facts.length > 0)) {
+      const contextDeductions = this.deduceFromContext(input.facts, input.text || '');
+      for (const d of contextDeductions) {
+        if (!deductions.some(existing => existing.type === d.type && existing.premise === d.premise)) {
+          deductions.push(d);
+        }
+      }
     }
 
     return deductions;

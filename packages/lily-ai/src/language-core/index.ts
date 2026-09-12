@@ -15,5 +15,31 @@ export * from './understanding/index.js';
 export * from './communication/index.js';
 export { ComprehensionEngine } from './comprehension-engine.js';
 export * from './comprehension/index.js';
+export * from './reasoning/index.js';
 export * from './reasoning-engine.js';
+export {
+  ObservationEngine,
+  PatternCollector,
+  ApprovalQueue,
+  LearningMemory,
+  VocabularyLearning,
+  GlossaryLearning,
+  TaxonomyLearning,
+  CandidateGenerator,
+  LearningEngine,
+  ConfidenceEngine as LearningConfidenceEngine
+} from './learning/index.js';
+export type {
+  Observation,
+  LanguagePattern,
+  LearningCandidate,
+  CandidateType,
+  LearningMemoryRecord,
+  UnknownWordInput,
+  GlossaryObservationInput,
+  TaxonomyObservationInput,
+  LearningInput,
+  LearningResult,
+  ConfidenceFactors as LearningConfidenceFactors
+} from './learning/index.js';
 export * from './language-core-service.js';

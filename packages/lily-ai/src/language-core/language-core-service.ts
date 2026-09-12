@@ -13,6 +13,8 @@ import { UnknownWordTracker } from './dictionary/unknown-word-tracker.js';
 import { ReadingComprehensionEngine, ComprehensionResult as RichComprehensionResult } from './comprehension/index.js';
 import { UnderstandingEngine, UnderstandingResult, ContextState } from './understanding/index.js';
 import { CommunicationEngine, CommunicationResult } from './communication/index.js';
+import { ReasoningEngine, ReasoningResult } from './reasoning/index.js';
+import { LearningEngine, LearningResult } from './learning/index.js';
 
 export interface LanguageCoreResult {
   originalText: string;
@@ -30,6 +32,8 @@ export interface LanguageCoreResult {
   writing?: WritingResult;
   understanding?: UnderstandingResult;
   communication?: CommunicationResult;
+  reasoning?: ReasoningResult;
+  learning?: LearningResult;
 }
 
 export class LanguageCoreService {
@@ -43,9 +47,19 @@ export class LanguageCoreService {
   private writingEngine = new WritingEngine(this.glossaryService);
   private understandingEngine = new UnderstandingEngine();
   private communicationEngine = new CommunicationEngine();
+  private reasoningEngine = new ReasoningEngine();
+  private learningEngine = new LearningEngine();
   private normalizationEngine = new NormalizationEngine();
   private unknownWordTracker = new UnknownWordTracker();
   private lastContextState: ContextState = {};
+
+  public getLearningEngine(): LearningEngine {
+    return this.learningEngine;
+  }
+
+  public getReasoningEngine(): ReasoningEngine {
+    return this.reasoningEngine;
+  }
 
   public getCommunicationEngine(): CommunicationEngine {
     return this.communicationEngine;
@@ -163,6 +177,31 @@ export class LanguageCoreService {
       clarification: understandingResult.clarification
     });
 
+    // Step 11: Reasoning Intelligence (F9 Integration)
+    const reasoningResult = this.reasoningEngine.reason({
+      text: normalizedText,
+      facts: richComprehension.facts,
+      entities: richComprehension.entities,
+      context: {
+        ...richComprehension.context,
+        goal: understandingResult.goal,
+        emotion: understandingResult.emotion,
+        communicationStyle: communicationResult.style
+      }
+    });
+
+    // Step 12: Learning Observation & Candidate Generation (F10 Integration)
+    const learningResult = this.learningEngine.process({
+      text: normalizedText,
+      unknownWords: Array.from(new Set(unknownWords)),
+      entities: richComprehension.entities,
+      facts: richComprehension.facts,
+      context: {
+        ...richComprehension.context,
+        goal: understandingResult.goal
+      }
+    });
+
     return {
       originalText,
       normalizedText,
@@ -177,7 +216,9 @@ export class LanguageCoreService {
       comprehension: richComprehension,
       writing: writingResult,
       understanding: understandingResult,
-      communication: communicationResult
+      communication: communicationResult,
+      reasoning: reasoningResult,
+      learning: learningResult
     };
   }
 }

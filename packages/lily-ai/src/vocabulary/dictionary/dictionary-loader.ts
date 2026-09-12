@@ -1,0 +1,633 @@
+import { DictionaryRegistry } from './dictionary-registry.js';
+import { DictionaryEntry } from './dictionary-entry.js';
+import * as fs from 'fs';
+import * as path from 'path';
+
+export const DEFAULT_CORE_DICTIONARY: DictionaryEntry[] = [
+  {
+    word: 'run',
+    normalizedWord: 'run',
+    partOfSpeech: 'verb',
+    definitions: [
+      'to move swiftly on foot with rapid steps',
+      'to enter into or participate in a competitive race',
+      'to operate, manage, or keep functioning'
+    ],
+    examples: [
+      'I run every morning to build endurance.',
+      'The championship race will run tomorrow.',
+      'She knows how to run a successful team.'
+    ],
+    aliases: ['sprint', 'dash'],
+    confidence: 1.00
+  },
+  {
+    word: 'runner',
+    normalizedWord: 'runner',
+    partOfSpeech: 'noun',
+    definitions: [
+      'a person or animal that competes in running events',
+      'a participant positioned in a race'
+    ],
+    examples: [
+      'The front runner took an early lead.',
+      'She is a dedicated marathon runner.'
+    ],
+    aliases: ['sprinter', 'racer'],
+    confidence: 1.00
+  },
+  {
+    word: 'diligent',
+    normalizedWord: 'diligent',
+    partOfSpeech: 'adjective',
+    definitions: [
+      'showing steady, earnest, and energetic effort in completing tasks',
+      'painstakingly attentive and careful in study or work'
+    ],
+    examples: [
+      'She is a diligent trainee who never misses morning practice.',
+      'Through diligent research, they mastered the optimal strategy.'
+    ],
+    aliases: ['industrious', 'hardworking', 'assiduous'],
+    confidence: 1.00
+  },
+  {
+    word: 'study',
+    normalizedWord: 'study',
+    partOfSpeech: 'verb',
+    definitions: [
+      'to devote time and attention to acquiring knowledge on a subject',
+      'to examine, observe, or investigate closely and attentively'
+    ],
+    examples: [
+      'He studies racetrack conditions before every competition.',
+      'We need to study opponent tactics to formulate a counter-strategy.'
+    ],
+    aliases: ['learn', 'examine', 'analyze'],
+    confidence: 1.00
+  },
+  {
+    word: 'race',
+    normalizedWord: 'race',
+    partOfSpeech: 'noun',
+    definitions: [
+      'a competition of speed between runners, vehicles, or athletes to reach a goal',
+      'a category or group of human population sharing distinctive physical or cultural traits',
+      'a fast-moving current of water or a channeled conduit'
+    ],
+    examples: [
+      'She won first place in the classic G1 race.',
+      'Athletes of every race and background joined the tournament.',
+      'The water flowed rapidly down the mill race.'
+    ],
+    aliases: ['derby', 'contest', 'match'],
+    confidence: 1.00
+  },
+  {
+    word: 'train',
+    normalizedWord: 'train',
+    partOfSpeech: 'verb',
+    definitions: [
+      'to develop, discipline, or refine physical and mental capabilities through systematic practice',
+      'to teach a person or animal a particular skill or behavior',
+      'a series of connected railway cars pulled by an engine'
+    ],
+    examples: [
+      'Train hard every turn to maximize stamina and speed stats.',
+      'The coach trains new athletes for competitive debut.',
+      'We boarded the express train to the arena.'
+    ],
+    aliases: ['practice', 'condition', 'coach'],
+    confidence: 1.00
+  },
+  {
+    word: 'trainer',
+    normalizedWord: 'trainer',
+    partOfSpeech: 'noun',
+    definitions: [
+      'a coach or instructor who guides and directs the training regimen of athletes',
+      'a person responsible for conditioning and developing race contenders'
+    ],
+    examples: [
+      'The trainer devised a personalized stamina schedule.',
+      'She thanked her trainer for believing in her potential.'
+    ],
+    aliases: ['coach', 'instructor', 'mentor'],
+    confidence: 1.00
+  },
+  {
+    word: 'good',
+    normalizedWord: 'good',
+    partOfSpeech: 'adjective',
+    definitions: [
+      'possessing desirable, high quality, favorable, or beneficial qualities',
+      'morally excellent, virtuous, or commendable',
+      'competent, proficient, or skilled in a specific endeavor'
+    ],
+    examples: [
+      'She delivered a very good performance on turf.',
+      'A good training regimen balances rest and high-intensity workouts.'
+    ],
+    aliases: ['fine', 'favorable', 'positive'],
+    confidence: 1.00
+  },
+  {
+    word: 'bad',
+    normalizedWord: 'bad',
+    partOfSpeech: 'adjective',
+    definitions: [
+      'of poor quality, inferior, defective, or unsatisfactory',
+      'unfavorable, severe, or adverse in circumstance or mood'
+    ],
+    examples: [
+      'A bad condition state reduces race performance.',
+      'The rainy weather produced bad track conditions.'
+    ],
+    aliases: ['poor', 'unfavorable', 'adverse'],
+    confidence: 1.00
+  },
+  {
+    word: 'fast',
+    normalizedWord: 'fast',
+    partOfSpeech: 'adjective',
+    definitions: [
+      'moving, acting, or able to proceed at high speed',
+      'taking only a short time; rapid or swift'
+    ],
+    examples: [
+      'She is a remarkably fast sprinter.',
+      'The fast track surface favored speedy front runners.'
+    ],
+    aliases: ['quick', 'rapid', 'swift'],
+    confidence: 1.00
+  },
+  {
+    word: 'slow',
+    normalizedWord: 'slow',
+    partOfSpeech: 'adjective',
+    definitions: [
+      'operating, moving, or progressing with little speed or taking a long time',
+      'characterized by a leisurely pace or sluggish response'
+    ],
+    examples: [
+      'A slow start from the gate can jeopardize placement.',
+      'The race opened at a slow and cautious pace.'
+    ],
+    aliases: ['sluggish', 'unhurried'],
+    confidence: 1.00
+  },
+  {
+    word: 'speed',
+    normalizedWord: 'speed',
+    partOfSpeech: 'noun',
+    definitions: [
+      'the rate at which someone or something moves, travels, or operates',
+      'rapidity of movement or action in competitive athletics'
+    ],
+    examples: [
+      'Speed is the primary attribute governing top race velocity.',
+      'She accelerated to maximum speed during the final stretch.'
+    ],
+    aliases: ['velocity', 'pace', 'tempo'],
+    confidence: 1.00
+  },
+  {
+    word: 'stamina',
+    normalizedWord: 'stamina',
+    partOfSpeech: 'noun',
+    definitions: [
+      'the physical or mental ability to sustain prolonged effort and avoid exhaustion',
+      'endurance required to complete long-distance athletic events without faltering'
+    ],
+    examples: [
+      'Long-distance races demand superior stamina reserves.',
+      'Her stamina held strong until the finish line.'
+    ],
+    aliases: ['endurance', 'energy', 'staying power'],
+    confidence: 1.00
+  },
+  {
+    word: 'power',
+    normalizedWord: 'power',
+    partOfSpeech: 'noun',
+    definitions: [
+      'physical strength, acceleration, and ability to break through race pack pressure',
+      'the capacity or ability to direct or influence the behavior of others or events',
+      'the rate at which energy is delivered or work is done'
+    ],
+    examples: [
+      'Power allows runners to overtake rivals on uphill inclines.',
+      'She unleashed explosive power in the final two hundred meters.'
+    ],
+    aliases: ['strength', 'might', 'force'],
+    confidence: 1.00
+  },
+  {
+    word: 'guts',
+    normalizedWord: 'guts',
+    partOfSpeech: 'noun',
+    definitions: [
+      'courage, resolve, perseverance, and willpower when exhausted',
+      'the internal stamina conservation stat in late race duels'
+    ],
+    examples: [
+      'High guts prevents deceleration when stamina runs low.',
+      'It took sheer guts to hold off the late surger.'
+    ],
+    aliases: ['grit', 'perseverance', 'tenacity'],
+    confidence: 1.00
+  },
+  {
+    word: 'intelligence',
+    normalizedWord: 'intelligence',
+    partOfSpeech: 'noun',
+    definitions: [
+      'the ability to acquire, understand, and apply knowledge and skills',
+      'the race stat determining skill activation frequency and positioning judgment'
+    ],
+    examples: [
+      'High intelligence increases the chance of triggering recovery skills.',
+      'Tactical intelligence enables efficient positioning throughout the pack.'
+    ],
+    aliases: ['wit', 'intellect', 'wisdom'],
+    confidence: 1.00
+  },
+  {
+    word: 'horse',
+    normalizedWord: 'horse',
+    partOfSpeech: 'noun',
+    definitions: [
+      'a large domesticated mammal with hooves and a mane, bred for riding and racing',
+      'a solid-hoofed herbivorous quadruped (Equus caballus)'
+    ],
+    examples: [
+      'Thoroughbred horses have competed in prestigious turf races for centuries.',
+      'The horse responded promptly to the jockey\'s reins.'
+    ],
+    aliases: ['steed', 'equine'],
+    confidence: 1.00
+  },
+  {
+    word: 'track',
+    normalizedWord: 'track',
+    partOfSpeech: 'noun',
+    definitions: [
+      'a prepared course, surface, or circuit dedicated to racing competitions',
+      'a rough path or trail formed by the passage of people or animals',
+      'to follow the trail, movement, or progress of something (verb)'
+    ],
+    examples: [
+      'The Tokyo Racecourse features a wide left-handed turf track.',
+      'Hikers followed the winding dirt track through the woods.',
+      'Use our platform to track fan counts and race history.'
+    ],
+    aliases: ['course', 'circuit', 'turf'],
+    confidence: 1.00
+  },
+  {
+    word: 'win',
+    normalizedWord: 'win',
+    partOfSpeech: 'verb',
+    definitions: [
+      'to achieve victory, success, or first place in a competitive contest',
+      'to acquire or earn through effort or competition'
+    ],
+    examples: [
+      'She trained relentlessly to win the Japan Cup.',
+      'A well-timed spurt helped her win by half a length.'
+    ],
+    aliases: ['triumph', 'prevail', 'conquer'],
+    confidence: 1.00
+  },
+  {
+    word: 'winner',
+    normalizedWord: 'winner',
+    partOfSpeech: 'noun',
+    definitions: [
+      'a person, team, or horse that triumphs or finishes first in a competition',
+      'something that achieves widespread success'
+    ],
+    examples: [
+      'The crowd cheered loudly for the race winner.',
+      'Her consistent training regimen produced a true winner.'
+    ],
+    aliases: ['victor', 'champion'],
+    confidence: 1.00
+  },
+  {
+    word: 'lose',
+    normalizedWord: 'lose',
+    partOfSpeech: 'verb',
+    definitions: [
+      'to suffer defeat or fail to achieve victory in a competition',
+      'to be deprived of or cease to possess something'
+    ],
+    examples: [
+      'Even champions lose occasional matches during a long season.',
+      'Poor stamina management can cause a runner to lose momentum.'
+    ],
+    aliases: ['fail', 'drop'],
+    confidence: 1.00
+  },
+  {
+    word: 'play',
+    normalizedWord: 'play',
+    partOfSpeech: 'verb',
+    definitions: [
+      'to engage in sport, game, or recreational activity for amusement',
+      'to participate as a competitor in a match or fixture',
+      'a dramatic theatrical work or performance'
+    ],
+    examples: [
+      'Players gather daily to play competitive gaming matches.',
+      'She knows how to play her cards right in tight tactical duels.'
+    ],
+    aliases: ['compete', 'participate'],
+    confidence: 1.00
+  },
+  {
+    word: 'player',
+    normalizedWord: 'player',
+    partOfSpeech: 'noun',
+    definitions: [
+      'a person who takes part in a sport, game, or competitive pastime',
+      'a participant in an interactive simulation or multiplayer system'
+    ],
+    examples: [
+      'Every player receives rewards at the end of the tournament.',
+      'The top-ranked player shared tactical guides with the guild.'
+    ],
+    aliases: ['gamer', 'competitor', 'participant'],
+    confidence: 1.00
+  },
+  {
+    word: 'game',
+    normalizedWord: 'game',
+    partOfSpeech: 'noun',
+    definitions: [
+      'a structured form of play, sport, or competitive activity with established rules',
+      'a single match, contest, or round in a tournament series'
+    ],
+    examples: [
+      'Uma Musume is a popular sports simulation game.',
+      'The guild organized a private exhibition game.'
+    ],
+    aliases: ['match', 'contest', 'title'],
+    confidence: 1.00
+  },
+  {
+    word: 'fan',
+    normalizedWord: 'fan',
+    partOfSpeech: 'noun',
+    definitions: [
+      'an enthusiastic devotee, admirer, or supporter of a sport, idol, or team',
+      'an apparatus with rotating blades used to create a cooling current of air',
+      'in Uma Musume, the metric representing supporter count required for scenario milestones'
+    ],
+    examples: [
+      'Reaching three hundred thousand fans unlocks the Legend milestone.',
+      'She turned on the electric fan to cool down the training room.',
+      'Devoted fans gathered in the arena to wave banners.'
+    ],
+    aliases: ['supporter', 'admirer', 'follower'],
+    confidence: 1.00
+  },
+  {
+    word: 'buff',
+    normalizedWord: 'buff',
+    partOfSpeech: 'noun',
+    definitions: [
+      'an enhancement or positive stat increase applied to a character or ability',
+      'to polish or make something smooth and shiny',
+      'an enthusiast who is knowledgeable about a particular subject'
+    ],
+    examples: [
+      'The recent balance patch gave a significant speed buff to chasers.',
+      'Support skills grant a temporary acceleration buff.',
+      'He is a history buff who knows all famous derby records.'
+    ],
+    aliases: ['boost', 'upgrade', 'enhancement'],
+    confidence: 1.00
+  },
+  {
+    word: 'nerf',
+    normalizedWord: 'nerf',
+    partOfSpeech: 'noun',
+    definitions: [
+      'a reduction in power, effectiveness, or stats introduced in a balance patch',
+      'to weaken a skill, character, or mechanic in game updates'
+    ],
+    examples: [
+      'The developers rolled out a nerf to overperforming stamina drain skills.',
+      'They had to nerf the strategy to restore competitive balance.'
+    ],
+    aliases: ['downgrade', 'weakening', 'reduction'],
+    confidence: 1.00
+  },
+  {
+    word: 'cooldown',
+    normalizedWord: 'cooldown',
+    partOfSpeech: 'noun',
+    definitions: [
+      'the required waiting period after using an ability before it can be activated again',
+      'a period of light exercise following strenuous physical activity'
+    ],
+    examples: [
+      'The skill has a forty-second cooldown between uses.',
+      'Always do a thorough cooldown walk after sprint drills.'
+    ],
+    aliases: ['cd', 'recovery period'],
+    confidence: 1.00
+  },
+  {
+    word: 'meta',
+    normalizedWord: 'meta',
+    partOfSpeech: 'noun',
+    definitions: [
+      'the most effective tactics available or dominant strategy in competitive gaming',
+      'referring to self-referential or higher-order conceptual discussion'
+    ],
+    examples: [
+      'Front runners currently dominate the Champions Meeting meta.',
+      'Understanding the current meta is vital for leaderboard optimization.'
+    ],
+    aliases: ['optimal strategy', 'standard'],
+    confidence: 1.00
+  },
+  {
+    word: 'dm',
+    normalizedWord: 'dm',
+    partOfSpeech: 'noun',
+    definitions: [
+      'a direct message sent privately between users on chat platforms like Discord',
+      'a dungeon master in tabletop role-playing games',
+      'to send a private direct message to someone'
+    ],
+    examples: [
+      'Send me a DM if you have private questions about training.',
+      'The bot responds instantly when queried in a Discord DM.'
+    ],
+    aliases: ['direct message', 'pm', 'private message'],
+    confidence: 1.00
+  },
+  {
+    word: 'ping',
+    normalizedWord: 'ping',
+    partOfSpeech: 'noun',
+    definitions: [
+      'a notification or user mention sent to alert someone in chat',
+      'the network latency measured in milliseconds between a client and server',
+      'to mention or send a notification to a user'
+    ],
+    examples: [
+      'Please do not ping administrators unless there is an urgent issue.',
+      'My network ping is low, providing smooth real-time response.'
+    ],
+    aliases: ['mention', 'alert', 'latency'],
+    confidence: 1.00
+  },
+  {
+    word: 'turf',
+    normalizedWord: 'turf',
+    partOfSpeech: 'noun',
+    definitions: [
+      'a natural grass racetrack surface used in major classic races',
+      'a person\'s territory or sphere of influence'
+    ],
+    examples: [
+      'The Japan Cup is contested on a turf track.',
+      'The champion defended her home turf against overseas challengers.'
+    ],
+    aliases: ['grass', 'lawn'],
+    confidence: 1.00
+  },
+  {
+    word: 'dirt',
+    normalizedWord: 'dirt',
+    partOfSpeech: 'noun',
+    definitions: [
+      'a sandy, earthen, or clay racetrack surface requiring high power and endurance',
+      'loose soil, earth, or mud'
+    ],
+    examples: [
+      'The Tokyo Daishoten is held on a dirt surface.',
+      'He ran with high power on the deep dirt track.'
+    ],
+    aliases: ['sand', 'earth', 'soil'],
+    confidence: 1.00
+  },
+  {
+    word: 'mile',
+    normalizedWord: 'mile',
+    partOfSpeech: 'noun',
+    definitions: [
+      'a unit of linear measure equal to 5,280 feet or approximately 1,609 meters',
+      'in horse racing, middle-short distance races between 1,401m and 1,800m'
+    ],
+    examples: [
+      'She holds the course record for the mile distance.',
+      'The Yasuda Kinen is a premier G1 mile championship.'
+    ],
+    aliases: ['mile race', 'middle-short'],
+    confidence: 1.00
+  },
+  {
+    word: 'sprint',
+    normalizedWord: 'sprint',
+    partOfSpeech: 'noun',
+    definitions: [
+      'a short-distance race of 1,400 meters or less prioritizing maximum burst speed',
+      'to run at full speed over a short distance'
+    ],
+    examples: [
+      'The Sprinters Stakes is a thrilling 1,200m G1 turf sprint.',
+      'She began to sprint with two hundred meters remaining.'
+    ],
+    aliases: ['dash', 'short distance'],
+    confidence: 1.00
+  },
+  {
+    word: 'help',
+    normalizedWord: 'help',
+    partOfSpeech: 'verb',
+    definitions: [
+      'to give assistance, support, or aid to someone',
+      'to make a situation easier or improve an outcome'
+    ],
+    examples: [
+      'Lily is always ready to help trainers optimize their stats.',
+      'Proper support cards help athletes learn valuable gold skills.'
+    ],
+    aliases: ['assist', 'aid', 'support'],
+    confidence: 1.00
+  },
+  {
+    word: 'learn',
+    normalizedWord: 'learn',
+    partOfSpeech: 'verb',
+    definitions: [
+      'to gain or acquire knowledge, understanding, or skill through study and experience',
+      'to memorize or master facts or techniques'
+    ],
+    examples: [
+      'Athletes learn new tactical skills from support card events.',
+      'Lily continues to learn from community race discussions.'
+    ],
+    aliases: ['acquire', 'master', 'grasp'],
+    confidence: 1.00
+  },
+  {
+    word: 'understand',
+    normalizedWord: 'understand',
+    partOfSpeech: 'verb',
+    definitions: [
+      'to perceive the intended meaning, nature, or significance of words and concepts',
+      'to comprehend and interpret context accurately'
+    ],
+    examples: [
+      'I understand your training goal and have calculated the optimal fan target.',
+      'She understands how track surface condition affects pacing.'
+    ],
+    aliases: ['comprehend', 'grasp', 'fathom'],
+    confidence: 1.00
+  }
+];
+
+export class DictionaryLoader {
+  /**
+   * Loads dictionary entries into a new DictionaryRegistry.
+   */
+  public static load(entries: DictionaryEntry[] = DEFAULT_CORE_DICTIONARY): DictionaryRegistry {
+    const registry = new DictionaryRegistry();
+    for (const entry of entries) {
+      registry.register(entry);
+    }
+    return registry;
+  }
+
+  /**
+   * Loads dictionary from a JSON string.
+   */
+  public static loadFromJson(jsonString: string): DictionaryRegistry {
+    const parsed = JSON.parse(jsonString);
+    if (!Array.isArray(parsed)) {
+      throw new Error('Invalid dictionary JSON: expected array of DictionaryEntry');
+    }
+    return this.load(parsed as DictionaryEntry[]);
+  }
+
+  /**
+   * Loads dictionary from a file path on disk, falling back to DEFAULT_CORE_DICTIONARY.
+   */
+  public static loadFromFile(filePath?: string): DictionaryRegistry {
+    if (filePath && fs.existsSync(filePath)) {
+      try {
+        const content = fs.readFileSync(filePath, 'utf-8');
+        return this.loadFromJson(content);
+      } catch {
+        // Fallback to default
+      }
+    }
+    return this.load();
+  }
+}

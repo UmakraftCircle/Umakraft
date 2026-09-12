@@ -32,6 +32,6 @@ export enum Track {
 export interface TaxonomyEntity {
   id: string;
   canonical: string;
-  type: 'running_style' | 'distance' | 'surface' | 'track' | 'character' | 'skill';
+  type: 'running_style' | 'distance' | 'surface' | 'track' | 'character' | 'skill' | 'support_card' | 'race' | 'factor' | 'event' | 'title';
   aliases: string[];
 }

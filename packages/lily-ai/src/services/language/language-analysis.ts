@@ -1,3 +1,5 @@
+import { VocabularyCandidate } from '../../vocabulary/learning/candidate-registry.js';
+
 export type IntentType =
   | 'parent_search'
   | 'trainer_search'
@@ -71,4 +73,10 @@ export interface LanguageAnalysis {
   entities: ExtractedEntity[];
   normalizedMessage: string;
   trainerId?: string;
+  expandedTerms?: string[];
+  synonyms?: Record<string, string[]>;
+  oppositeTerms?: string[];
+  antonyms?: Record<string, string[]>;
+  definitions?: Record<string, string>;
+  observedCandidates?: VocabularyCandidate[];
 }
