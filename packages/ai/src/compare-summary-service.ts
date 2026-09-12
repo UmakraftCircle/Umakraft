@@ -164,7 +164,7 @@ export function CreateCompareSummaryService(): CompareSummaryService {
 
   const groqKey = process.env['GROQ_API_KEYS'] || process.env['GROQ_API_KEY'];
   if (groqKey) {
-    const model = process.env['COMPARE_SUMMARY_MODEL'] || 'llama-3.1-8b-instant';
+    const model = process.env['COMPARE_SUMMARY_MODEL'] || 'openai/gpt-oss-120b';
     const primary = createProvider('groq', groqKey, model);
     let fallback: AIService | null = null;
     try {

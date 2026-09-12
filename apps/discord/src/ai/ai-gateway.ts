@@ -110,7 +110,7 @@ export class ModelRouter {
       case TaskType.MEMORY_EXTRACTION:
       case TaskType.RESPONSE_EVALUATION:
         return {
-          modelName: 'llama-3.1-8b-instant',
+          modelName: 'openai/gpt-oss-safeguard-20b',
           provider: 'Groq',
           isFastModel: true,
           maxTokens: 500,

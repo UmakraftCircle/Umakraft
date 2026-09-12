@@ -31,7 +31,7 @@ export class GroqModelDiscoveryService {
     'openai/gpt-oss-120b',
     'openai/gpt-oss-safeguard-20b',
     'qwen/qwen3.6-27b',
-    'mixtral-8x7b-32768',
+    'llama-3.3-70b-versatile',
     'allam-2-7b',
   ];
 

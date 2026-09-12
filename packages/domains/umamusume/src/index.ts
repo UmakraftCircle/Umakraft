@@ -4,6 +4,7 @@ import {
   RequestCategory,
   CATEGORY_SOURCE_MAP,
   classifyRequest,
+  normalizeCategory,
   getSource,
   SOURCE_REGISTRY,
 } from './sources.js';
@@ -171,8 +172,9 @@ async function fetchApprovedSource(urlStr: string, maxLength = 30000): Promise<S
  * Resolves the ordered list of source entries for a category.
  * Returns both the unique keys and the resolved SourceEntry objects.
  */
-function resolveSources(category: RequestCategory) {
-  const keys = CATEGORY_SOURCE_MAP[category] ?? CATEGORY_SOURCE_MAP.general;
+function resolveSources(category?: string) {
+  const norm = normalizeCategory(category);
+  const keys = CATEGORY_SOURCE_MAP[norm] ?? CATEGORY_SOURCE_MAP.general;
   const sources = keys.map(getSource).filter((s): s is NonNullable<typeof s> => Boolean(s));
   return { keys, sources };
 }
@@ -201,11 +203,11 @@ export const umamusumeDataMiner: ToolDefinition = {
     },
     category: {
       type: 'string',
-      description: 'Optional explicit request category. If omitted, it is auto-classified.',
+      description: 'Optional explicit request category (e.g. "character", "support-card", "skill", "training", "stats", "guide", "lore", etc.). If omitted, it is auto-classified.',
       required: false,
       enum: [
         'character', 'support-card', 'skill', 'track', 'game-mechanic', 'scenario',
-        'guide', 'tool', 'event', 'lore', 'community', 'comparison', 'general',
+        'guide', 'training', 'stats', 'mechanics', 'tool', 'event', 'lore', 'community', 'comparison', 'general',
       ],
     },
     maxLength: {
@@ -218,7 +220,8 @@ export const umamusumeDataMiner: ToolDefinition = {
     const query = String(args['query'] ?? '').trim();
     if (!query) throw new Error('query is required');
 
-    const category: RequestCategory = (args['category'] as RequestCategory) ?? classifyRequest(query);
+    const rawCategory = args['category'] ? String(args['category']) : undefined;
+    const category: RequestCategory = rawCategory ? normalizeCategory(rawCategory) : classifyRequest(query);
     const maxLength = Number(args['maxLength']) || 30000;
 
     logger.info(`umamusume-data-miner query="${query}" category=${category}`);
@@ -283,7 +286,7 @@ export const umamusumeSearch: ToolDefinition = {
       required: false,
       enum: [
         'character', 'support-card', 'skill', 'track', 'game-mechanic', 'scenario',
-        'guide', 'tool', 'event', 'lore', 'community', 'comparison', 'general',
+        'guide', 'training', 'stats', 'mechanics', 'tool', 'event', 'lore', 'community', 'comparison', 'general',
       ],
     },
     contextLines: {
@@ -296,7 +299,8 @@ export const umamusumeSearch: ToolDefinition = {
     const query = String(args['query'] ?? '').trim();
     if (!query) throw new Error('query is required');
 
-    const category: RequestCategory = (args['category'] as RequestCategory) ?? classifyRequest(query);
+    const rawCategory = args['category'] ? String(args['category']) : undefined;
+    const category: RequestCategory = rawCategory ? normalizeCategory(rawCategory) : classifyRequest(query);
     const contextSize = Number(args['contextLines']) || 1;
 
     logger.info(`umamusume-search query="${query}" category=${category}`);

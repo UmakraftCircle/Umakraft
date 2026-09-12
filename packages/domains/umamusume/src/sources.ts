@@ -14,6 +14,9 @@ export type RequestCategory =
   | 'game-mechanic'
   | 'scenario'
   | 'guide'
+  | 'training'
+  | 'stats'
+  | 'mechanics'
   | 'tool'
   | 'event'
   | 'lore'
@@ -115,7 +118,10 @@ export const CATEGORY_SOURCE_MAP: Record<RequestCategory, string[]> = {
   track:        ['tracks', 'gametora-racetracks'],
   'game-mechanic': ['guides', 'stats', 'race-mechanics', 'career-mechanics'],
   scenario:     ['cm-guide', 'grand-concert', 'trackblazer', 'unity-cup-deck', 'unity-cup-career'],
-  guide:        ['guides'],
+  guide:        ['guides', 'stats', 'career-mechanics', 'beginners'],
+  training:     ['guides', 'stats', 'career-mechanics', 'independent-training', 'training-simulator'],
+  stats:        ['stats', 'guides', 'career-mechanics'],
+  mechanics:    ['guides', 'career-mechanics', 'race-mechanics', 'stats'],
   tool:         ['deck-builder', 'training-simulator', 'support-compare', 'gametora-compatibility', 'gametora-tier-list', 'agenda-planner'],
   event:        ['gametora-events'],
   // Lore resolves through umamusu.wiki and fandom first, then falls back to uma.guide/gametora
@@ -127,6 +133,24 @@ export const CATEGORY_SOURCE_MAP: Record<RequestCategory, string[]> = {
 
 export function getSource(key: string): SourceEntry | undefined {
   return SOURCE_REGISTRY.find((s) => s.key === key);
+}
+
+/**
+ * Normalizes any category string into a valid RequestCategory.
+ */
+export function normalizeCategory(cat?: string): RequestCategory {
+  if (!cat) return 'general';
+  const c = cat.toLowerCase().replace(/[_\s]+/g, '-').trim();
+  if (c in CATEGORY_SOURCE_MAP) return c as RequestCategory;
+  if (c.includes('train') || c.includes('build')) return 'training';
+  if (c.includes('stat')) return 'stats';
+  if (c.includes('mechanic')) return 'game-mechanic';
+  if (c.includes('guide')) return 'guide';
+  if (c.includes('card') || c.includes('support')) return 'support-card';
+  if (c.includes('skill')) return 'skill';
+  if (c.includes('char') || c.includes('uma')) return 'character';
+  if (c.includes('lore') || c.includes('story') || c.includes('anime')) return 'lore';
+  return 'general';
 }
 
 /**
@@ -151,7 +175,10 @@ export function classifyRequest(text: string): RequestCategory {
   if (/\b(event|choice|reward|outcome)\b/.test(t)) return 'event';
   if (/\b(compare|vs\.|versus|which is better|difference between)\b/.test(t)) return 'comparison';
   if (/\b(reddit|community|players say|discussion|tier list)\b/.test(t)) return 'community';
-  if (/\b(mechanic|how does|explain|beginner|banner|gacha|career|sparks|inheritance|stats)\b/.test(t)) return 'game-mechanic';
+  if (/\b(train|training|build|stat targets?|stat priority|caps?|stat cap)\b/.test(t)) return 'training';
+  if (/\b(stats?|speed|stamina|power|guts|wit|wisdom)\b/.test(t)) return 'stats';
+  if (/\b(mechanic|how does|explain|beginner|banner|gacha|career|sparks|inheritance)\b/.test(t)) return 'game-mechanic';
+  if (/\b(guide|how to|tutorial)\b/.test(t)) return 'guide';
   // "who is X", character names, or the general umamusume term → character profile.
   if (/\b(who is|character|umamusume|horse girl|trainer)\b/.test(t)) return 'character';
 
